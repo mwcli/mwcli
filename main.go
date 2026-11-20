@@ -20,15 +20,20 @@ import (
 const defaultAPI = "https://zetawiki.com/w/api.php"
 
 type client struct {
-	api  string
-	http *http.Client
+	api         string
+	accessToken string
+	http        *http.Client
 }
 
 type profile struct {
 	API      string         `json:"api"`
 	Username string         `json:"username"`
+	Auth     string         `json:"auth,omitempty"`
+	Token    string         `json:"token,omitempty"`
 	Cookies  []*http.Cookie `json:"cookies,omitempty"`
 }
+
+const authOAuth2 = "oauth2"
 
 func newClient(api string) (*client, error) {
 	u, err := url.Parse(api)
@@ -39,11 +44,33 @@ func newClient(api string) (*client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &client{api: api, http: &http.Client{Jar: jar, Timeout: 45 * time.Second}}
+	c := &client{api: api, accessToken: os.Getenv("MWTOOL_TOKEN"), http: &http.Client{Jar: jar, Timeout: 45 * time.Second}}
+	if c.accessToken != "" {
+		return c, nil
+	}
 	if p, err := readProfile(); err == nil && p.API == api {
-		jar.SetCookies(u, p.Cookies)
+		if p.Auth == authOAuth2 {
+			c.accessToken = p.Token
+		} else {
+			jar.SetCookies(u, p.Cookies)
+		}
 	}
 	return c, nil
+}
+
+func (c *client) authenticated() bool {
+	if c.accessToken != "" {
+		return true
+	}
+	p, err := readProfile()
+	return err == nil && p.API == c.api
+}
+
+func (c *client) authMethod() string {
+	if c.accessToken != "" {
+		return "OAuth 2 access token"
+	}
+	return "password session"
 }
 
 func readProfile() (profile, error) {
@@ -57,7 +84,12 @@ func readProfile() (profile, error) {
 
 func (c *client) saveProfile(username string) error {
 	u, _ := url.Parse(c.api)
-	p := profile{API: c.api, Username: username, Cookies: c.http.Jar.Cookies(u)}
+	p := profile{API: c.api, Username: username}
+	if c.accessToken != "" {
+		p.Auth, p.Token = authOAuth2, c.accessToken
+	} else {
+		p.Cookies = c.http.Jar.Cookies(u)
+	}
 	b, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return err
@@ -83,6 +115,9 @@ func (c *client) request(method string, values url.Values, out any) error {
 		return err
 	}
 	req.Header.Set("User-Agent", "mwtool/0.1 (https://github.com/jmnote/mwtool)")
+	if c.accessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.accessToken)
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
@@ -92,17 +127,21 @@ func (c *client) request(method string, values url.Values, out any) error {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("MediaWiki returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("decode API response: %w", err)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
 	}
 	var envelope struct {
 		Error *struct{ Code, Info string } `json:"error"`
 	}
-	if b, err := json.Marshal(out); err == nil {
-		_ = json.Unmarshal(b, &envelope)
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return fmt.Errorf("decode API response: %w", err)
 	}
 	if envelope.Error != nil {
 		return fmt.Errorf("MediaWiki API error %s: %s", envelope.Error.Code, envelope.Error.Info)
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("decode API response: %w", err)
 	}
 	return nil
 }
@@ -239,7 +278,55 @@ func defaultAPIEndpoint() string {
 	return defaultAPI
 }
 func usage() {
-	fmt.Fprintln(os.Stderr, "mw: MediaWiki from your terminal\n\nUsage:\n  mw auth status [--api URL]\n  mw auth login [--api URL] [--username NAME]\n  mw page get TITLE [--api URL]\n  mw page edit TITLE [--api URL] [--summary TEXT] [--text TEXT | --file PATH]\n\nSet MWTOOL_API to choose a wiki API endpoint (default: "+defaultAPI+").")
+	fmt.Fprintln(os.Stderr, "mw: MediaWiki from your terminal\n\nUsage:\n  mw auth status [--api URL]\n  mw auth login [--api URL] [--username NAME]\n  mw auth login --token [--api URL]\n  mw page get TITLE [--api URL]\n  mw page edit TITLE [--api URL] [--summary TEXT] [--text TEXT | --file PATH]\n\nSet MWTOOL_API to choose a wiki API endpoint (default: "+defaultAPI+").")
+}
+
+func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
+	var positional []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		rest := fs.Args()
+		if consumed := len(args) - len(rest); consumed > 0 && args[consumed-1] == "--" {
+			return append(positional, rest...), nil
+		}
+		if len(rest) == 0 {
+			return positional, nil
+		}
+		positional = append(positional, rest[0])
+		args = rest[1:]
+	}
+}
+
+func loginWithToken(api string) error {
+	token := os.Getenv("MWTOOL_TOKEN")
+	if token == "" {
+		fmt.Fprint(os.Stderr, "Access token: ")
+		b, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return fmt.Errorf("read token without echo: %w (set MWTOOL_TOKEN for non-interactive use)", err)
+		}
+		token = strings.TrimSpace(string(b))
+	}
+	if token == "" {
+		return errors.New("access token is required")
+	}
+	c, err := newClient(api)
+	if err != nil {
+		return err
+	}
+	c.accessToken = token
+	user, err := c.user()
+	if err != nil {
+		return fmt.Errorf("token check failed: %w", err)
+	}
+	if err = c.saveProfile(user); err != nil {
+		return err
+	}
+	fmt.Printf("Logged in to %s as %s (%s)\n", api, user, c.authMethod())
+	return nil
 }
 
 func run(args []string) error {
@@ -251,24 +338,30 @@ func run(args []string) error {
 		fs := flag.NewFlagSet("auth "+args[1], flag.ContinueOnError)
 		api := fs.String("api", defaultAPIEndpoint(), "MediaWiki API endpoint")
 		username := fs.String("username", os.Getenv("MWTOOL_USERNAME"), "Wiki username")
+		useToken := false
+		if args[1] == "login" {
+			fs.BoolVar(&useToken, "token", false, "Log in with an OAuth 2 access token")
+		}
 		if err := fs.Parse(args[2:]); err != nil {
 			return err
 		}
 		if args[1] == "status" {
-			p, err := readProfile()
-			if err != nil || p.API != *api {
-				return fmt.Errorf("not logged in to %s; run `mw auth login --api %s`", *api, *api)
-			}
 			c, err := newClient(*api)
 			if err != nil {
 				return err
+			}
+			if !c.authenticated() {
+				return fmt.Errorf("not logged in to %s; run `mw auth login --api %s`", *api, *api)
 			}
 			user, err := c.user()
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Logged in to %s as %s\n", *api, user)
+			fmt.Printf("Logged in to %s as %s (%s)\n", *api, user, c.authMethod())
 			return nil
+		}
+		if useToken {
+			return loginWithToken(*api)
 		}
 		if *username == "" {
 			fmt.Fprint(os.Stderr, "Username: ")
@@ -311,12 +404,14 @@ func run(args []string) error {
 		summary := fs.String("summary", "", "Edit summary")
 		textArg := fs.String("text", "", "Page wikitext")
 		file := fs.String("file", "", "Read page wikitext from a file")
-		if err := fs.Parse(args[2:]); err != nil {
+		positional, err := parseInterspersed(fs, args[2:])
+		if err != nil {
 			return err
 		}
-		if fs.NArg() != 1 {
+		if len(positional) != 1 {
 			return errors.New("page command requires a title")
 		}
+		title := positional[0]
 		if *api == "" {
 			*api = defaultAPIEndpoint()
 		}
@@ -325,7 +420,7 @@ func run(args []string) error {
 			return err
 		}
 		if args[1] == "get" {
-			content, err := c.page(fs.Arg(0))
+			content, err := c.page(title)
 			if err == nil {
 				fmt.Print(content)
 			}
@@ -341,11 +436,10 @@ func run(args []string) error {
 		} else if content == "" {
 			return errors.New("provide --text or --file")
 		}
-		p, err := readProfile()
-		if err != nil || p.API != *api {
+		if !c.authenticated() {
 			return errors.New("not logged in; run `mw auth login`")
 		}
-		return c.edit(fs.Arg(0), content, *summary)
+		return c.edit(title, content, *summary)
 	}
 	usage()
 	return fmt.Errorf("unknown command")
