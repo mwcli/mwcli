@@ -260,6 +260,105 @@ func (c *client) edit(title, text, summary string) error {
 	return nil
 }
 
+var canIActions = map[string]string{
+	"edit":    "edit",
+	"create":  "createpage",
+	"move":    "move",
+	"delete":  "delete",
+	"protect": "protect",
+}
+
+func (c *client) rights() ([]string, error) {
+	var result struct {
+		Query struct {
+			UserInfo struct {
+				Rights []string `json:"rights"`
+			} `json:"userinfo"`
+		} `json:"query"`
+	}
+	params := url.Values{"action": {"query"}, "meta": {"userinfo"}, "uiprop": {"rights"}, "format": {"json"}, "formatversion": {"2"}}
+	if err := c.request(http.MethodGet, params, &result); err != nil {
+		return nil, err
+	}
+	return result.Query.UserInfo.Rights, nil
+}
+
+func (c *client) canOnTitle(action, title string) ([]string, error) {
+	var result struct {
+		Query struct {
+			Pages []struct {
+				Invalid bool `json:"invalid"`
+				Actions map[string][]struct {
+					Code string `json:"code"`
+					Text string `json:"text"`
+				} `json:"actions"`
+			} `json:"pages"`
+		} `json:"query"`
+	}
+	params := url.Values{"action": {"query"}, "prop": {"info"}, "intestactions": {action}, "intestactionsdetail": {"full"}, "titles": {title}, "errorformat": {"plaintext"}, "format": {"json"}, "formatversion": {"2"}}
+	if err := c.request(http.MethodGet, params, &result); err != nil {
+		return nil, err
+	}
+	if len(result.Query.Pages) != 1 || result.Query.Pages[0].Invalid {
+		return nil, fmt.Errorf("invalid title %q", title)
+	}
+	var reasons []string
+	for _, e := range result.Query.Pages[0].Actions[action] {
+		reasons = append(reasons, e.Code+": "+e.Text)
+	}
+	return reasons, nil
+}
+
+var errNo = errors.New("no")
+
+func canI(c *client, args []string) error {
+	if len(args) == 1 && args[0] == "--list" {
+		rights, err := c.rights()
+		if err != nil {
+			return err
+		}
+		for _, r := range rights {
+			fmt.Println(r)
+		}
+		return nil
+	}
+	if len(args) < 1 || len(args) > 2 {
+		return errors.New("usage: mw auth can-i ACTION [TITLE] | --list")
+	}
+	action := args[0]
+	right, ok := canIActions[action]
+	if !ok {
+		return fmt.Errorf("unknown action %q (edit, create, move, delete, protect)", action)
+	}
+	if len(args) == 2 {
+		reasons, err := c.canOnTitle(action, args[1])
+		if err != nil {
+			return err
+		}
+		if len(reasons) > 0 {
+			fmt.Println("no")
+			for _, r := range reasons {
+				fmt.Println("  " + r)
+			}
+			return errNo
+		}
+		fmt.Println("yes")
+		return nil
+	}
+	rights, err := c.rights()
+	if err != nil {
+		return err
+	}
+	for _, r := range rights {
+		if r == right {
+			fmt.Printf("yes (has %s right; give a TITLE to include protection and blocks)\n", right)
+			return nil
+		}
+	}
+	fmt.Printf("no (missing %s right)\n", right)
+	return errNo
+}
+
 func stateDir() string {
 	d, err := os.UserConfigDir()
 	if err != nil {
@@ -278,7 +377,7 @@ func defaultAPIEndpoint() string {
 	return defaultAPI
 }
 func usage() {
-	fmt.Fprintln(os.Stderr, "mw: MediaWiki from your terminal\n\nUsage:\n  mw auth status [--api URL]\n  mw auth login [--api URL] [--username NAME]\n  mw auth login --token [--api URL]\n  mw page get TITLE [--api URL]\n  mw page edit TITLE [--api URL] [--summary TEXT] [--text TEXT | --file PATH]\n\nSet MWTOOL_API to choose a wiki API endpoint (default: "+defaultAPI+").")
+	fmt.Fprintln(os.Stderr, "mw: MediaWiki from your terminal\n\nUsage:\n  mw auth status [--api URL]\n  mw auth login [--api URL] [--username NAME]\n  mw auth login --token [--api URL]\n  mw auth can-i ACTION [TITLE] [--api URL]\n  mw auth can-i --list [--api URL]\n  mw page get TITLE [--api URL]\n  mw page edit TITLE [--api URL] [--summary TEXT] [--text TEXT | --file PATH]\n\nSet MWTOOL_API to choose a wiki API endpoint (default: "+defaultAPI+").")
 }
 
 func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
@@ -333,6 +432,23 @@ func run(args []string) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		usage()
 		return nil
+	}
+	if args[0] == "auth" && len(args) > 1 && args[1] == "can-i" {
+		fs := flag.NewFlagSet("auth can-i", flag.ContinueOnError)
+		api := fs.String("api", defaultAPIEndpoint(), "MediaWiki API endpoint")
+		list := fs.Bool("list", false, "List the rights of the current login")
+		positional, err := parseInterspersed(fs, args[2:])
+		if err != nil {
+			return err
+		}
+		if *list {
+			positional = []string{"--list"}
+		}
+		c, err := newClient(*api)
+		if err != nil {
+			return err
+		}
+		return canI(c, positional)
 	}
 	if args[0] == "auth" && len(args) > 1 && (args[1] == "login" || args[1] == "status") {
 		fs := flag.NewFlagSet("auth "+args[1], flag.ContinueOnError)
@@ -447,7 +563,9 @@ func run(args []string) error {
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "mwtool:", err)
+		if !errors.Is(err, errNo) {
+			fmt.Fprintln(os.Stderr, "mwtool:", err)
+		}
 		os.Exit(1)
 	}
 }
