@@ -114,7 +114,7 @@ func (c *client) request(method string, values url.Values, out any) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "mwtool/0.1 (https://github.com/jmnote/mwtool)")
+	req.Header.Set("User-Agent", "mwtool/0.1 (https://github.com/zetaoss/mwtool)")
 	if c.accessToken != "" {
 		req.Header.Set("Authorization", "Bearer "+c.accessToken)
 	}

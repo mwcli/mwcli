@@ -1,4 +1,4 @@
-module github.com/jmnote/mwtool
+module github.com/zetaoss/mwtool
 
 go 1.27
 
