@@ -132,13 +132,17 @@ func (c *client) request(method string, values url.Values, out any) error {
 		return err
 	}
 	var envelope struct {
-		Error *struct{ Code, Info string } `json:"error"`
+		Error  *struct{ Code, Info string }  `json:"error"`
+		Errors []struct{ Code, Text string } `json:"errors"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		return fmt.Errorf("decode API response: %w", err)
 	}
 	if envelope.Error != nil {
 		return fmt.Errorf("MediaWiki API error %s: %s", envelope.Error.Code, envelope.Error.Info)
+	}
+	if len(envelope.Errors) > 0 {
+		return fmt.Errorf("MediaWiki API error %s: %s", envelope.Errors[0].Code, envelope.Errors[0].Text)
 	}
 	if err := json.Unmarshal(body, out); err != nil {
 		return fmt.Errorf("decode API response: %w", err)
@@ -311,8 +315,32 @@ func (c *client) canOnTitle(action, title string) ([]string, error) {
 
 var errNo = errors.New("no")
 
-func canI(c *client, args []string) error {
-	if len(args) == 1 && args[0] == "--list" {
+type exitError struct {
+	code int
+	err  error
+}
+
+func (e *exitError) Error() string { return e.err.Error() }
+func (e *exitError) Unwrap() error { return e.err }
+
+func usageError(format string, a ...any) error {
+	return &exitError{code: 2, err: fmt.Errorf(format, a...)}
+}
+
+func parseError(err error) error {
+	if errors.Is(err, flag.ErrHelp) {
+		return err
+	}
+	return &exitError{code: 2, err: err}
+}
+
+func canI(c *client, args []string, list, quiet bool) error {
+	say := func(format string, a ...any) {
+		if !quiet {
+			fmt.Printf(format, a...)
+		}
+	}
+	if list {
 		rights, err := c.rights()
 		if err != nil {
 			return err
@@ -323,12 +351,12 @@ func canI(c *client, args []string) error {
 		return nil
 	}
 	if len(args) < 1 || len(args) > 2 {
-		return errors.New("usage: mw auth can-i ACTION [TITLE] | --list")
+		return usageError("usage: mw auth can-i [--quiet] ACTION [TITLE] | --list")
 	}
 	action := args[0]
 	right, ok := canIActions[action]
 	if !ok {
-		return fmt.Errorf("unknown action %q (edit, create, move, delete, protect)", action)
+		return usageError("unknown action %q (edit, create, move, delete, protect)", action)
 	}
 	if len(args) == 2 {
 		reasons, err := c.canOnTitle(action, args[1])
@@ -336,13 +364,13 @@ func canI(c *client, args []string) error {
 			return err
 		}
 		if len(reasons) > 0 {
-			fmt.Println("no")
+			say("no\n")
 			for _, r := range reasons {
-				fmt.Println("  " + r)
+				say("  %s\n", r)
 			}
 			return errNo
 		}
-		fmt.Println("yes")
+		say("yes\n")
 		return nil
 	}
 	rights, err := c.rights()
@@ -351,11 +379,11 @@ func canI(c *client, args []string) error {
 	}
 	for _, r := range rights {
 		if r == right {
-			fmt.Printf("yes (has %s right; give a TITLE to include protection and blocks)\n", right)
+			say("yes (has %s right; give a TITLE to include protection and blocks)\n", right)
 			return nil
 		}
 	}
-	fmt.Printf("no (missing %s right)\n", right)
+	say("no (missing %s right)\n", right)
 	return errNo
 }
 
@@ -377,7 +405,7 @@ func defaultAPIEndpoint() string {
 	return defaultAPI
 }
 func usage() {
-	fmt.Fprintln(os.Stderr, "mw: MediaWiki from your terminal\n\nUsage:\n  mw auth status [--api URL]\n  mw auth login [--api URL] [--username NAME]\n  mw auth login --token [--api URL]\n  mw auth can-i ACTION [TITLE] [--api URL]\n  mw auth can-i --list [--api URL]\n  mw page get TITLE [--api URL]\n  mw page edit TITLE [--api URL] [--summary TEXT] [--text TEXT | --file PATH]\n\nSet MWTOOL_API to choose a wiki API endpoint (default: "+defaultAPI+").")
+	fmt.Fprintln(os.Stderr, "mw: MediaWiki from your terminal\n\nUsage:\n  mw auth status [--api URL]\n  mw auth login [--api URL] [--username NAME]\n  mw auth login --token [--api URL]\n  mw auth can-i [--quiet] ACTION [TITLE] [--api URL]\n  mw auth can-i --list [--api URL]\n  mw page get TITLE [--api URL]\n  mw page edit TITLE [--api URL] [--summary TEXT] [--text TEXT | --file PATH]\n\nSet MWTOOL_API to choose a wiki API endpoint (default: "+defaultAPI+").")
 }
 
 func parseInterspersed(fs *flag.FlagSet, args []string) ([]string, error) {
@@ -410,7 +438,7 @@ func loginWithToken(api string) error {
 		token = strings.TrimSpace(string(b))
 	}
 	if token == "" {
-		return errors.New("access token is required")
+		return usageError("access token is required")
 	}
 	c, err := newClient(api)
 	if err != nil {
@@ -437,18 +465,21 @@ func run(args []string) error {
 		fs := flag.NewFlagSet("auth can-i", flag.ContinueOnError)
 		api := fs.String("api", defaultAPIEndpoint(), "MediaWiki API endpoint")
 		list := fs.Bool("list", false, "List the rights of the current login")
+		quiet := fs.Bool("quiet", false, "Print nothing; only set the exit status")
+		fs.BoolVar(quiet, "q", false, "Shorthand for --quiet")
 		positional, err := parseInterspersed(fs, args[2:])
 		if err != nil {
-			return err
-		}
-		if *list {
-			positional = []string{"--list"}
+			return parseError(err)
 		}
 		c, err := newClient(*api)
-		if err != nil {
-			return err
+		if err == nil {
+			err = canI(c, positional, *list, *quiet)
 		}
-		return canI(c, positional)
+		var ee *exitError
+		if err != nil && !errors.Is(err, errNo) && !errors.As(err, &ee) {
+			err = &exitError{code: 2, err: err}
+		}
+		return err
 	}
 	if args[0] == "auth" && len(args) > 1 && (args[1] == "login" || args[1] == "status") {
 		fs := flag.NewFlagSet("auth "+args[1], flag.ContinueOnError)
@@ -459,7 +490,7 @@ func run(args []string) error {
 			fs.BoolVar(&useToken, "token", false, "Log in with an OAuth 2 access token")
 		}
 		if err := fs.Parse(args[2:]); err != nil {
-			return err
+			return parseError(err)
 		}
 		if args[1] == "status" {
 			c, err := newClient(*api)
@@ -496,7 +527,7 @@ func run(args []string) error {
 			password = string(b)
 		}
 		if *username == "" || password == "" {
-			return errors.New("username and password are required")
+			return usageError("username and password are required")
 		}
 		c, err := newClient(*api)
 		if err != nil {
@@ -513,7 +544,7 @@ func run(args []string) error {
 	}
 	if args[0] == "page" && len(args) > 1 {
 		if args[1] != "get" && args[1] != "edit" {
-			return fmt.Errorf("unknown page command %q", args[1])
+			return usageError("unknown page command %q", args[1])
 		}
 		fs := flag.NewFlagSet("page "+args[1], flag.ContinueOnError)
 		api := fs.String("api", apiFromFlags(), "MediaWiki API endpoint")
@@ -522,10 +553,10 @@ func run(args []string) error {
 		file := fs.String("file", "", "Read page wikitext from a file")
 		positional, err := parseInterspersed(fs, args[2:])
 		if err != nil {
-			return err
+			return parseError(err)
 		}
 		if len(positional) != 1 {
-			return errors.New("page command requires a title")
+			return usageError("page command requires a title")
 		}
 		title := positional[0]
 		if *api == "" {
@@ -550,7 +581,7 @@ func run(args []string) error {
 			}
 			content = string(b)
 		} else if content == "" {
-			return errors.New("provide --text or --file")
+			return usageError("provide --text or --file")
 		}
 		if !c.authenticated() {
 			return errors.New("not logged in; run `mw auth login`")
@@ -558,14 +589,21 @@ func run(args []string) error {
 		return c.edit(title, content, *summary)
 	}
 	usage()
-	return fmt.Errorf("unknown command")
+	return usageError("unknown command")
 }
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
-		if !errors.Is(err, errNo) {
-			fmt.Fprintln(os.Stderr, "mwtool:", err)
-		}
+	err := run(os.Args[1:])
+	switch {
+	case err == nil, errors.Is(err, flag.ErrHelp):
+		return
+	case errors.Is(err, errNo):
 		os.Exit(1)
 	}
+	fmt.Fprintln(os.Stderr, "mwtool:", err)
+	var ee *exitError
+	if errors.As(err, &ee) {
+		os.Exit(ee.code)
+	}
+	os.Exit(1)
 }
