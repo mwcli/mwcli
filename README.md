@@ -6,8 +6,8 @@
 
 ```sh
 mw auth status
-mw auth login [--api https://zetawiki.com/w/api.php] [--username USER]
-mw auth login --token [--api https://zetawiki.com/w/api.php]
+mw auth login [--api https://en.wikipedia.org/w/api.php] [--username USER]
+mw auth login --token [--api https://en.wikipedia.org/w/api.php]
 mw auth can-i [--quiet] create 'Page title'
 mw auth can-i --list
 mw page get 'Page title'
@@ -15,7 +15,7 @@ mw page edit 'Page title' --summary 'Fix typo' --file page.wiki
 mw page edit 'Page title' --summary 'Fix typo' --text 'Wikitext'
 ```
 
-Build the executable as `mw` with `go build -o mw .`. `MWTOOL_API` and `MWTOOL_USERNAME` can provide defaults. The default API endpoint is ZetaWiki. `page get` can read public pages without logging in.
+Build the executable as `mw` with `go build -o mw .`. `MWTOOL_API` and `MWTOOL_USERNAME` can provide defaults. The default API endpoint is English Wikipedia. OAuth access tokens are wiki-specific, so use `--api` or `MWTOOL_API` to select the wiki that issued the token. `page get` can read public pages without logging in.
 
 Login uses MediaWiki's `clientlogin` Action API flow. `mw auth status` checks the saved session against the wiki and reports the logged-in username. The session cookie jar is written to the user config directory under `mwtool/profile.json` with owner-only permissions. Treat this file as a credential. Password input uses a no-echo terminal prompt; set `MWTOOL_PASSWORD` for non-interactive login. Extra login steps such as two-factor authentication are not implemented yet.
 
