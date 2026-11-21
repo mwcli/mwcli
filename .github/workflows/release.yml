@@ -1,0 +1,48 @@
+name: Release
+
+# A change to VERSION on main releases that version: the tag vX.Y.Z is
+# created from VERSION, then GoReleaser builds the binaries and the release.
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: version
+        run: scripts/check-version.sh | tee -a "$GITHUB_OUTPUT"
+      - if: steps.version.outputs.released == 'false'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - if: steps.version.outputs.released == 'false'
+        run: make test
+      - if: steps.version.outputs.released == 'false'
+        name: Tag
+        run: |
+          tag="v$(tr -d '[:space:]' < VERSION)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "mw $tag"
+          git push origin "$tag"
+      - if: steps.version.outputs.released == 'false'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

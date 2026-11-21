@@ -15,6 +15,9 @@ var (
 )
 
 func init() {
+	if len(Date) > 10 {
+		Date = Date[:10]
+	}
 	if Version != "DEV" {
 		return
 	}
