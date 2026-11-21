@@ -29,6 +29,39 @@ archives:
       - LICENSE
       - README.md
 
+winget:
+  - name: mwcli
+    publisher: mwcli
+    package_identifier: mwcli.mwcli
+    short_description: "Unofficial but universal MediaWiki CLI. Like gh, but for MediaWiki."
+    description: "mw logs in to any MediaWiki wiki, reads and edits pages and makes Action API requests from the command line."
+    license: Apache-2.0
+    license_url: https://github.com/mwcli/mwcli/blob/main/LICENSE
+    homepage: https://github.com/mwcli/mwcli
+    publisher_url: https://github.com/mwcli
+    publisher_support_url: https://github.com/mwcli/mwcli/issues
+    release_notes_url: "https://github.com/mwcli/mwcli/releases/tag/{{ .Tag }}"
+    tags: [mediawiki, wiki, wikipedia, cli]
+    # Prereleases are not submitted.
+    skip_upload: auto
+    commit_author:
+      name: mwcli-release
+      email: mwcli-release@users.noreply.github.com
+    repository:
+      owner: mwcli
+      name: winget-pkgs
+      branch: "mwcli.mwcli-{{ .Version }}"
+      # A token that can push to mwcli/winget-pkgs and open pull requests on
+      # microsoft/winget-pkgs; without it the submission fails without
+      # failing the release.
+      token: "{{ envOrDefault \"MWCLI_RELEASE_TOKEN\" \"\" }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+
 checksum:
   name_template: checksums.txt
 

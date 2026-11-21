@@ -17,8 +17,11 @@ mwcli works with any MediaWiki wiki, Wikimedia wikis included. [a Wikimedia CLI]
 ## Installation
 
 ```sh
-go install github.com/mwcli/mwcli/cmd/mw@latest
+winget install mwcli.mwcli                       # Windows
+go install github.com/mwcli/mwcli/cmd/mw@latest  # with Go
 ```
+
+Archives for Linux, macOS and Windows are on the [releases](https://github.com/mwcli/mwcli/releases) page.
 
 Or build from source with `make` (the binary is `bin/mw`) and install it with `make install` (`prefix=/usr/local` by default). Building requires Go 1.27 or newer. `mw --version` shows the version; releases are listed at <https://github.com/mwcli/mwcli/releases>.
 
