@@ -17,7 +17,7 @@ import (
 	"golang.org/x/term"
 )
 
-const defaultAPI = "https://zetawiki.com/w/api.php"
+const defaultAPI = "https://en.wikipedia.org/w/api.php"
 
 type client struct {
 	api         string
