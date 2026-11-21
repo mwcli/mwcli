@@ -52,9 +52,9 @@ winget:
       name: winget-pkgs
       branch: "mwcli.mwcli-{{ .Version }}"
       # A token that can push to mwcli/winget-pkgs and open pull requests on
-      # microsoft/winget-pkgs; without it the submission fails without
-      # failing the release.
-      token: "{{ envOrDefault \"MWCLI_RELEASE_TOKEN\" \"\" }}"
+      # microsoft/winget-pkgs. The release workflow always sets it from the
+      # MWCLI_RELEASE_TOKEN secret; GoReleaser OSS has no envOrDefault.
+      token: "{{ .Env.MWCLI_RELEASE_TOKEN }}"
       pull_request:
         enabled: true
         base:
