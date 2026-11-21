@@ -78,6 +78,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MWCLI_RELEASE_TOKEN: ${{ secrets.MWCLI_RELEASE_TOKEN }}
       - if: steps.state.outputs.state != 'done'
         name: Publish
         env:
