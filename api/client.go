@@ -20,8 +20,10 @@ import (
 type Client struct {
 	API   string
 	Token string
-	http  *http.Client
-	url   *url.URL
+	// Resolved is the api.php URL the last request ended at after redirects.
+	Resolved string
+	http     *http.Client
+	url      *url.URL
 }
 
 // New returns a client for api, authenticated with account when it is not nil.
@@ -106,6 +108,9 @@ func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	final := *resp.Request.URL
+	final.RawQuery, final.Fragment = "", ""
+	c.Resolved = final.String()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		e := &HTTPError{Status: resp.Status}
 		if strings.Contains(resp.Header.Get("Content-Type"), "html") {
@@ -151,6 +156,32 @@ func (c *Client) request(method string, params url.Values, out any) error {
 		return fmt.Errorf("decode API response: %w", err)
 	}
 	return nil
+}
+
+// General is the general site information of a wiki (meta=siteinfo).
+type General struct {
+	SiteName    string `json:"sitename"`
+	Generator   string `json:"generator"`
+	Server      string `json:"server"`
+	Script      string `json:"script"`
+	ArticlePath string `json:"articlepath"`
+}
+
+// SiteInfo returns the general site information.
+func (c *Client) SiteInfo() (*General, error) {
+	var result struct {
+		Query struct {
+			General General `json:"general"`
+		} `json:"query"`
+	}
+	if err := c.request(http.MethodGet, url.Values{"action": {"query"}, "meta": {"siteinfo"}, "siprop": {"general"}}, &result); err != nil {
+		return nil, err
+	}
+	g := result.Query.General
+	if !strings.HasPrefix(g.Generator, "MediaWiki") {
+		return nil, fmt.Errorf("%s is not a MediaWiki API", c.API)
+	}
+	return &g, nil
 }
 
 // TokenOf fetches a token of kind (csrf, login, ...).

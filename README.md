@@ -3,7 +3,7 @@
 `mw` is MediaWiki on the command line. It logs in to wikis, reads and edits pages and makes Action API requests, in the style of the GitHub CLI (`gh`).
 
 ```sh
-mw auth login --hostname www.mediawiki.org
+mw auth login --hostname mediawiki.org
 mw auth status
 mw page view 'Main Page'
 mw page edit 'Sandbox' --summary 'Fix typo' --file page.wiki
@@ -20,11 +20,15 @@ Or build from source with `make` (the binary is `bin/mw`) and install it with `m
 
 ## Choosing a wiki
 
-Commands that talk to a wiki take `-h, --hostname HOST` and use `https://HOST/w/api.php`. `--api URL` gives the endpoint of a wiki whose `api.php` is elsewhere; `mw auth login --api URL` remembers it for that host. Without either flag, the wiki is chosen in this order:
+Commands that talk to a wiki take `-h, --hostname HOST`. Without it, the host is chosen in this order:
 
 1. `MW_HOST`
 2. the host of the last `mw auth login`
 3. `en.wikipedia.org`
+
+mw finds the host's `api.php` itself: it tries `https://HOST/w/api.php`, then `https://HOST/api.php`, then the `EditURI` link of the main page, follows redirects (so `mediawiki.org` reaches `www.mediawiki.org`) and checks that the answer comes from MediaWiki. Like the kubectl discovery cache, the result and the site information are kept in `discovery/HOST/siteinfo.json` in the cache directory (`$XDG_CACHE_HOME/mw`, else `%LocalAppData%\mw` on Windows, else `~/.cache/mw`) for 24 hours, and dropped when the API answers 404. Deleting the directory is always safe.
+
+`--api URL` names the endpoint directly; `mw auth login --api URL` stores it in `hosts.yml` for that host, and then no discovery is done for it.
 
 ## Authentication
 

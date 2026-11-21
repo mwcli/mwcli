@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/zetaoss/mwcli/api"
 	"github.com/zetaoss/mwcli/internal/config"
+	"github.com/zetaoss/mwcli/internal/discovery"
 	"github.com/zetaoss/mwcli/pkg/iostreams"
 )
 
@@ -16,12 +18,16 @@ import (
 type Factory struct {
 	IOStreams *iostreams.IOStreams
 	Config    func() (*config.Config, error)
+	// Discovery finds the api.php of hosts without a configured one; nil means /w/api.php.
+	Discovery *discovery.Cache
+
+	cached []string
 }
 
 // New returns the factory for the running process.
 func New() *Factory {
 	var cached *config.Config
-	f := &Factory{IOStreams: iostreams.System()}
+	f := &Factory{IOStreams: iostreams.System(), Discovery: discovery.New()}
 	f.Config = func() (*config.Config, error) {
 		if cached != nil {
 			return cached, nil
@@ -46,11 +52,22 @@ const TokenEnv = "MW_TOKEN"
 type Target struct {
 	Host string
 	API  string
+	// Site is what discovery knows about the wiki, when it was used.
+	Site *discovery.Site
+}
+
+// PageURL returns the URL of an index.php page of the target.
+func (t Target) PageURL(title string) string {
+	if t.Site != nil {
+		return t.Site.PageURL(title)
+	}
+	return (&discovery.Site{API: t.API}).PageURL(title)
 }
 
 // Resolve picks the wiki: --api, then --hostname, MW_HOST, the default host
-// set by the last login, and finally en.wikipedia.org.
-func Resolve(cfg *config.Config, hostname, apiURL string) (Target, error) {
+// set by the last login, and finally en.wikipedia.org. The API is --api, the
+// api of the host in hosts.yml, or the one discovery finds.
+func (f *Factory) Resolve(cfg *config.Config, hostname, apiURL string) (Target, error) {
 	if apiURL != "" {
 		host, err := config.HostOf(apiURL)
 		if err != nil {
@@ -61,17 +78,52 @@ func Resolve(cfg *config.Config, hostname, apiURL string) (Target, error) {
 		}
 		return Target{Host: host, API: apiURL}, nil
 	}
-	host := hostname
-	if host == "" {
-		host = os.Getenv("MW_HOST")
+	host := HostName(cfg, hostname)
+	api, site := f.APIFor(cfg, host)
+	return Target{Host: host, API: api, Site: site}, nil
+}
+
+// HostName picks the host: --hostname, MW_HOST, the default host, en.wikipedia.org.
+func HostName(cfg *config.Config, hostname string) string {
+	for _, h := range []string{hostname, os.Getenv("MW_HOST"), cfg.DefaultHost} {
+		if h != "" {
+			return h
+		}
 	}
-	if host == "" {
-		host = cfg.DefaultHost
+	return config.DefaultHost
+}
+
+// APIFor returns the api.php of host: hosts.yml, else discovery, else /w/api.php.
+func (f *Factory) APIFor(cfg *config.Config, host string) (string, *discovery.Site) {
+	if h, ok := cfg.Hosts[host]; ok && h.API != "" {
+		return h.API, nil
 	}
-	if host == "" {
-		host = config.DefaultHost
+	if f.Discovery == nil {
+		return config.DefaultAPI(host), nil
 	}
-	return Target{Host: host, API: cfg.API(host)}, nil
+	if s, ok := f.Discovery.Lookup(host); ok {
+		f.cached = append(f.cached, host)
+		return s.API, s
+	}
+	s, err := f.Discovery.Site(host)
+	if err != nil {
+		return config.DefaultAPI(host), nil
+	}
+	return s.API, s
+}
+
+// Forget drops cached discovery results when err suggests the API moved.
+func (f *Factory) Forget(err error) {
+	var he *api.HTTPError
+	if f.Discovery == nil || err == nil {
+		return
+	}
+	if (errors.As(err, &he) && (strings.HasPrefix(he.Status, "404") || strings.HasPrefix(he.Status, "410"))) ||
+		strings.Contains(err.Error(), "decode API response") {
+		for _, h := range f.cached {
+			f.Discovery.Invalidate(h)
+		}
+	}
 }
 
 // AuthSource says where the credentials of a client came from.

@@ -35,7 +35,7 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := cmdutil.Resolve(cfg, hostname, apiURL)
+			t, err := f.Resolve(cfg, hostname, apiURL)
 			if err != nil {
 				return err
 			}
@@ -88,7 +88,7 @@ func newCmdEdit(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := cmdutil.Resolve(cfg, hostname, apiURL)
+			t, err := f.Resolve(cfg, hostname, apiURL)
 			if err != nil {
 				return err
 			}
