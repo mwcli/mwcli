@@ -7,8 +7,7 @@ mw
 │   ├── logout  [-h HOST] [-u USER]
 │   ├── status  [-h HOST] [-a] [-t]
 │   ├── switch  [-h HOST] [-u USER]
-│   ├── token   [-h HOST] [-u USER]
-│   └── can-i   [-h HOST] [--api URL] [-q] (ACTION [TITLE] | --list)
+│   └── token   [-h HOST] [-u USER]
 ├── page
 │   ├── view    [-h HOST] [--api URL] TITLE
 │   └── edit    [-h HOST] [--api URL] [-s SUMMARY] (--text WIKITEXT | -F FILE) TITLE

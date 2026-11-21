@@ -200,7 +200,7 @@ func listRights(rights []string) string {
 	r := append([]string(nil), rights...)
 	sort.Strings(r)
 	if len(r) > maxRights {
-		return fmt.Sprintf("%s, … (%d; see mw auth can-i --list)", strings.Join(r[:maxRights], ", "), len(r))
+		return fmt.Sprintf("%s, … (%d; list all with mw api action=query meta=userinfo uiprop=rights)", strings.Join(r[:maxRights], ", "), len(r))
 	}
 	return fmt.Sprintf("%s (%d)", strings.Join(r, ", "), len(r))
 }

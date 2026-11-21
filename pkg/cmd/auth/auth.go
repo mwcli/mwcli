@@ -17,7 +17,7 @@ func NewCmdAuth(f *cmdutil.Factory) *cobra.Command {
 		Use:   "auth <command>",
 		Short: "Authenticate mw with a wiki",
 		Long: heredoc.Doc(`
-			Log in to wikis, switch between accounts and check what a login may do.
+			Log in to wikis, switch between accounts and see what each login may do.
 
 			Credentials are stored per host in hosts.yml in the mw configuration directory.
 			Setting MW_TOKEN uses that OAuth 2 access token instead of stored credentials.
@@ -28,7 +28,6 @@ func NewCmdAuth(f *cmdutil.Factory) *cobra.Command {
 	cmd.AddCommand(newCmdStatus(f))
 	cmd.AddCommand(newCmdSwitch(f))
 	cmd.AddCommand(newCmdToken(f))
-	cmd.AddCommand(newCmdCanI(f))
 	return cmd
 }
 

@@ -45,12 +45,6 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"revisions": []any{map[string]any{"slots": map[string]any{"main": map[string]string{"content": "Hello"}}}}}}}})
-	case p("intestactions") != "":
-		actions := map[string]any{p("intestactions"): []any{}}
-		if p("intestactions") == "delete" {
-			actions["delete"] = []any{map[string]string{"code": "permissiondenied", "text": "admins only"}}
-		}
-		send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"actions": actions}}}})
 	case p("action") == "edit":
 		if p("assert") != "user" || !authed {
 			send(map[string]any{"error": map[string]string{"code": "assertuserfailed", "info": "not logged in"}})
@@ -166,38 +160,6 @@ func TestEnvToken(t *testing.T) {
 	out, _, _ := e.run("", "auth", "status", "--active")
 	assert.Contains(t, out, "account Jmnote (MW_TOKEN)")
 	assert.NotContains(t, out, "Old")
-}
-
-func TestCanI(t *testing.T) {
-	e := newEnv(t)
-	e.login()
-	out, _, code := e.run("", "auth", "can-i", "edit")
-	assert.Equal(t, 0, code)
-	assert.True(t, strings.HasPrefix(out, "yes"))
-
-	out, _, code = e.run("", "auth", "can-i", "create")
-	assert.Equal(t, 1, code)
-	assert.True(t, strings.HasPrefix(out, "no"))
-
-	out, _, code = e.run("", "auth", "can-i", "delete", "Sandbox")
-	assert.Equal(t, 1, code)
-	assert.Contains(t, out, "permissiondenied: admins only")
-
-	out, _, code = e.run("", "auth", "can-i", "-q", "edit", "Sandbox")
-	assert.Equal(t, 0, code)
-	assert.Empty(t, out)
-
-	_, _, code = e.run("", "auth", "can-i", "fly")
-	assert.Equal(t, 2, code)
-
-	out, _, code = e.run("", "auth", "can-i", "--list")
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "read\nedit\nminoredit\n", out)
-
-	closed := httptest.NewServer(http.NotFoundHandler())
-	closed.Close()
-	_, _, code = e.run("", "auth", "can-i", "edit", "--api", closed.URL+"/w/api.php")
-	assert.Equal(t, 2, code)
 }
 
 func TestPageViewEdit(t *testing.T) {

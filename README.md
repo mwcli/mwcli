@@ -7,7 +7,6 @@ mw auth login --hostname zetawiki.com
 mw auth status
 mw page view 'Main Page'
 mw page edit 'Sandbox' --summary 'Fix typo' --file page.wiki
-mw auth can-i delete 'Sandbox'
 mw api action=query meta=userinfo uiprop=rights
 ```
 
@@ -37,7 +36,11 @@ Credentials are stored per host and account in `hosts.yml` in the configuration 
 - `mw auth switch` changes the active account of a host; `mw auth logout` removes one; `mw auth token` prints a token.
 - `MW_TOKEN` uses that access token instead of stored credentials, for scripts and CI.
 
-`mw auth can-i ACTION [TITLE]` prints `yes` or `no` and exits 0 or 1, like `kubectl auth can-i`, so scripts can check before acting; `-q` prints nothing. With a title it asks the wiki whether the action would succeed on that page (`intestactions`), including protection and blocks. A failed check exits 2, so it is never mistaken for `no`. `--list` prints the rights of the login.
+To check one page, including protection and blocks, ask the wiki with `mw api`. `"actions":{"edit":true}` means the edit would succeed; add `intestactionsdetail=full` to get the reasons when it would not:
+
+```sh
+mw api action=query prop=info intestactions=edit titles=Sandbox
+```
 
 ## API requests
 
@@ -45,9 +48,9 @@ Credentials are stored per host and account in `hosts.yml` in the configuration 
 
 ## Exit status
 
-- 0: success, or `yes` from `auth can-i`
-- 1: the command failed, or `no` from `auth can-i`
-- 2: wrong usage; for `auth can-i`, any failure to decide
+- 0: success
+- 1: the command failed, or the API reported an error
+- 2: wrong usage
 - 4: a login is required
 
 See [docs/command.md](docs/command.md) for the command tree.

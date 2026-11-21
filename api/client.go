@@ -289,48 +289,11 @@ func (c *Client) Edit(title, text, summary string) (string, error) {
 	return result.Edit.Title, nil
 }
 
-// TestAction reports why action on title would fail; no reasons means it would succeed.
-func (c *Client) TestAction(action, title string) ([]string, error) {
-	var result struct {
-		Query struct {
-			Pages []struct {
-				Invalid bool `json:"invalid"`
-				Actions map[string][]struct {
-					Code string `json:"code"`
-					Text string `json:"text"`
-				} `json:"actions"`
-			} `json:"pages"`
-		} `json:"query"`
-	}
-	params := url.Values{"action": {"query"}, "prop": {"info"}, "intestactions": {action}, "intestactionsdetail": {"full"}, "titles": {title}, "errorformat": {"plaintext"}}
-	if err := c.request(http.MethodGet, params, &result); err != nil {
-		return nil, err
-	}
-	if len(result.Query.Pages) != 1 || result.Query.Pages[0].Invalid {
-		return nil, fmt.Errorf("invalid title %q", title)
-	}
-	var reasons []string
-	for _, e := range result.Query.Pages[0].Actions[action] {
-		reasons = append(reasons, e.Code+": "+e.Text)
-	}
-	return reasons, nil
-}
-
-// Actions maps the actions of `mw auth can-i` to the user right they need.
+// Actions maps the actions `mw auth status` summarizes to the user right they need.
 var Actions = []struct{ Name, Right string }{
 	{"edit", "edit"},
 	{"create", "createpage"},
 	{"move", "move"},
 	{"delete", "delete"},
 	{"protect", "protect"},
-}
-
-// RightFor returns the right needed for action.
-func RightFor(action string) (string, bool) {
-	for _, a := range Actions {
-		if a.Name == action {
-			return a.Right, true
-		}
-	}
-	return "", false
 }
