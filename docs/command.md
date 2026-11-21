@@ -3,14 +3,47 @@
 ```text
 mw
 ├── auth
-│   ├── status [--api URL]
-│   ├── login [--api URL] [--username USER | --token]
-│   └── can-i [--api URL] [--quiet] (ACTION [TITLE] | --list)
-└── page
-    ├── get [--api URL] TITLE
-    └── edit [--api URL] [--summary TEXT] (--text WIKITEXT | --file PATH) TITLE
+│   ├── login   [-h HOST] [--api URL] [--with-token | -u USER]
+│   ├── logout  [-h HOST] [-u USER]
+│   ├── status  [-h HOST] [-a] [-t]
+│   ├── switch  [-h HOST] [-u USER]
+│   └── token   [-h HOST] [-u USER]
+├── page
+│   ├── view    [-h HOST] [--api URL] TITLE
+│   └── edit    [-h HOST] [--api URL] [-s SUMMARY] (--text WIKITEXT | -F FILE) TITLE
+├── api         [-h HOST] [--api URL] [-X METHOD] [-f key=value] [-F key=@file] [key=value ...]
+├── completion  SHELL
+└── version
 ```
 
-`auth status` checks the saved login session or token. `auth can-i` prints yes or no (exit 0 or 1, 2 when it cannot decide) for edit, create, move, delete or protect, on a given page when a title is given. `auth login` prompts for credentials and saves the session; with `--token` it saves an OAuth 2 access token instead. `page get` prints page wikitext; `page edit` replaces it and accepts an optional edit summary.
+As in `gh`, `-h` is `--hostname`; help is `--help`. Every command prints its own help with `--help`.
 
-`--api` selects a wiki's `api.php` endpoint. `MWTOOL_API` and `MWTOOL_USERNAME` provide defaults. `MWTOOL_PASSWORD` can supply the password and `MWTOOL_TOKEN` the access token for non-interactive login; otherwise the terminal prompts without echo.
+## Environment
+
+| Variable | Use |
+| --- | --- |
+| `MW_HOST` | Default host when `--hostname` is not given |
+| `MW_TOKEN` | OAuth 2 access token used instead of stored credentials |
+| `MW_PASSWORD` | Password for `mw auth login --username` without a prompt |
+| `MW_CONFIG_DIR` | Configuration directory (default `~/.config/mw`) |
+
+## hosts.yml
+
+```yaml
+zetawiki.com:
+    user: Alice
+    users:
+        Alice:
+            auth: oauth2
+            oauth_token: ...
+wiki.example.org:
+    api: https://wiki.example.org/api.php
+    user: Ann
+    users:
+        Ann:
+            auth: session
+            cookies:
+                examplewiki_session: ...
+```
+
+`api` is stored only when it differs from `https://HOST/w/api.php`. `user` is the active account. `config.yml` in the same directory holds `default_host`, set by the last login.

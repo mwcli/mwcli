@@ -1,40 +1,56 @@
-# mwtool
+# mwcli
 
-`mwtool` is a command line client for reading and editing MediaWiki pages. The first version uses the MediaWiki Action API directly.
-
-## Commands
+`mw` is MediaWiki on the command line. It logs in to wikis, reads and edits pages and makes Action API requests, in the style of the GitHub CLI (`gh`).
 
 ```sh
+mw auth login --hostname zetawiki.com
 mw auth status
-mw auth login [--api https://en.wikipedia.org/w/api.php] [--username USER]
-mw auth login --token [--api https://en.wikipedia.org/w/api.php]
-mw auth can-i [--quiet] create 'Page title'
-mw auth can-i --list
-mw page get 'Page title'
-mw page edit 'Page title' --summary 'Fix typo' --file page.wiki
-mw page edit 'Page title' --summary 'Fix typo' --text 'Wikitext'
+mw page view 'Main Page'
+mw page edit 'Sandbox' --summary 'Fix typo' --file page.wiki
+mw api action=query meta=userinfo uiprop=rights
 ```
 
-Build the executable as `mw` with `go build -o mw .`. `MWTOOL_API` and `MWTOOL_USERNAME` can provide defaults. The default API endpoint is English Wikipedia. OAuth access tokens are wiki-specific, so use `--api` or `MWTOOL_API` to select the wiki that issued the token. `page get` can read public pages without logging in.
-
-Login uses MediaWiki's `clientlogin` Action API flow. `mw auth status` checks the saved session against the wiki and reports the logged-in username. The session cookie jar is written to the user config directory under `mwtool/profile.json` with owner-only permissions. Treat this file as a credential. Password input uses a no-echo terminal prompt; set `MWTOOL_PASSWORD` for non-interactive login. Extra login steps such as two-factor authentication are not implemented yet.
-
-`mw auth login --token` uses an OAuth 2 owner-only access token instead of a password. Create one on the wiki (Special:OAuthConsumerRegistration/propose/oauth2, "This consumer is for use only by …") with the grants the tool needs, such as basic and editpage. The token is read with a no-echo prompt or from `MWTOOL_TOKEN`, checked against the wiki, and saved in `profile.json`. Requests then send it as `Authorization: Bearer`. When `MWTOOL_TOKEN` is set, it is used instead of the saved profile. Owner-only tokens do not expire; revoke them at Special:OAuthManageMyGrants.
-
-`mw auth can-i ACTION [TITLE]` prints `yes` or `no` and exits 0 or 1, like `kubectl auth can-i`, so scripts can check before acting; `-q`/`--quiet` prints nothing. Unlike kubectl, a failed check (bad token, network or API error, wrong usage) exits 2, so it is never mistaken for `no`. ACTION is edit, create, move, delete or protect. With a title it asks the wiki whether that action would succeed on that page (`intestactions`), including protection and blocks, and prints the reasons when it would not. Without a title it only checks the matching user right. `--list` prints the rights of the current login; with a token these are already limited to its grants.
-
-Edits are submitted with an edit summary and the current CSRF token. Use `--file` for multiline page text.
-
-## Development
-
-Requires Go 1.27 or newer.
+## Installation
 
 ```sh
-go build -o mw .
+go install github.com/zetaoss/mwcli/cmd/mw@latest
 ```
+
+Or build from source with `make` (the binary is `bin/mw`) and install it with `make install` (`prefix=/usr/local` by default). Building requires Go 1.27 or newer. `mw --version` shows the version; releases are listed at <https://github.com/zetaoss/mwcli/releases>.
+
+## Choosing a wiki
+
+Commands that talk to a wiki take `-h, --hostname HOST` and use `https://HOST/w/api.php`. `--api URL` gives the endpoint of a wiki whose `api.php` is elsewhere; `mw auth login --api URL` remembers it for that host. Without either flag, the wiki is chosen in this order:
+
+1. `MW_HOST`
+2. the host of the last `mw auth login`
+3. `en.wikipedia.org`
+
+## Authentication
+
+`mw auth login` prefers an owner-only OAuth 2 access token. Create one on the wiki at `Special:OAuthConsumerRegistration/propose/oauth2` ("This consumer is for use only by …") with the grants the tool needs, such as basic and editpage. Owner-only tokens do not expire; revoke them at `Special:OAuthManageMyGrants`. `--with-token` reads the token from standard input. `--username` logs in with a password through the `clientlogin` flow instead, read from `MW_PASSWORD` or a no-echo prompt; extra steps such as two-factor authentication are not supported.
+
+Credentials are stored per host and account in `hosts.yml` in the configuration directory, with owner-only permissions. Treat this file as a credential. The directory is `MW_CONFIG_DIR`, else `$XDG_CONFIG_HOME/mw`, else `%AppData%\mw` on Windows, else `~/.config/mw`. A login saved by the earlier `mwtool` (`mwtool/profile.json`) is moved there on first use.
+
+- `mw auth status` checks every stored account and shows its API, auth method, a masked token, which of edit, create, move, delete and protect it may do, and its rights.
+- `mw auth switch` changes the active account of a host; `mw auth logout` removes one; `mw auth token` prints a token.
+- `MW_TOKEN` uses that access token instead of stored credentials, for scripts and CI.
+
+To check one page, including protection and blocks, ask the wiki with `mw api`. `"actions":{"edit":true}` means the edit would succeed; add `intestactionsdetail=full` to get the reasons when it would not:
+
+```sh
+mw api action=query prop=info intestactions=edit titles=Sandbox
+```
+
+## API requests
+
+`mw api` sends `key=value` arguments (or `-f key=value`) to `api.php` and prints the response, indented on a terminal. `-F key=@file` reads a value from a file (`@-` for standard input). `format=json` and `formatversion=2` are added unless given. With `-X POST` and no `token`, a CSRF token is fetched and added.
 
 ## Exit status
 
-- 0: success, or `yes` from `auth can-i`
-- 1: the command failed (API error, not logged in, missing page), or `no` from `auth can-i`
-- 2: wrong usage; for `auth can-i`, any failure to decide
+- 0: success
+- 1: the command failed, or the API reported an error
+- 2: wrong usage
+- 4: a login is required
+
+See [docs/command.md](docs/command.md) for the command tree.
