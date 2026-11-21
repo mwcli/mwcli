@@ -131,7 +131,7 @@ func TestLoginStatusTokenLogout(t *testing.T) {
 	require.Equal(t, 0, code, stderr)
 	assert.Contains(t, out, "✓ Logged in to "+e.host+" account Jmnote")
 	assert.Contains(t, out, "- Active account: true")
-	assert.Contains(t, out, "- Token: good********************************\n")
+	assert.Contains(t, out, "- Token: ********************************oken\n")
 	assert.NotContains(t, out, goodToken)
 	assert.Contains(t, out, "- Can: edit · Cannot: create, move, delete, protect")
 	assert.Contains(t, out, "- Rights: edit, minoredit, read (3)")

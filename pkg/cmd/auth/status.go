@@ -152,8 +152,8 @@ func printEntry(w io.Writer, ios *iostreams.IOStreams, e entry, showToken bool) 
 	fmt.Fprintf(w, "  - API: %s\n", e.api)
 	if e.account.Auth == config.AuthOAuth2 {
 		fmt.Fprintf(w, "  - Auth: OAuth 2 access token\n")
-		claims, isJWT := parseJWT(e.account.OAuthToken)
-		fmt.Fprintf(w, "  - Token: %s%s\n", displayToken(e.account.OAuthToken, isJWT, showToken), claims.describe())
+		claims, _ := parseJWT(e.account.OAuthToken)
+		fmt.Fprintf(w, "  - Token: %s%s\n", displayToken(e.account.OAuthToken, showToken), claims.describe())
 		if len(claims.Scopes) > 0 {
 			fmt.Fprintf(w, "  - Grants: %s\n", strings.Join(claims.Scopes, ", "))
 		}
@@ -175,19 +175,16 @@ func isInvalidToken(err error) bool {
 
 const tokenMask = "********************************"
 
-// displayToken masks a token: a JWT starts the same for every token, so its
-// last 4 characters are shown, as `aws configure list` does; other tokens keep
-// their first 4, which may name the token type, as gh does.
-func displayToken(token string, isJWT, show bool) string {
+// displayToken masks a token to its last 4 characters, as `aws configure list`
+// does. MediaWiki OAuth 2 tokens are JWTs, which all start the same.
+func displayToken(token string, show bool) string {
 	switch {
 	case show:
 		return token
 	case len(token) <= 8:
 		return tokenMask
-	case isJWT:
-		return tokenMask + token[len(token)-4:]
 	}
-	return token[:4] + tokenMask
+	return tokenMask + token[len(token)-4:]
 }
 
 // jwtClaims are the claims of a MediaWiki OAuth 2 access token shown by status.
