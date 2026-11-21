@@ -3,7 +3,7 @@
 `mw` is MediaWiki on the command line. It logs in to wikis, reads and edits pages and makes Action API requests, in the style of the GitHub CLI (`gh`).
 
 ```sh
-mw auth login --hostname zetawiki.com
+mw auth login --hostname www.mediawiki.org
 mw auth status
 mw page view 'Main Page'
 mw page edit 'Sandbox' --summary 'Fix typo' --file page.wiki

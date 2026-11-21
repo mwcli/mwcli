@@ -30,7 +30,7 @@ As in `gh`, `-h` is `--hostname`; help is `--help`. Every command prints its own
 ## hosts.yml
 
 ```yaml
-zetawiki.com:
+www.mediawiki.org:
     user: Alice
     users:
         Alice:

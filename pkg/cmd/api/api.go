@@ -43,7 +43,7 @@ func NewCmdApi(f *cmdutil.Factory) *cobra.Command {
 		`),
 		Example: heredoc.Doc(`
 			$ mw api action=query meta=userinfo uiprop=rights
-			$ mw api -h zetawiki.com action=parse page=대문 prop=wikitext
+			$ mw api -h www.mediawiki.org action=parse page=MediaWiki prop=wikitext
 			$ mw api -X POST action=purge titles=Sandbox
 			$ mw api -X POST action=edit title=Sandbox -F text=@page.wiki summary=update
 		`),

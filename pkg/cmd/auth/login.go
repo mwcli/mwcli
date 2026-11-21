@@ -41,10 +41,10 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 		`),
 		Example: heredoc.Doc(`
 			# interactive
-			$ mw auth login --hostname zetawiki.com
+			$ mw auth login --hostname www.mediawiki.org
 
 			# token from a file
-			$ mw auth login --hostname zetawiki.com --with-token < token.txt
+			$ mw auth login --hostname www.mediawiki.org --with-token < token.txt
 
 			# a wiki whose API is not at /w/api.php
 			$ mw auth login --api https://wiki.example.org/api.php
