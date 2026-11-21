@@ -1,6 +1,8 @@
 # mwcli
 
-`mw` is MediaWiki on the command line. It logs in to wikis, reads and edits pages and makes Action API requests, in the style of the GitHub CLI (`gh`).
+**Unofficial but universal MediaWiki CLI. Like `gh`, but for MediaWiki.**
+
+`mw` is MediaWiki on the command line. It logs in to any MediaWiki wiki, reads and edits pages and makes Action API requests.
 
 ```sh
 mw auth login --hostname mediawiki.org
