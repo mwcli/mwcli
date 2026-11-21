@@ -1,0 +1,51 @@
+# Builds the mw binaries and the GitHub release for a v* tag.
+# The release workflow creates the tag from VERSION and runs this.
+version: 2
+
+project_name: mw
+
+builds:
+  - main: ./cmd/mw
+    binary: mw
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/zetaoss/mwcli/internal/build.Version={{ .Version }}
+      - -X github.com/zetaoss/mwcli/internal/build.Date={{ .CommitDate }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - name_template: "mw_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github-native
+
+release:
+  # Published by the workflow after every upload, so a failed run can resume.
+  draft: true
+  prerelease: auto
+  use_existing_draft: true
+  replace_existing_artifacts: true
+  footer: |
+    ## Install
+
+    ```sh
+    go install github.com/zetaoss/mwcli/cmd/mw@v{{ .Version }}
+    ```
+
+    or download an archive below.

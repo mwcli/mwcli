@@ -1,0 +1,95 @@
+name: Release
+
+# A change to VERSION on main releases that version. The tag vX.Y.Z is created
+# from VERSION, GoReleaser uploads the binaries to a draft release, and the
+# draft is published last. Re-running the workflow (or running it by hand)
+# resumes a release whose tag exists but whose release is not published.
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    # branches: [main] filters only push; a manual run from another branch must
+    # not tag or release commits that are not on main.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - id: version
+        run: |
+          out=$(go run ./scripts/check-version)
+          echo "$out"
+          echo "$out" >> "$GITHUB_OUTPUT"
+      - id: state
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          TAGGED: ${{ steps.version.outputs.tagged }}
+        run: |
+          if [[ $TAGGED == false ]]; then
+            state=new
+          elif [[ $(gh release view "$TAG" --json isDraft -q .isDraft 2>/dev/null) == false ]]; then
+            state=done
+          else
+            state=resume
+          fi
+          echo "state=$state" | tee -a "$GITHUB_OUTPUT"
+      - if: steps.state.outputs.state == 'new'
+        run: make test
+      - if: steps.state.outputs.state == 'new'
+        name: Tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "mw $TAG"
+          git push origin "$TAG"
+      - if: steps.state.outputs.state == 'resume'
+        name: Check out the existing tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: git checkout --detach "$TAG"
+      - if: steps.state.outputs.state != 'done'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - if: steps.state.outputs.state != 'done'
+        name: Publish
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          if [[ $PRERELEASE == true ]]; then
+            gh release edit "$TAG" --draft=false --prerelease --latest=false
+            exit
+          fi
+          # A release resumed after a newer one was published must not become latest.
+          latest=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1000 --json tagName -q '.[].tagName' |
+            go run ./scripts/check-version -latest)
+          echo "$latest"
+          gh release edit "$TAG" --draft=false --prerelease=false --latest="${latest#latest=}"
