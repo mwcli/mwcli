@@ -4,6 +4,7 @@
 //	version=X.Y.Z
 //	tag=vX.Y.Z
 //	tagged=true|false
+//	prerelease=true|false
 //
 // VERSION must be a semantic version without a "v" prefix. Unless its tag
 // already exists, it must be greater than every v* tag by SemVer precedence.
@@ -34,7 +35,7 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	fmt.Printf("version=%s\ntag=v%s\ntagged=%t\n", version, version, tagged)
+	fmt.Printf("version=%s\ntag=v%s\ntagged=%t\nprerelease=%t\n", version, version, tagged, isPrerelease(version))
 }
 
 // check reports whether the tag of version exists, or an error when version is
@@ -57,6 +58,11 @@ func check(version string, tags []string) (bool, error) {
 		return false, fmt.Errorf("VERSION %s is not greater than the latest tag %s", version, latest)
 	}
 	return false, nil
+}
+
+// isPrerelease reports whether version has a SemVer prerelease part, as in 0.3.0-rc.1.
+func isPrerelease(version string) bool {
+	return semver.Prerelease("v"+version) != ""
 }
 
 func fail(err error) {

@@ -35,6 +35,11 @@ func TestCheck(t *testing.T) {
 		assert.NoError(t, err, c.version)
 		assert.Equal(t, c.tagged, tagged, c.version)
 	}
+	assert.True(t, isPrerelease("0.2.1-rc.1"))
+	assert.True(t, isPrerelease("1.0.0-beta+build.5"))
+	assert.False(t, isPrerelease("0.2.1"))
+	assert.False(t, isPrerelease("1.0.0+build.5"))
+
 	tagged, err := check("0.1.0", nil)
 	assert.NoError(t, err)
 	assert.False(t, tagged)

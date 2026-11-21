@@ -79,4 +79,10 @@ jobs:
         name: Publish
         env:
           TAG: ${{ steps.version.outputs.tag }}
-        run: gh release edit "$TAG" --draft=false --latest
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          if [[ $PRERELEASE == true ]]; then
+            gh release edit "$TAG" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$TAG" --draft=false --prerelease=false --latest
+          fi

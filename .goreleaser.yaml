@@ -38,6 +38,7 @@ changelog:
 release:
   # Published by the workflow after every upload, so a failed run can resume.
   draft: true
+  prerelease: auto
   use_existing_draft: true
   replace_existing_artifacts: true
   footer: |
