@@ -1,11 +1,14 @@
 package auth
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/zetaoss/mwcli/api"
@@ -149,7 +152,11 @@ func printEntry(w io.Writer, ios *iostreams.IOStreams, e entry, showToken bool) 
 	fmt.Fprintf(w, "  - API: %s\n", e.api)
 	if e.account.Auth == config.AuthOAuth2 {
 		fmt.Fprintf(w, "  - Auth: OAuth 2 access token\n")
-		fmt.Fprintf(w, "  - Token: %s\n", displayToken(e.account.OAuthToken, showToken))
+		claims, _ := parseJWT(e.account.OAuthToken)
+		fmt.Fprintf(w, "  - Token: %s%s\n", displayToken(e.account.OAuthToken, showToken), claims.describe())
+		if len(claims.Scopes) > 0 {
+			fmt.Fprintf(w, "  - Grants: %s\n", strings.Join(claims.Scopes, ", "))
+		}
 	} else {
 		fmt.Fprintf(w, "  - Auth: password session\n")
 	}
@@ -166,14 +173,75 @@ func isInvalidToken(err error) bool {
 		(errors.As(err, &he) && strings.HasPrefix(he.Status, "401"))
 }
 
+const tokenMask = "********************************"
+
+// displayToken masks a token to its last 4 characters, as `aws configure list`
+// does. MediaWiki OAuth 2 tokens are JWTs, which all start the same.
 func displayToken(token string, show bool) string {
-	if show {
+	switch {
+	case show:
 		return token
+	case len(token) <= 8:
+		return tokenMask
 	}
-	if len(token) <= 4 {
-		return strings.Repeat("*", len(token))
+	return tokenMask + token[len(token)-4:]
+}
+
+// jwtClaims are the claims of a MediaWiki OAuth 2 access token shown by status.
+// They are read without verifying the signature, only for display.
+type jwtClaims struct {
+	Audience audience `json:"aud"`
+	IssuedAt float64  `json:"iat"`
+	Scopes   []string `json:"scopes"`
+}
+
+type audience string
+
+func (a *audience) UnmarshalJSON(b []byte) error {
+	var one string
+	if json.Unmarshal(b, &one) == nil {
+		*a = audience(one)
+		return nil
 	}
-	return token[:4] + strings.Repeat("*", min(len(token)-4, 32))
+	var many []string
+	if err := json.Unmarshal(b, &many); err != nil {
+		return err
+	}
+	if len(many) > 0 {
+		*a = audience(many[0])
+	}
+	return nil
+}
+
+func parseJWT(token string) (jwtClaims, bool) {
+	var c jwtClaims
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return c, false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
+	if err != nil || json.Unmarshal(payload, &c) != nil {
+		return jwtClaims{}, false
+	}
+	return c, true
+}
+
+func (c jwtClaims) describe() string {
+	var parts []string
+	if c.Audience != "" {
+		client := string(c.Audience)
+		if len(client) > 8 {
+			client = client[:8]
+		}
+		parts = append(parts, "client "+client)
+	}
+	if c.IssuedAt > 0 {
+		parts = append(parts, "issued "+time.Unix(int64(c.IssuedAt), 0).UTC().Format("2006-01-02"))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, ", ") + ")"
 }
 
 func summarize(rights []string) (can, cannot []string) {

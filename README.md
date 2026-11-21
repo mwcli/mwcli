@@ -44,7 +44,9 @@ mw page view -h commons 'Main Page'
 
 Credentials are stored per host and account in `hosts.yml` in the configuration directory, with owner-only permissions. Treat this file as a credential. The directory is `MW_CONFIG_DIR`, else `$XDG_CONFIG_HOME/mw`, else `%AppData%\mw` on Windows, else `~/.config/mw`. A login saved by the earlier `mwtool` (`mwtool/profile.json`) is moved there on first use.
 
-- `mw auth status` checks every stored account and shows its API, auth method, a masked token, which of edit, create, move, delete and protect it may do, and its rights.
+- `mw auth status` checks every stored account and shows its API, auth method, masked token, which of edit, create, move, delete and protect it may do, and its rights. `-t` shows the whole token.
+  - The token shows only its last 4 characters; one of 8 characters or fewer is masked entirely.
+  - MediaWiki's OAuth 2 tokens are JWTs. When the token carries the claims, its client (first 8 characters of `aud`), issue date (`iat`) and OAuth grants (`scopes`) are shown too. They are decoded for display only, not verified.
 - `mw auth switch` changes the active account of a host; `mw auth logout` removes one; `mw auth token` prints a token.
 - `MW_TOKEN` uses that access token instead of stored credentials, for scripts and CI.
 

@@ -2,6 +2,7 @@ package root
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -21,13 +22,14 @@ import (
 const goodToken = "good-token"
 
 type fakeWiki struct {
-	edits []map[string]string
+	edits      []map[string]string
+	extraToken string
 }
 
 func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	p := func(k string) string { return r.Form.Get(k) }
-	authed := r.Header.Get("Authorization") == "Bearer "+goodToken
+	authed := r.Header.Get("Authorization") == "Bearer "+goodToken || (w.extraToken != "" && r.Header.Get("Authorization") == "Bearer "+w.extraToken)
 	send := func(v any) { rw.Header().Set("Content-Type", "application/json"); _ = json.NewEncoder(rw).Encode(v) }
 	if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") && !authed {
 		send(map[string]any{"error": map[string]string{"code": "mwoauth-invalid-authorization", "info": "Invalid access token"}})
@@ -129,7 +131,7 @@ func TestLoginStatusTokenLogout(t *testing.T) {
 	require.Equal(t, 0, code, stderr)
 	assert.Contains(t, out, "✓ Logged in to "+e.host+" account Jmnote")
 	assert.Contains(t, out, "- Active account: true")
-	assert.Contains(t, out, "- Token: good*****")
+	assert.Contains(t, out, "- Token: ********************************oken\n")
 	assert.NotContains(t, out, goodToken)
 	assert.Contains(t, out, "- Can: edit · Cannot: create, move, delete, protect")
 	assert.Contains(t, out, "- Rights: edit, minoredit, read (3)")
@@ -287,4 +289,23 @@ func TestInterwikiPrefix(t *testing.T) {
 
 	out, _, _ := e.run("", "help", "interwiki")
 	assert.Contains(t, out, "commons        https://commons.wikimedia.org/w/api.php")
+}
+
+func TestStatusJWTToken(t *testing.T) {
+	e := newEnv(t)
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"aud":"bedd22b2b0af19db","iat":1795047176.6,"exp":33351955976,"scopes":["basic","editpage"]}`))
+	jwt := "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9." + payload + ".c2lnbmF0dXJlWXZ6"
+	cfg, _ := config.LoadDir(e.dir)
+	cfg.Login(e.host, e.api, "Jmnote", &config.Account{Auth: config.AuthOAuth2, OAuthToken: jwt})
+	require.NoError(t, cfg.Save())
+	e.wiki.extraToken = jwt
+
+	out, stderr, code := e.run("", "auth", "status")
+	require.Equal(t, 0, code, stderr+out)
+	assert.Contains(t, out, "- Token: ********************************WXZ6 (client bedd22b2, issued 2026-11-19)\n")
+	assert.Contains(t, out, "- Grants: basic, editpage\n")
+	assert.NotContains(t, out, "eyJ0")
+
+	out, _, _ = e.run("", "auth", "status", "-t")
+	assert.Contains(t, out, "- Token: "+jwt+" (client bedd22b2")
 }
