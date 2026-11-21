@@ -12,9 +12,9 @@ import (
 	"strings"
 
 	"github.com/MakeNowJust/heredoc"
+	mwapi "github.com/mwcli/mwcli/api"
+	"github.com/mwcli/mwcli/pkg/cmdutil"
 	"github.com/spf13/cobra"
-	mwapi "github.com/zetaoss/mwcli/api"
-	"github.com/zetaoss/mwcli/pkg/cmdutil"
 )
 
 type options struct {

@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mwcli/mwcli/internal/config"
+	"github.com/mwcli/mwcli/internal/discovery"
+	"github.com/mwcli/mwcli/pkg/cmdutil"
+	"github.com/mwcli/mwcli/pkg/iostreams"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/zetaoss/mwcli/internal/config"
-	"github.com/zetaoss/mwcli/internal/discovery"
-	"github.com/zetaoss/mwcli/pkg/cmdutil"
-	"github.com/zetaoss/mwcli/pkg/iostreams"
 )
 
 const goodToken = "good-token"
@@ -233,7 +233,7 @@ func TestVersion(t *testing.T) {
 	assert.True(t, strings.HasPrefix(out, "mw version "))
 	out2, _, _ := e.run("", "--version")
 	assert.Equal(t, out, out2)
-	assert.True(t, bytes.Contains([]byte(out), []byte("https://github.com/zetaoss/mwcli/releases/")))
+	assert.True(t, bytes.Contains([]byte(out), []byte("https://github.com/mwcli/mwcli/releases/")))
 }
 
 func TestDiscovery(t *testing.T) {

@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zetaoss/mwcli/api"
-	"github.com/zetaoss/mwcli/internal/build"
+	"github.com/mwcli/mwcli/api"
+	"github.com/mwcli/mwcli/internal/build"
 )
 
 // TTL is how long a discovered site stays valid.
@@ -164,7 +164,7 @@ func editURI(page string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "mw/"+build.Version+" (https://github.com/zetaoss/mwcli)")
+	req.Header.Set("User-Agent", "mw/"+build.Version+" (https://github.com/mwcli/mwcli)")
 	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
 	if err != nil {
 		return "", err

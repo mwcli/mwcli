@@ -7,12 +7,12 @@ import (
 	"os"
 	"strings"
 
+	"github.com/mwcli/mwcli/api"
+	"github.com/mwcli/mwcli/internal/config"
+	"github.com/mwcli/mwcli/internal/discovery"
+	"github.com/mwcli/mwcli/internal/interwiki"
+	"github.com/mwcli/mwcli/pkg/iostreams"
 	"github.com/spf13/cobra"
-	"github.com/zetaoss/mwcli/api"
-	"github.com/zetaoss/mwcli/internal/config"
-	"github.com/zetaoss/mwcli/internal/discovery"
-	"github.com/zetaoss/mwcli/internal/interwiki"
-	"github.com/zetaoss/mwcli/pkg/iostreams"
 )
 
 // Factory provides commands with streams and configuration.

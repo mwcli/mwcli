@@ -13,8 +13,8 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/zetaoss/mwcli/internal/build.Version={{ .Version }}
-      - -X github.com/zetaoss/mwcli/internal/build.Date={{ .CommitDate }}
+      - -X github.com/mwcli/mwcli/internal/build.Version={{ .Version }}
+      - -X github.com/mwcli/mwcli/internal/build.Date={{ .CommitDate }}
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     mod_timestamp: "{{ .CommitTimestamp }}"
@@ -45,7 +45,7 @@ release:
     ## Install
 
     ```sh
-    go install github.com/zetaoss/mwcli/cmd/mw@v{{ .Version }}
+    go install github.com/mwcli/mwcli/cmd/mw@v{{ .Version }}
     ```
 
     or download an archive below.

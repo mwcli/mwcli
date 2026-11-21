@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/zetaoss/mwcli/pkg/cmd/root"
-	"github.com/zetaoss/mwcli/pkg/cmdutil"
+	"github.com/mwcli/mwcli/pkg/cmd/root"
+	"github.com/mwcli/mwcli/pkg/cmdutil"
 )
 
 func main() {

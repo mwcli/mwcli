@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zetaoss/mwcli/internal/build"
-	"github.com/zetaoss/mwcli/internal/config"
+	"github.com/mwcli/mwcli/internal/build"
+	"github.com/mwcli/mwcli/internal/config"
 )
 
 // Client talks to one wiki's api.php.
@@ -99,7 +99,7 @@ func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "mw/"+build.Version+" (https://github.com/zetaoss/mwcli)")
+	req.Header.Set("User-Agent", "mw/"+build.Version+" (https://github.com/mwcli/mwcli)")
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}

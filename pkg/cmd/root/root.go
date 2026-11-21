@@ -6,14 +6,14 @@ import (
 	"strings"
 
 	"github.com/MakeNowJust/heredoc"
+	"github.com/mwcli/mwcli/internal/build"
+	"github.com/mwcli/mwcli/internal/interwiki"
+	apiCmd "github.com/mwcli/mwcli/pkg/cmd/api"
+	authCmd "github.com/mwcli/mwcli/pkg/cmd/auth"
+	pageCmd "github.com/mwcli/mwcli/pkg/cmd/page"
+	versionCmd "github.com/mwcli/mwcli/pkg/cmd/version"
+	"github.com/mwcli/mwcli/pkg/cmdutil"
 	"github.com/spf13/cobra"
-	"github.com/zetaoss/mwcli/internal/build"
-	"github.com/zetaoss/mwcli/internal/interwiki"
-	apiCmd "github.com/zetaoss/mwcli/pkg/cmd/api"
-	authCmd "github.com/zetaoss/mwcli/pkg/cmd/auth"
-	pageCmd "github.com/zetaoss/mwcli/pkg/cmd/page"
-	versionCmd "github.com/zetaoss/mwcli/pkg/cmd/version"
-	"github.com/zetaoss/mwcli/pkg/cmdutil"
 )
 
 // NewCmdRoot returns `mw`.

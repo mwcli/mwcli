@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"github.com/MakeNowJust/heredoc"
+	"github.com/mwcli/mwcli/api"
+	"github.com/mwcli/mwcli/internal/config"
+	"github.com/mwcli/mwcli/pkg/cmdutil"
+	"github.com/mwcli/mwcli/pkg/iostreams"
 	"github.com/spf13/cobra"
-	"github.com/zetaoss/mwcli/api"
-	"github.com/zetaoss/mwcli/internal/config"
-	"github.com/zetaoss/mwcli/pkg/cmdutil"
-	"github.com/zetaoss/mwcli/pkg/iostreams"
 )
 
 type loginOptions struct {

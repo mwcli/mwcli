@@ -1,4 +1,4 @@
-module github.com/zetaoss/mwcli
+module github.com/mwcli/mwcli
 
 go 1.27.0
 
