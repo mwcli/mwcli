@@ -10,6 +10,8 @@ mw page edit 'Sandbox' --summary 'Fix typo' --file page.wiki
 mw api action=query meta=userinfo uiprop=rights
 ```
 
+mwcli works with any MediaWiki wiki, Wikimedia wikis included. [a Wikimedia CLI](https://gitlab.wikimedia.org/repos/releng/cli), a separate tool for Wikimedia sites and services, also installs a command named `mw`; if you use both, run that one as `wm`, a name it supports.
+
 ## Installation
 
 ```sh
