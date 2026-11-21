@@ -3,9 +3,9 @@ package auth
 import (
 	"fmt"
 
+	"github.com/mwcli/mwcli/internal/config"
+	"github.com/mwcli/mwcli/pkg/cmdutil"
 	"github.com/spf13/cobra"
-	"github.com/zetaoss/mwcli/internal/config"
-	"github.com/zetaoss/mwcli/pkg/cmdutil"
 )
 
 func newCmdToken(f *cmdutil.Factory) *cobra.Command {

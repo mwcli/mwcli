@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mwcli/mwcli/internal/build"
+	"github.com/mwcli/mwcli/pkg/cmdutil"
 	"github.com/spf13/cobra"
-	"github.com/zetaoss/mwcli/internal/build"
-	"github.com/zetaoss/mwcli/pkg/cmdutil"
 )
 
 // Format returns the text printed by `mw version` and `mw --version`.
@@ -22,9 +22,9 @@ func Format(version, date string) string {
 
 func releaseURL(version string) string {
 	if version == "DEV" || strings.Contains(version, "-") || strings.Contains(version, "+") {
-		return "https://github.com/zetaoss/mwcli/releases/latest"
+		return "https://github.com/mwcli/mwcli/releases/latest"
 	}
-	return "https://github.com/zetaoss/mwcli/releases/tag/v" + version
+	return "https://github.com/mwcli/mwcli/releases/tag/v" + version
 }
 
 // NewCmdVersion returns `mw version`.

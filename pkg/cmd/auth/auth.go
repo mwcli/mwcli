@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/MakeNowJust/heredoc"
+	"github.com/mwcli/mwcli/internal/config"
+	"github.com/mwcli/mwcli/pkg/cmdutil"
 	"github.com/spf13/cobra"
-	"github.com/zetaoss/mwcli/internal/config"
-	"github.com/zetaoss/mwcli/pkg/cmdutil"
 )
 
 // NewCmdAuth returns `mw auth`.

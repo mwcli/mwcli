@@ -3,8 +3,8 @@ package auth
 import (
 	"fmt"
 
+	"github.com/mwcli/mwcli/pkg/cmdutil"
 	"github.com/spf13/cobra"
-	"github.com/zetaoss/mwcli/pkg/cmdutil"
 )
 
 func newCmdLogout(f *cmdutil.Factory) *cobra.Command {

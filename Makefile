@@ -1,6 +1,6 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//')
 DATE ?= $(shell date -u +%Y-%m-%d)
-LDFLAGS := -X github.com/zetaoss/mwcli/internal/build.Version=$(VERSION) -X github.com/zetaoss/mwcli/internal/build.Date=$(DATE)
+LDFLAGS := -X github.com/mwcli/mwcli/internal/build.Version=$(VERSION) -X github.com/mwcli/mwcli/internal/build.Date=$(DATE)
 
 prefix ?= /usr/local
 bindir ?= $(prefix)/bin

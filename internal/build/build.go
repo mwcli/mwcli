@@ -7,7 +7,7 @@ import (
 )
 
 // Version and Date are set at build time with
-// -ldflags "-X github.com/zetaoss/mwcli/internal/build.Version=... -X ...Date=...".
+// -ldflags "-X github.com/mwcli/mwcli/internal/build.Version=... -X ...Date=...".
 // Without them, the module version recorded by `go install ...@vX.Y.Z` is used.
 var (
 	Version = "DEV"

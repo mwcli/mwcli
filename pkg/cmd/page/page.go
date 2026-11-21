@@ -8,9 +8,9 @@ import (
 	"os"
 
 	"github.com/MakeNowJust/heredoc"
+	"github.com/mwcli/mwcli/api"
+	"github.com/mwcli/mwcli/pkg/cmdutil"
 	"github.com/spf13/cobra"
-	"github.com/zetaoss/mwcli/api"
-	"github.com/zetaoss/mwcli/pkg/cmdutil"
 )
 
 // NewCmdPage returns `mw page`.
