@@ -3,7 +3,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -50,8 +49,6 @@ type Config struct {
 	Dir         string
 	Hosts       map[string]*Host
 	DefaultHost string
-	// Migrated is set when Load converted a legacy mwtool profile.
-	Migrated string
 }
 
 // Dir returns the configuration directory, following the same order as gh:
@@ -87,9 +84,6 @@ func LoadDir(dir string) (*Config, error) {
 	b, err := os.ReadFile(filepath.Join(dir, hostsFile))
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		if err := c.migrateLegacy(); err != nil {
-			return nil, err
-		}
 	case err != nil:
 		return nil, err
 	default:
@@ -271,66 +265,5 @@ func (c *Config) Switch(host, user string) error {
 		return fmt.Errorf("not logged in to %s account %s", host, user)
 	}
 	h.User = user
-	return nil
-}
-
-type legacyProfile struct {
-	API      string `json:"api"`
-	Username string `json:"username"`
-	Auth     string `json:"auth"`
-	Token    string `json:"token"`
-	Cookies  []struct {
-		Name  string `json:"Name"`
-		Value string `json:"Value"`
-	} `json:"cookies"`
-}
-
-// LegacyProfilePath is where mwtool stored its single login.
-func LegacyProfilePath() string {
-	d, err := os.UserConfigDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(d, "mwtool", "profile.json")
-}
-
-func (c *Config) migrateLegacy() error {
-	path := LegacyProfilePath()
-	if path == "" {
-		return nil
-	}
-	b, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	var p legacyProfile
-	if err := json.Unmarshal(b, &p); err != nil {
-		return fmt.Errorf("parse legacy profile %s: %w", path, err)
-	}
-	host, err := HostOf(p.API)
-	if err != nil || p.Username == "" {
-		return nil
-	}
-	a := &Account{Auth: AuthSession}
-	if p.Auth == AuthOAuth2 {
-		a = &Account{Auth: AuthOAuth2, OAuthToken: p.Token}
-	} else {
-		a.Cookies = map[string]string{}
-		for _, ck := range p.Cookies {
-			a.Cookies[ck.Name] = ck.Value
-		}
-	}
-	c.Login(host, p.API, p.Username, a)
-	if err := c.Save(); err != nil {
-		return err
-	}
-	if err := os.Remove(path); err != nil {
-		return err
-	}
-	_ = os.Remove(filepath.Dir(path))
-	c.Migrated = path
 	return nil
 }

@@ -32,14 +32,14 @@ func NewCmdAuth(f *cmdutil.Factory) *cobra.Command {
 }
 
 // storedHost picks a configured host for commands that act on stored accounts:
-// --hostname, else the only host, else the default host.
-func storedHost(f *cmdutil.Factory, cfg *config.Config, hostname string) (string, error) {
-	hostname = f.HostKey(cfg, hostname)
-	if hostname != "" {
-		if _, ok := cfg.Hosts[hostname]; !ok {
-			return "", fmt.Errorf("not logged in to %s", hostname)
+// --wiki, else the only host, else the default host.
+func storedHost(f *cmdutil.Factory, cfg *config.Config, wiki string) (string, error) {
+	host := f.HostKey(cfg, wiki)
+	if host != "" {
+		if _, ok := cfg.Hosts[host]; !ok {
+			return "", fmt.Errorf("not logged in to %s", host)
 		}
-		return hostname, nil
+		return host, nil
 	}
 	names := cfg.HostNames()
 	switch {
@@ -51,5 +51,5 @@ func storedHost(f *cmdutil.Factory, cfg *config.Config, hostname string) (string
 	if _, ok := cfg.Hosts[cfg.DefaultHost]; ok {
 		return cfg.DefaultHost, nil
 	}
-	return "", cmdutil.FlagErrorf("--hostname required: logged in to %s", strings.Join(names, ", "))
+	return "", cmdutil.FlagErrorf("--wiki required: logged in to %s", strings.Join(names, ", "))
 }

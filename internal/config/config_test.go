@@ -2,7 +2,6 @@ package config
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -66,45 +65,4 @@ func TestLoginLogoutSwitchSave(t *testing.T) {
 	b, err := os.ReadFile(c.HostsPath())
 	require.NoError(t, err)
 	assert.Empty(t, b)
-}
-
-func TestMigrateLegacyProfile(t *testing.T) {
-	xdg := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", xdg)
-	legacy := filepath.Join(xdg, "mwtool", "profile.json")
-	require.NoError(t, os.MkdirAll(filepath.Dir(legacy), 0o700))
-	require.NoError(t, os.WriteFile(legacy, []byte(`{"api":"https://wiki.example.com/w/api.php","username":"Jmnote","auth":"oauth2","token":"secret"}`), 0o600))
-
-	dir := filepath.Join(xdg, "mw")
-	c, err := LoadDir(dir)
-	require.NoError(t, err)
-	assert.Equal(t, legacy, c.Migrated)
-	assert.Equal(t, "wiki.example.com", c.DefaultHost)
-	user, a, ok := c.ActiveAccount("wiki.example.com")
-	require.True(t, ok)
-	assert.Equal(t, "Jmnote", user)
-	assert.Equal(t, &Account{Auth: AuthOAuth2, OAuthToken: "secret"}, a)
-	assert.NoFileExists(t, legacy)
-	assert.NoDirExists(t, filepath.Dir(legacy))
-
-	c, err = LoadDir(dir)
-	require.NoError(t, err)
-	assert.Empty(t, c.Migrated)
-	assert.Contains(t, c.Hosts, "wiki.example.com")
-}
-
-func TestMigrateLegacySession(t *testing.T) {
-	xdg := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", xdg)
-	legacy := filepath.Join(xdg, "mwtool", "profile.json")
-	require.NoError(t, os.MkdirAll(filepath.Dir(legacy), 0o700))
-	require.NoError(t, os.WriteFile(legacy, []byte(`{"api":"https://wiki.example.org/api.php","username":"Ann","cookies":[{"Name":"sess","Value":"abc"}]}`), 0o600))
-
-	c, err := LoadDir(filepath.Join(xdg, "mw"))
-	require.NoError(t, err)
-	_, a, ok := c.ActiveAccount("wiki.example.org")
-	require.True(t, ok)
-	assert.Equal(t, AuthSession, a.Auth)
-	assert.Equal(t, map[string]string{"sess": "abc"}, a.Cookies)
-	assert.Equal(t, "https://wiki.example.org/api.php", c.API("wiki.example.org"))
 }

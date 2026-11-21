@@ -9,7 +9,7 @@ import (
 )
 
 func newCmdToken(f *cmdutil.Factory) *cobra.Command {
-	var hostname, user string
+	var wiki, user string
 	cmd := &cobra.Command{
 		Use:   "token",
 		Short: "Print the access token of an account",
@@ -20,7 +20,7 @@ func newCmdToken(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t := cmdutil.Target{Host: f.HostKey(cfg, cmdutil.HostName(cfg, hostname))}
+			t := cmdutil.Target{Host: f.HostKey(cfg, cmdutil.HostName(cfg, wiki))}
 			var a *config.Account
 			if user == "" {
 				src, ok := cmdutil.Credentials(cfg, t)
@@ -41,7 +41,7 @@ func newCmdToken(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&hostname, "hostname", "h", "", "The host name of the wiki")
+	cmdutil.AddWikiFlag(cmd, &wiki, "The wiki whose token to print")
 	cmd.Flags().StringVarP(&user, "user", "u", "", "The account to print the token of")
 	return cmd
 }

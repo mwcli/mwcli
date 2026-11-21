@@ -16,7 +16,7 @@ import (
 )
 
 type loginOptions struct {
-	hostname  string
+	wiki      string
 	apiURL    string
 	withToken bool
 	username  string
@@ -41,10 +41,10 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 		`),
 		Example: heredoc.Doc(`
 			# interactive
-			$ mw auth login --hostname mediawiki.org
+			$ mw auth login --wiki mediawiki.org
 
 			# token from a file
-			$ mw auth login --hostname mediawiki.org --with-token < token.txt
+			$ mw auth login --wiki mediawiki.org --with-token < token.txt
 
 			# a wiki whose API is not at /w/api.php
 			$ mw auth login --api https://wiki.example.org/api.php
@@ -54,7 +54,7 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 			return loginRun(f, opts)
 		},
 	}
-	cmdutil.AddTargetFlags(cmd, &opts.hostname, &opts.apiURL)
+	cmdutil.AddTargetFlags(cmd, &opts.wiki, &opts.apiURL)
 	cmd.Flags().BoolVar(&opts.withToken, "with-token", false, "Read an OAuth 2 access token from standard input")
 	cmd.Flags().StringVarP(&opts.username, "username", "u", "", "Log in with this username and a password")
 	return cmd
@@ -72,11 +72,11 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	if err != nil {
 		return err
 	}
-	t, err := f.Resolve(cfg, opts.hostname, opts.apiURL)
+	t, err := f.Resolve(cfg, opts.wiki, opts.apiURL)
 	if err != nil {
 		return err
 	}
-	if opts.hostname == "" && opts.apiURL == "" && io.CanPrompt() {
+	if opts.wiki == "" && opts.apiURL == "" && io.CanPrompt() {
 		h, err := io.Prompt(fmt.Sprintf("? Wiki host name [%s]: ", t.Host))
 		if err != nil {
 			return err

@@ -37,9 +37,6 @@ func New() *Factory {
 		if err != nil {
 			return nil, err
 		}
-		if c.Migrated != "" {
-			fmt.Fprintf(f.IOStreams.ErrOut, "Moved login from %s to %s\n", c.Migrated, c.HostsPath())
-		}
 		cached = c
 		return c, nil
 	}
@@ -65,21 +62,21 @@ func (t Target) PageURL(title string) string {
 	return (&discovery.Site{API: t.API}).PageURL(title)
 }
 
-// Resolve picks the wiki: --api, then --hostname, MW_HOST, the default host
+// Resolve picks the wiki: --api, then --wiki, MW_WIKI, the default host
 // set by the last login, and finally en.wikipedia.org. The API is --api, the
 // api of the host in hosts.yml, or the one discovery finds.
-func (f *Factory) Resolve(cfg *config.Config, hostname, apiURL string) (Target, error) {
+func (f *Factory) Resolve(cfg *config.Config, wiki, apiURL string) (Target, error) {
 	if apiURL != "" {
 		host, err := config.HostOf(apiURL)
 		if err != nil {
 			return Target{}, FlagErrorf("%v", err)
 		}
-		if hostname != "" && CanonicalHost(hostname) != host {
-			return Target{}, FlagErrorf("--api host %s does not match --hostname %s", host, hostname)
+		if wiki != "" && CanonicalHost(wiki) != host {
+			return Target{}, FlagErrorf("--api host %s does not match --wiki %s", host, wiki)
 		}
 		return Target{Host: host, API: apiURL}, nil
 	}
-	host := HostName(cfg, hostname)
+	host := HostName(cfg, wiki)
 	api, site := f.APIFor(cfg, host)
 	return Target{Host: f.keyFor(cfg, host, api), API: api, Site: site}, nil
 }
@@ -110,10 +107,10 @@ func (f *Factory) HostKey(cfg *config.Config, name string) string {
 	return f.keyFor(cfg, name, api)
 }
 
-// HostName picks the host: --hostname, MW_HOST, the default host, en.wikipedia.org.
+// HostName picks the host: --wiki, MW_WIKI, the default host, en.wikipedia.org.
 // An interwiki prefix such as "commons" stands for its host.
-func HostName(cfg *config.Config, hostname string) string {
-	for _, h := range []string{hostname, os.Getenv("MW_HOST"), cfg.DefaultHost} {
+func HostName(cfg *config.Config, wiki string) string {
+	for _, h := range []string{wiki, os.Getenv("MW_WIKI"), cfg.DefaultHost} {
 		if h != "" {
 			return CanonicalHost(h)
 		}
@@ -192,9 +189,14 @@ func Client(cfg *config.Config, t Target) (*api.Client, bool, error) {
 	return c, ok, err
 }
 
-// AddTargetFlags adds --hostname and --api to cmd.
-func AddTargetFlags(cmd *cobra.Command, hostname, apiURL *string) {
-	cmd.Flags().StringVarP(hostname, "hostname", "h", "", "The host name of the wiki")
+// AddWikiFlag adds --wiki to cmd.
+func AddWikiFlag(cmd *cobra.Command, wiki *string, usage string) {
+	cmd.Flags().StringVar(wiki, "wiki", "", usage)
+}
+
+// AddTargetFlags adds --wiki and --api to cmd.
+func AddTargetFlags(cmd *cobra.Command, wiki, apiURL *string) {
+	AddWikiFlag(cmd, wiki, "The wiki: a host name such as mediawiki.org or an interwiki prefix such as wikipedia")
 	cmd.Flags().StringVar(apiURL, "api", "", "The api.php URL, when it is not https://HOST/w/api.php")
 }
 
@@ -217,7 +219,7 @@ func (e *AuthError) Unwrap() error { return e.Err }
 
 // NotLoggedIn returns the error for a command that needs a login on host.
 func NotLoggedIn(host string) error {
-	return &AuthError{Err: fmt.Errorf("not logged in to %s; run `mw auth login --hostname %s`", host, host)}
+	return &AuthError{Err: fmt.Errorf("not logged in to %s; run `mw auth login --wiki %s`", host, host)}
 }
 
 // ExitError exits with Code after printing Err, unless Err is nil.

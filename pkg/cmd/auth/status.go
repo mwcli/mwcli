@@ -20,7 +20,7 @@ import (
 const maxRights = 20
 
 type statusOptions struct {
-	hostname  string
+	wiki      string
 	active    bool
 	showToken bool
 }
@@ -37,7 +37,7 @@ func newCmdStatus(f *cmdutil.Factory) *cobra.Command {
 			return statusRun(f, opts)
 		},
 	}
-	cmd.Flags().StringVarP(&opts.hostname, "hostname", "h", "", "Check only this host")
+	cmdutil.AddWikiFlag(cmd, &opts.wiki, "Check only this wiki")
 	cmd.Flags().BoolVarP(&opts.active, "active", "a", false, "Display the active account only")
 	cmd.Flags().BoolVarP(&opts.showToken, "show-token", "t", false, "Display the auth token")
 	return cmd
@@ -68,7 +68,7 @@ func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
 	}
 	envToken := false
 	if src, ok := cmdutil.Credentials(cfg, cmdutil.Target{}); ok && src.FromEnv {
-		t, err := f.Resolve(cfg, opts.hostname, "")
+		t, err := f.Resolve(cfg, opts.wiki, "")
 		if err != nil {
 			return err
 		}
@@ -86,13 +86,13 @@ func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
 			add(entry{host: host, api: apiURL, user: user, account: h.Users[user], active: active, source: cfg.HostsPath()})
 		}
 	}
-	opts.hostname = f.HostKey(cfg, opts.hostname)
-	if opts.hostname != "" {
-		if _, ok := byHost[opts.hostname]; !ok {
-			fmt.Fprintf(ios.ErrOut, "You are not logged into any accounts on %s\n", opts.hostname)
+	opts.wiki = f.HostKey(cfg, opts.wiki)
+	if opts.wiki != "" {
+		if _, ok := byHost[opts.wiki]; !ok {
+			fmt.Fprintf(ios.ErrOut, "You are not logged into any accounts on %s\n", opts.wiki)
 			return cmdutil.ErrSilent
 		}
-		hosts = []string{opts.hostname}
+		hosts = []string{opts.wiki}
 	}
 	if len(hosts) == 0 {
 		fmt.Fprintln(ios.ErrOut, "You are not logged into any wikis. To log in, run: mw auth login")
@@ -143,8 +143,8 @@ func printEntry(w io.Writer, ios *iostreams.IOStreams, e entry, showToken bool) 
 			fmt.Fprintf(w, "  - Check failed: %v\n", err)
 			return false
 		}
-		fmt.Fprintf(w, "  - To re-authenticate, run: mw auth login --hostname %s\n", e.host)
-		fmt.Fprintf(w, "  - To forget about this account, run: mw auth logout --hostname %s --user %s\n", e.host, name)
+		fmt.Fprintf(w, "  - To re-authenticate, run: mw auth login --wiki %s\n", e.host)
+		fmt.Fprintf(w, "  - To forget about this account, run: mw auth logout --wiki %s --user %s\n", e.host, name)
 		return false
 	}
 	fmt.Fprintf(w, "  %s Logged in to %s account %s (%s)\n", ios.SuccessIcon(), e.host, ios.Bold(name), e.source)

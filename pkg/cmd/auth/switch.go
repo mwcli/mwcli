@@ -8,7 +8,7 @@ import (
 )
 
 func newCmdSwitch(f *cmdutil.Factory) *cobra.Command {
-	var hostname, user string
+	var wiki, user string
 	cmd := &cobra.Command{
 		Use:   "switch",
 		Short: "Switch the active account of a wiki",
@@ -21,7 +21,7 @@ func newCmdSwitch(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			host, err := storedHost(f, cfg, hostname)
+			host, err := storedHost(f, cfg, wiki)
 			if err != nil {
 				return err
 			}
@@ -46,7 +46,7 @@ func newCmdSwitch(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&hostname, "hostname", "h", "", "The host name of the wiki")
+	cmdutil.AddWikiFlag(cmd, &wiki, "The wiki whose active account to switch")
 	cmd.Flags().StringVarP(&user, "user", "u", "", "The account to switch to")
 	return cmd
 }

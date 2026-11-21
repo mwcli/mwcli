@@ -1,14 +1,18 @@
 # mwcli
 
-`mw` is MediaWiki on the command line. It logs in to wikis, reads and edits pages and makes Action API requests, in the style of the GitHub CLI (`gh`).
+**Unofficial but universal MediaWiki CLI. Like `gh`, but for MediaWiki.**
+
+`mw` is MediaWiki on the command line. It logs in to any MediaWiki wiki, reads and edits pages and makes Action API requests.
 
 ```sh
-mw auth login --hostname mediawiki.org
+mw auth login --wiki mediawiki.org
 mw auth status
 mw page view 'Main Page'
 mw page edit 'Sandbox' --summary 'Fix typo' --file page.wiki
 mw api action=query meta=userinfo uiprop=rights
 ```
+
+mwcli works with any MediaWiki wiki, Wikimedia wikis included. [a Wikimedia CLI](https://gitlab.wikimedia.org/repos/releng/cli), a separate tool for Wikimedia sites and services, also installs a command named `mw`; if you use both, run that one as `wm`, a name it supports.
 
 ## Installation
 
@@ -20,9 +24,9 @@ Or build from source with `make` (the binary is `bin/mw`) and install it with `m
 
 ## Choosing a wiki
 
-Commands that talk to a wiki take `-h, --hostname HOST`. Without it, the host is chosen in this order:
+Commands that talk to a wiki take `--wiki WIKI`: a host name such as `mediawiki.org` or an interwiki prefix such as `wikipedia`. Without it, the wiki is chosen in this order:
 
-1. `MW_HOST`
+1. `MW_WIKI`
 2. the host of the last `mw auth login`
 3. `en.wikipedia.org`
 
@@ -30,10 +34,10 @@ mw finds the host's `api.php` itself: it tries `https://HOST/w/api.php`, then `h
 
 Accounts are stored under the host of the API, so `mediawiki.org` and `www.mediawiki.org` are one wiki.
 
-`--hostname` and `MW_HOST` also take the interwiki prefixes of MediaWiki's default [interwiki list](https://github.com/wikimedia/mediawiki/blob/master/maintenance/interwiki.list) that point to MediaWiki wikis, such as `wikipedia` (en.wikipedia.org), `commons`, `wikidata`, `mw` (www.mediawiki.org) and `metawikimedia`; `mw help interwiki` lists all 21. A name with a dot is always a host name.
+`--wiki` and `MW_WIKI` take the interwiki prefixes of MediaWiki's default [interwiki list](https://github.com/wikimedia/mediawiki/blob/master/maintenance/interwiki.list) that point to MediaWiki wikis, such as `wikipedia` (en.wikipedia.org), `commons`, `wikidata`, `mw` (www.mediawiki.org) and `metawikimedia`; `mw help interwiki` lists all 21. A name with a dot is always a host name.
 
 ```sh
-mw page view -h commons 'Main Page'
+mw page view --wiki commons 'Main Page'
 ```
 
 `--api URL` names the endpoint directly; `mw auth login --api URL` stores it in `hosts.yml` for that host, and then no discovery is done for it.
@@ -42,7 +46,7 @@ mw page view -h commons 'Main Page'
 
 `mw auth login` prefers an owner-only OAuth 2 access token. Create one on the wiki at `Special:OAuthConsumerRegistration/propose/oauth2` ("This consumer is for use only by …") with the grants the tool needs, such as basic and editpage. Owner-only tokens do not expire; revoke them at `Special:OAuthManageMyGrants`. `--with-token` reads the token from standard input. `--username` logs in with a password through the `clientlogin` flow instead, read from `MW_PASSWORD` or a no-echo prompt; extra steps such as two-factor authentication are not supported.
 
-Credentials are stored per host and account in `hosts.yml` in the configuration directory, with owner-only permissions. Treat this file as a credential. The directory is `MW_CONFIG_DIR`, else `$XDG_CONFIG_HOME/mw`, else `%AppData%\mw` on Windows, else `~/.config/mw`. A login saved by the earlier `mwtool` (`mwtool/profile.json`) is moved there on first use.
+Credentials are stored per host and account in `hosts.yml` in the configuration directory, with owner-only permissions. Treat this file as a credential. The directory is `MW_CONFIG_DIR`, else `$XDG_CONFIG_HOME/mw`, else `%AppData%\mw` on Windows, else `~/.config/mw`.
 
 - `mw auth status` checks every stored account and shows its API, auth method, masked token, which of edit, create, move, delete and protect it may do, and its rights. `-t` shows the whole token.
   - The token shows only its last 4 characters; one of 8 characters or fewer is masked entirely.
