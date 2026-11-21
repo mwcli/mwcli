@@ -23,6 +23,9 @@ defaults:
 
 jobs:
   release:
+    # branches: [main] filters only push; a manual run from another branch must
+    # not tag or release commits that are not on main.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
