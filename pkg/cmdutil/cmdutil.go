@@ -11,6 +11,7 @@ import (
 	"github.com/zetaoss/mwcli/api"
 	"github.com/zetaoss/mwcli/internal/config"
 	"github.com/zetaoss/mwcli/internal/discovery"
+	"github.com/zetaoss/mwcli/internal/interwiki"
 	"github.com/zetaoss/mwcli/pkg/iostreams"
 )
 
@@ -73,30 +74,69 @@ func (f *Factory) Resolve(cfg *config.Config, hostname, apiURL string) (Target, 
 		if err != nil {
 			return Target{}, FlagErrorf("%v", err)
 		}
-		if hostname != "" && hostname != host {
+		if hostname != "" && CanonicalHost(hostname) != host {
 			return Target{}, FlagErrorf("--api host %s does not match --hostname %s", host, hostname)
 		}
 		return Target{Host: host, API: apiURL}, nil
 	}
 	host := HostName(cfg, hostname)
 	api, site := f.APIFor(cfg, host)
-	return Target{Host: host, API: api, Site: site}, nil
+	return Target{Host: f.keyFor(cfg, host, api), API: api, Site: site}, nil
+}
+
+// keyFor is the host under which accounts of host are stored: the host itself
+// when hosts.yml names its API, else the host of the API it resolves to, so
+// that mediawiki.org, www.mediawiki.org and the prefix mw are one wiki.
+func (f *Factory) keyFor(cfg *config.Config, host, api string) string {
+	if h, ok := cfg.Hosts[host]; ok && h.API != "" {
+		return host
+	}
+	if apiHost, err := config.HostOf(api); err == nil {
+		return apiHost
+	}
+	return host
+}
+
+// HostKey returns the stored host name for a user-given host or prefix.
+func (f *Factory) HostKey(cfg *config.Config, name string) string {
+	name = CanonicalHost(name)
+	if name == "" {
+		return ""
+	}
+	if _, ok := cfg.Hosts[name]; ok {
+		return name
+	}
+	api, _ := f.APIFor(cfg, name)
+	return f.keyFor(cfg, name, api)
 }
 
 // HostName picks the host: --hostname, MW_HOST, the default host, en.wikipedia.org.
+// An interwiki prefix such as "commons" stands for its host.
 func HostName(cfg *config.Config, hostname string) string {
 	for _, h := range []string{hostname, os.Getenv("MW_HOST"), cfg.DefaultHost} {
 		if h != "" {
-			return h
+			return CanonicalHost(h)
 		}
 	}
 	return config.DefaultHost
 }
 
-// APIFor returns the api.php of host: hosts.yml, else discovery, else /w/api.php.
+// CanonicalHost turns an interwiki prefix into its host; other names are kept.
+func CanonicalHost(name string) string {
+	if host, _, ok := interwiki.Lookup(name); ok {
+		return host
+	}
+	return name
+}
+
+// APIFor returns the api.php of host: hosts.yml, the interwiki list, discovery,
+// else /w/api.php.
 func (f *Factory) APIFor(cfg *config.Config, host string) (string, *discovery.Site) {
 	if h, ok := cfg.Hosts[host]; ok && h.API != "" {
 		return h.API, nil
+	}
+	if api, ok := interwiki.APIForHost(host); ok {
+		return api, nil
 	}
 	if f.Discovery == nil {
 		return config.DefaultAPI(host), nil

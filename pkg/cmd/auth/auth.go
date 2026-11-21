@@ -33,7 +33,8 @@ func NewCmdAuth(f *cmdutil.Factory) *cobra.Command {
 
 // storedHost picks a configured host for commands that act on stored accounts:
 // --hostname, else the only host, else the default host.
-func storedHost(cfg *config.Config, hostname string) (string, error) {
+func storedHost(f *cmdutil.Factory, cfg *config.Config, hostname string) (string, error) {
+	hostname = f.HostKey(cfg, hostname)
 	if hostname != "" {
 		if _, ok := cfg.Hosts[hostname]; !ok {
 			return "", fmt.Errorf("not logged in to %s", hostname)
