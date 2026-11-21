@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zetaoss/mwcli/internal/config"
+	"github.com/zetaoss/mwcli/internal/discovery"
 	"github.com/zetaoss/mwcli/pkg/cmdutil"
 	"github.com/zetaoss/mwcli/pkg/iostreams"
 )
@@ -30,7 +33,13 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		send(map[string]any{"error": map[string]string{"code": "mwoauth-invalid-authorization", "info": "Invalid access token"}})
 		return
 	}
+	if r.URL.Path == "/gone/api.php" {
+		http.NotFound(rw, r)
+		return
+	}
 	switch {
+	case p("meta") == "siteinfo":
+		send(map[string]any{"query": map[string]any{"general": map[string]string{"sitename": "Fake", "generator": "MediaWiki 1.43.1", "server": "//fake.test", "script": "/w/index.php"}}})
 	case p("meta") == "userinfo":
 		if !authed {
 			send(map[string]any{"query": map[string]any{"userinfo": map[string]any{"id": 0, "name": "127.0.0.1", "anon": true, "rights": []string{"read", "edit"}}}})
@@ -58,11 +67,13 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 }
 
 type env struct {
-	t    *testing.T
-	dir  string
-	api  string
-	host string
-	wiki *fakeWiki
+	t     *testing.T
+	dir   string
+	api   string
+	host  string
+	base  string
+	cache *discovery.Cache
+	wiki  *fakeWiki
 }
 
 func newEnv(t *testing.T) *env {
@@ -75,16 +86,18 @@ func newEnv(t *testing.T) *env {
 	t.Setenv("MW_TOKEN", "")
 	t.Setenv("MW_HOST", "")
 	host, _ := config.HostOf(srv.URL)
-	return &env{t: t, dir: dir + "/mw", api: srv.URL + "/w/api.php", host: host, wiki: w}
+	cache := &discovery.Cache{Dir: dir + "/cache", Base: func(string) string { return srv.URL }, Now: time.Now}
+	return &env{t: t, dir: dir + "/mw", api: srv.URL + "/w/api.php", host: host, base: srv.URL, cache: cache, wiki: w}
 }
 
 func (e *env) run(stdin string, args ...string) (string, string, int) {
 	ios, in, out, errOut := iostreams.Test()
 	in.WriteString(stdin)
-	f := &cmdutil.Factory{IOStreams: ios, Config: func() (*config.Config, error) { return config.LoadDir(e.dir) }}
+	f := &cmdutil.Factory{IOStreams: ios, Config: func() (*config.Config, error) { return config.LoadDir(e.dir) }, Discovery: e.cache}
 	cmd := NewCmdRoot(f)
 	cmd.SetArgs(args)
 	_, err := cmd.ExecuteC()
+	f.Forget(err)
 	if err != nil {
 		errOut.WriteString(err.Error())
 	}
@@ -219,4 +232,36 @@ func TestVersion(t *testing.T) {
 	out2, _, _ := e.run("", "--version")
 	assert.Equal(t, out, out2)
 	assert.True(t, bytes.Contains([]byte(out), []byte("https://github.com/zetaoss/mwcli/releases/")))
+}
+
+func TestDiscovery(t *testing.T) {
+	e := newEnv(t)
+	out, stderr, code := e.run("", "page", "view", "Sandbox", "-h", "other.test")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "Hello", out)
+	s, ok := e.cache.Lookup("other.test")
+	require.True(t, ok)
+	assert.Equal(t, e.base+"/w/api.php", s.API)
+
+	_, stderr, code = e.run(goodToken, "auth", "login", "-h", "other.test", "--with-token")
+	require.Equal(t, 0, code, stderr)
+	cfg, err := config.LoadDir(e.dir)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Hosts["other.test"].API, "discovered API stays in the cache")
+	out, _, _ = e.run("", "auth", "status")
+	assert.Contains(t, out, "- API: "+e.base+"/w/api.php")
+
+	e.cache.Invalidate("gone.test")
+	require.NoError(t, os.MkdirAll(e.cache.Dir+"/discovery/gone.test", 0o755))
+	require.NoError(t, os.WriteFile(e.cache.Dir+"/discovery/gone.test/siteinfo.json",
+		[]byte(`{"api":"`+e.base+`/gone/api.php","checked":"`+time.Now().UTC().Format(time.RFC3339)+`"}`), 0o644))
+	_, ok = e.cache.Lookup("gone.test")
+	require.True(t, ok)
+	_, _, code = e.run("", "page", "view", "Sandbox", "-h", "gone.test")
+	assert.Equal(t, 1, code)
+	_, ok = e.cache.Lookup("gone.test")
+	assert.False(t, ok, "a 404 drops the cached API")
+	out, _, code = e.run("", "page", "view", "Sandbox", "-h", "gone.test")
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Hello", out)
 }

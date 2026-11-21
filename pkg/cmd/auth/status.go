@@ -65,7 +65,7 @@ func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
 	}
 	envToken := false
 	if src, ok := cmdutil.Credentials(cfg, cmdutil.Target{}); ok && src.FromEnv {
-		t, err := cmdutil.Resolve(cfg, opts.hostname, "")
+		t, err := f.Resolve(cfg, opts.hostname, "")
 		if err != nil {
 			return err
 		}
@@ -79,7 +79,8 @@ func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
 			if envToken && byHost[host] != nil {
 				active = false
 			}
-			add(entry{host: host, api: cfg.API(host), user: user, account: h.Users[user], active: active, source: cfg.HostsPath()})
+			apiURL, _ := f.APIFor(cfg, host)
+			add(entry{host: host, api: apiURL, user: user, account: h.Users[user], active: active, source: cfg.HostsPath()})
 		}
 	}
 	if opts.hostname != "" {

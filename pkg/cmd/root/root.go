@@ -19,7 +19,7 @@ func NewCmdRoot(f *cmdutil.Factory) *cobra.Command {
 		Short: "MediaWiki CLI",
 		Long:  "Work with MediaWiki wikis from the command line.",
 		Example: heredoc.Doc(`
-			$ mw auth login --hostname zetawiki.com
+			$ mw auth login --hostname mediawiki.org
 			$ mw page view 'Main Page' --hostname en.wikipedia.org
 			$ mw api action=query meta=siteinfo
 		`),

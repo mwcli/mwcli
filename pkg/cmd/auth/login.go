@@ -41,10 +41,10 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 		`),
 		Example: heredoc.Doc(`
 			# interactive
-			$ mw auth login --hostname zetawiki.com
+			$ mw auth login --hostname mediawiki.org
 
 			# token from a file
-			$ mw auth login --hostname zetawiki.com --with-token < token.txt
+			$ mw auth login --hostname mediawiki.org --with-token < token.txt
 
 			# a wiki whose API is not at /w/api.php
 			$ mw auth login --api https://wiki.example.org/api.php
@@ -72,7 +72,7 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	if err != nil {
 		return err
 	}
-	t, err := cmdutil.Resolve(cfg, opts.hostname, opts.apiURL)
+	t, err := f.Resolve(cfg, opts.hostname, opts.apiURL)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 			return err
 		}
 		if h != "" {
-			if t, err = cmdutil.Resolve(cfg, h, ""); err != nil {
+			if t, err = f.Resolve(cfg, h, ""); err != nil {
 				return err
 			}
 		}
@@ -119,7 +119,7 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	if err != nil {
 		return err
 	}
-	cfg.Login(t.Host, t.API, user, account)
+	cfg.Login(t.Host, opts.apiURL, user, account)
 	if err := cfg.Save(); err != nil {
 		return err
 	}
@@ -137,7 +137,7 @@ func tokenLogin(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.A
 		}
 		token = strings.TrimSpace(string(b))
 	} else {
-		fmt.Fprintf(ios.ErrOut, "Create an owner-only token at %s\n", specialPage(t.API, "OAuthConsumerRegistration/propose/oauth2"))
+		fmt.Fprintf(ios.ErrOut, "Create an owner-only token at %s\n", t.PageURL("Special:OAuthConsumerRegistration/propose/oauth2"))
 		var err error
 		if token, err = ios.PromptSecret("? Paste your access token: "); err != nil {
 			return nil, "", err
@@ -193,10 +193,4 @@ func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string) (*conf
 		return nil, "", fmt.Errorf("check login: %w", err)
 	}
 	return &config.Account{Auth: config.AuthSession, Cookies: c.Cookies()}, u.Name, nil
-}
-
-// specialPage turns an api.php URL into the URL of a special page.
-func specialPage(apiURL, name string) string {
-	base := strings.TrimSuffix(apiURL, "api.php")
-	return base + "index.php?title=Special:" + name
 }

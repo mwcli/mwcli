@@ -20,10 +20,7 @@ func newCmdToken(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := cmdutil.Resolve(cfg, hostname, "")
-			if err != nil {
-				return err
-			}
+			t := cmdutil.Target{Host: cmdutil.HostName(cfg, hostname)}
 			var a *config.Account
 			if user == "" {
 				src, ok := cmdutil.Credentials(cfg, t)

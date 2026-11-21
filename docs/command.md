@@ -30,7 +30,7 @@ As in `gh`, `-h` is `--hostname`; help is `--help`. Every command prints its own
 ## hosts.yml
 
 ```yaml
-zetawiki.com:
+mediawiki.org:
     user: Alice
     users:
         Alice:
@@ -46,4 +46,20 @@ wiki.example.org:
                 examplewiki_session: ...
 ```
 
-`api` is stored only when it differs from `https://HOST/w/api.php`. `user` is the active account. `config.yml` in the same directory holds `default_host`, set by the last login.
+`api` is stored only when it was given with `mw auth login --api` and differs from `https://HOST/w/api.php`; a discovered API stays in the cache. `user` is the active account. `config.yml` in the same directory holds `default_host`, set by the last login.
+
+## Discovery cache
+
+`~/.cache/mw/discovery/HOST/siteinfo.json` (under `$XDG_CACHE_HOME` when set) records what mw found for a host without a stored `api`, the default path included, for 24 hours:
+
+```json
+{
+  "api": "https://www.mediawiki.org/w/api.php",
+  "server": "//www.mediawiki.org",
+  "script": "/w/index.php",
+  "articlepath": "/wiki/$1",
+  "generator": "MediaWiki 1.48.0-wmf.5",
+  "sitename": "MediaWiki",
+  "checked": "2026-11-21T10:00:00Z"
+}
+```
