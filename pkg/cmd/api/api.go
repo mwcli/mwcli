@@ -18,7 +18,7 @@ import (
 )
 
 type options struct {
-	hostname  string
+	wiki      string
 	apiURL    string
 	method    string
 	rawFields []string
@@ -43,7 +43,7 @@ func NewCmdApi(f *cmdutil.Factory) *cobra.Command {
 		`),
 		Example: heredoc.Doc(`
 			$ mw api action=query meta=userinfo uiprop=rights
-			$ mw api -h mediawiki.org action=parse page=MediaWiki prop=wikitext
+			$ mw api --wiki mediawiki.org action=parse page=MediaWiki prop=wikitext
 			$ mw api -X POST action=purge titles=Sandbox
 			$ mw api -X POST action=edit title=Sandbox -F text=@page.wiki summary=update
 		`),
@@ -52,7 +52,7 @@ func NewCmdApi(f *cmdutil.Factory) *cobra.Command {
 			return run(f, opts)
 		},
 	}
-	cmdutil.AddTargetFlags(cmd, &opts.hostname, &opts.apiURL)
+	cmdutil.AddTargetFlags(cmd, &opts.wiki, &opts.apiURL)
 	cmd.Flags().StringVarP(&opts.method, "method", "X", "GET", "The HTTP method for the request")
 	cmd.Flags().StringArrayVarP(&opts.rawFields, "raw-field", "f", nil, "Add a string parameter in `key=value` format")
 	cmd.Flags().StringArrayVarP(&opts.fields, "field", "F", nil, "Add a parameter in `key=value` format; @file reads the value from a file")
@@ -108,7 +108,7 @@ func run(f *cmdutil.Factory, opts *options) error {
 	if err != nil {
 		return err
 	}
-	t, err := f.Resolve(cfg, opts.hostname, opts.apiURL)
+	t, err := f.Resolve(cfg, opts.wiki, opts.apiURL)
 	if err != nil {
 		return err
 	}

@@ -86,7 +86,7 @@ func newEnv(t *testing.T) *env {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("MW_CONFIG_DIR", dir+"/mw")
 	t.Setenv("MW_TOKEN", "")
-	t.Setenv("MW_HOST", "")
+	t.Setenv("MW_WIKI", "")
 	host, _ := config.HostOf(srv.URL)
 	cache := &discovery.Cache{Dir: dir + "/cache", Base: func(string) string { return srv.URL }, Now: time.Now}
 	return &env{t: t, dir: dir + "/mw", api: srv.URL + "/w/api.php", host: host, base: srv.URL, cache: cache, wiki: w}
@@ -168,7 +168,7 @@ func TestEnvToken(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "MW_TOKEN")
 
-	t.Setenv("MW_HOST", e.host)
+	t.Setenv("MW_WIKI", e.host)
 	cfg, _ := config.LoadDir(e.dir)
 	cfg.Login(e.host, e.api, "Old", &config.Account{Auth: config.AuthOAuth2, OAuthToken: "revoked"})
 	require.NoError(t, cfg.Save())
@@ -238,21 +238,21 @@ func TestVersion(t *testing.T) {
 
 func TestDiscovery(t *testing.T) {
 	e := newEnv(t)
-	out, stderr, code := e.run("", "page", "view", "Sandbox", "-h", "other.test")
+	out, stderr, code := e.run("", "page", "view", "Sandbox", "--wiki", "other.test")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "Hello", out)
 	s, ok := e.cache.Lookup("other.test")
 	require.True(t, ok)
 	assert.Equal(t, e.base+"/w/api.php", s.API)
 
-	_, stderr, code = e.run(goodToken, "auth", "login", "-h", "other.test", "--with-token")
+	_, stderr, code = e.run(goodToken, "auth", "login", "--wiki", "other.test", "--with-token")
 	require.Equal(t, 0, code, stderr)
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
 	require.Contains(t, cfg.Hosts, e.host, "stored under the host of the discovered API")
 	assert.NotContains(t, cfg.Hosts, "other.test")
 	assert.Empty(t, cfg.Hosts[e.host].API, "discovered API stays in the cache")
-	out, _, code = e.run("", "auth", "token", "-h", "other.test")
+	out, _, code = e.run("", "auth", "token", "--wiki", "other.test")
 	assert.Equal(t, 0, code)
 	assert.Equal(t, goodToken+"\n", out)
 	out, _, _ = e.run("", "auth", "status")
@@ -264,11 +264,11 @@ func TestDiscovery(t *testing.T) {
 		[]byte(`{"api":"`+e.base+`/gone/api.php","checked":"`+time.Now().UTC().Format(time.RFC3339)+`"}`), 0o644))
 	_, ok = e.cache.Lookup("gone.test")
 	require.True(t, ok)
-	_, _, code = e.run("", "page", "view", "Sandbox", "-h", "gone.test")
+	_, _, code = e.run("", "page", "view", "Sandbox", "--wiki", "gone.test")
 	assert.Equal(t, 1, code)
 	_, ok = e.cache.Lookup("gone.test")
 	assert.False(t, ok, "a 404 drops the cached API")
-	out, _, code = e.run("", "page", "view", "Sandbox", "-h", "gone.test")
+	out, _, code = e.run("", "page", "view", "Sandbox", "--wiki", "gone.test")
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "Hello", out)
 }
@@ -279,11 +279,11 @@ func TestInterwikiPrefix(t *testing.T) {
 	cfg.Login("www.mediawiki.org", "", "Alice", &config.Account{Auth: config.AuthOAuth2, OAuthToken: "mw-token"})
 	require.NoError(t, cfg.Save())
 	for _, h := range []string{"mw", "mediawikiwiki", "www.mediawiki.org"} {
-		out, stderr, code := e.run("", "auth", "token", "-h", h)
+		out, stderr, code := e.run("", "auth", "token", "--wiki", h)
 		require.Equal(t, 0, code, h+": "+stderr)
 		assert.Equal(t, "mw-token\n", out, h)
 	}
-	_, stderr, code := e.run("", "auth", "logout", "-h", "mw")
+	_, stderr, code := e.run("", "auth", "logout", "--wiki", "mw")
 	require.Equal(t, 0, code, stderr)
 	assert.Contains(t, stderr, "Logged out of www.mediawiki.org account Alice")
 

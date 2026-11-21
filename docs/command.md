@@ -3,27 +3,27 @@
 ```text
 mw
 ├── auth
-│   ├── login   [-h HOST] [--api URL] [--with-token | -u USER]
-│   ├── logout  [-h HOST] [-u USER]
-│   ├── status  [-h HOST] [-a] [-t]
-│   ├── switch  [-h HOST] [-u USER]
-│   └── token   [-h HOST] [-u USER]
+│   ├── login   [--wiki WIKI] [--api URL] [--with-token | -u USER]
+│   ├── logout  [--wiki WIKI] [-u USER]
+│   ├── status  [--wiki WIKI] [-a] [-t]
+│   ├── switch  [--wiki WIKI] [-u USER]
+│   └── token   [--wiki WIKI] [-u USER]
 ├── page
-│   ├── view    [-h HOST] [--api URL] TITLE
-│   └── edit    [-h HOST] [--api URL] [-s SUMMARY] (--text WIKITEXT | -F FILE) TITLE
-├── api         [-h HOST] [--api URL] [-X METHOD] [-f key=value] [-F key=@file] [key=value ...]
+│   ├── view    [--wiki WIKI] [--api URL] TITLE
+│   └── edit    [--wiki WIKI] [--api URL] [-s SUMMARY] (--text WIKITEXT | -F FILE) TITLE
+├── api         [--wiki WIKI] [--api URL] [-X METHOD] [-f key=value] [-F key=@file] [key=value ...]
 ├── completion  SHELL
 ├── version
-└── help interwiki   interwiki prefixes accepted by --hostname
+└── help interwiki   interwiki prefixes accepted by --wiki
 ```
 
-As in `gh`, `-h` is `--hostname`; help is `--help`. Every command prints its own help with `--help`.
+`WIKI` is a host name such as `mediawiki.org` or an interwiki prefix such as `wikipedia`; `--api URL` names an exact Action API endpoint. Every command prints its own help with `-h, --help`.
 
 ## Environment
 
 | Variable | Use |
 | --- | --- |
-| `MW_HOST` | Default host when `--hostname` is not given |
+| `MW_WIKI` | Default wiki when `--wiki` is not given |
 | `MW_TOKEN` | OAuth 2 access token used instead of stored credentials |
 | `MW_PASSWORD` | Password for `mw auth login --username` without a prompt |
 | `MW_CONFIG_DIR` | Configuration directory (default `~/.config/mw`) |

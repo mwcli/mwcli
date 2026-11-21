@@ -8,7 +8,7 @@ import (
 )
 
 func newCmdLogout(f *cmdutil.Factory) *cobra.Command {
-	var hostname, user string
+	var wiki, user string
 	cmd := &cobra.Command{
 		Use:   "logout",
 		Short: "Log out of a wiki account",
@@ -21,7 +21,7 @@ func newCmdLogout(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			host, err := storedHost(f, cfg, hostname)
+			host, err := storedHost(f, cfg, wiki)
 			if err != nil {
 				return err
 			}
@@ -42,7 +42,7 @@ func newCmdLogout(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&hostname, "hostname", "h", "", "The host name of the wiki")
+	cmdutil.AddWikiFlag(cmd, &wiki, "The wiki to log out of")
 	cmd.Flags().StringVarP(&user, "user", "u", "", "The account to log out of")
 	return cmd
 }

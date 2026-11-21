@@ -23,8 +23,8 @@ func NewCmdRoot(f *cmdutil.Factory) *cobra.Command {
 		Short: "MediaWiki CLI",
 		Long:  "Work with MediaWiki wikis from the command line.",
 		Example: heredoc.Doc(`
-			$ mw auth login --hostname mediawiki.org
-			$ mw page view 'Main Page' --hostname wikipedia
+			$ mw auth login --wiki mediawiki.org
+			$ mw page view 'Main Page' --wiki wikipedia
 			$ mw api action=query meta=siteinfo
 		`),
 		SilenceErrors: true,
@@ -34,8 +34,6 @@ func NewCmdRoot(f *cmdutil.Factory) *cobra.Command {
 	cmd.SetVersionTemplate(versionCmd.Format(build.Version, build.Date))
 	cmd.SetOut(f.IOStreams.Out)
 	cmd.SetErr(f.IOStreams.ErrOut)
-	// -h is --hostname in subcommands, as in gh; help is --help only.
-	cmd.PersistentFlags().Bool("help", false, "Show help for command")
 	cmd.Flags().Bool("version", false, "Show mw version")
 	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
 		return &cmdutil.FlagError{Err: err}
@@ -52,7 +50,7 @@ func NewCmdRoot(f *cmdutil.Factory) *cobra.Command {
 // interwikiHelp is the `mw help interwiki` topic.
 func interwikiHelp() *cobra.Command {
 	var b strings.Builder
-	b.WriteString("--hostname and MW_HOST accept these interwiki prefixes from MediaWiki's\n")
+	b.WriteString("--wiki and MW_WIKI accept these interwiki prefixes from MediaWiki's\n")
 	b.WriteString("default interwiki list, limited to MediaWiki wikis:\n\n")
 	for _, p := range interwiki.All() {
 		fmt.Fprintf(&b, "  %-14s %s\n", p.Name, p.API)

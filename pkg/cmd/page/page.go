@@ -24,7 +24,7 @@ func NewCmdPage(f *cmdutil.Factory) *cobra.Command {
 }
 
 func newCmdView(f *cmdutil.Factory) *cobra.Command {
-	var hostname, apiURL string
+	var wiki, apiURL string
 	cmd := &cobra.Command{
 		Use:   "view <title>",
 		Short: "Print the wikitext of a page",
@@ -35,7 +35,7 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := f.Resolve(cfg, hostname, apiURL)
+			t, err := f.Resolve(cfg, wiki, apiURL)
 			if err != nil {
 				return err
 			}
@@ -51,12 +51,12 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
-	cmdutil.AddTargetFlags(cmd, &hostname, &apiURL)
+	cmdutil.AddTargetFlags(cmd, &wiki, &apiURL)
 	return cmd
 }
 
 func newCmdEdit(f *cmdutil.Factory) *cobra.Command {
-	var hostname, apiURL, summary, text, file string
+	var wiki, apiURL, summary, text, file string
 	cmd := &cobra.Command{
 		Use:   "edit <title>",
 		Short: "Replace the wikitext of a page",
@@ -88,7 +88,7 @@ func newCmdEdit(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := f.Resolve(cfg, hostname, apiURL)
+			t, err := f.Resolve(cfg, wiki, apiURL)
 			if err != nil {
 				return err
 			}
@@ -111,7 +111,7 @@ func newCmdEdit(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
-	cmdutil.AddTargetFlags(cmd, &hostname, &apiURL)
+	cmdutil.AddTargetFlags(cmd, &wiki, &apiURL)
 	cmd.Flags().StringVarP(&summary, "summary", "s", "", "Edit summary")
 	cmd.Flags().StringVar(&text, "text", "", "New wikitext")
 	cmd.Flags().StringVarP(&file, "file", "F", "", "Read the new wikitext from `file` (use \"-\" to read from standard input)")
