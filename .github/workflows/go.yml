@@ -22,7 +22,7 @@ jobs:
       - run: make test
       - run: make build && bin/mw --version
       - name: Check VERSION
-        run: scripts/check-version.sh
+        run: go run ./scripts/check-version
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser

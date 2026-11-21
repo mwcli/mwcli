@@ -71,4 +71,4 @@ See [docs/command.md](docs/command.md) for the command tree.
 
 ## Releasing
 
-`VERSION` holds the version of the next release. A pull request that changes it is a release pull request: once merged to `main`, the Release workflow tags `vX.Y.Z` from `VERSION` and GoReleaser publishes the GitHub release with binaries for Linux, macOS and Windows. CI checks that `VERSION` is a semantic version greater than the latest tag. Nobody pushes tags by hand.
+`VERSION` holds the version of the next release. A pull request that changes it is a release pull request: once merged to `main`, the Release workflow tags `vX.Y.Z` from `VERSION` and GoReleaser publishes the GitHub release with binaries for Linux, macOS and Windows. The release is uploaded as a draft and published last; if the run fails after tagging, re-running it (or running the workflow by hand) resumes from the tag. CI checks that `VERSION` is a semantic version greater than the latest tag by SemVer precedence. Nobody pushes tags by hand.

@@ -36,6 +36,10 @@ changelog:
   use: github-native
 
 release:
+  # Published by the workflow after every upload, so a failed run can resume.
+  draft: true
+  use_existing_draft: true
+  replace_existing_artifacts: true
   footer: |
     ## Install
 
