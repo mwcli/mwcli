@@ -10,10 +10,19 @@
 // already exists, it must be greater than every v* tag by SemVer precedence.
 //
 //	go run ./scripts/check-version
+//
+// With -latest, it reads the tags of the published releases from standard
+// input, one per line, and prints latest=true when VERSION is a final version
+// at or above all of them, so an older release resumed late is not marked
+// latest.
+//
+//	gh release list --exclude-drafts --exclude-pre-releases --json tagName -q '.[].tagName' |
+//	  go run ./scripts/check-version -latest
 package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -25,6 +34,14 @@ func main() {
 	b, err := os.ReadFile("VERSION")
 	if err != nil {
 		fail(err)
+	}
+	if len(os.Args) > 1 && os.Args[1] == "-latest" {
+		published, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fail(err)
+		}
+		fmt.Printf("latest=%t\n", isLatest(strings.TrimSpace(string(b)), strings.Fields(string(published))))
+		return
 	}
 	out, err := exec.Command("git", "tag", "-l", "v*").Output()
 	if err != nil {
@@ -58,6 +75,21 @@ func check(version string, tags []string) (bool, error) {
 		return false, fmt.Errorf("VERSION %s is not greater than the latest tag %s", version, latest)
 	}
 	return false, nil
+}
+
+// isLatest reports whether version is a final version at or above every
+// published final release tag; prerelease tags are ignored.
+func isLatest(version string, published []string) bool {
+	tag := "v" + version
+	if !semver.IsValid(tag) || isPrerelease(version) {
+		return false
+	}
+	for _, t := range published {
+		if semver.IsValid(t) && semver.Prerelease(t) == "" && semver.Compare(t, tag) > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // isPrerelease reports whether version has a SemVer prerelease part, as in 0.3.0-rc.1.

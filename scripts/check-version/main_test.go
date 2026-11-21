@@ -40,6 +40,13 @@ func TestCheck(t *testing.T) {
 	assert.False(t, isPrerelease("0.2.1"))
 	assert.False(t, isPrerelease("1.0.0+build.5"))
 
+	published := []string{"v0.1.0", "v0.2.0", "v0.2.2", "v0.3.0-rc.1", "junk"}
+	assert.False(t, isLatest("0.2.1", published), "older than v0.2.2")
+	assert.True(t, isLatest("0.2.2", published), "equal to the highest")
+	assert.True(t, isLatest("0.2.3", published))
+	assert.False(t, isLatest("0.3.0-rc.2", published), "prereleases are never latest")
+	assert.True(t, isLatest("0.1.0", nil), "first release")
+
 	tagged, err := check("0.1.0", nil)
 	assert.NoError(t, err)
 	assert.False(t, tagged)
