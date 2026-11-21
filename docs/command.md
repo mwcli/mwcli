@@ -13,7 +13,8 @@ mw
 │   └── edit    [-h HOST] [--api URL] [-s SUMMARY] (--text WIKITEXT | -F FILE) TITLE
 ├── api         [-h HOST] [--api URL] [-X METHOD] [-f key=value] [-F key=@file] [key=value ...]
 ├── completion  SHELL
-└── version
+├── version
+└── help interwiki   interwiki prefixes accepted by --hostname
 ```
 
 As in `gh`, `-h` is `--hostname`; help is `--help`. Every command prints its own help with `--help`.

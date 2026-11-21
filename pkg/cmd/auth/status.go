@@ -83,6 +83,7 @@ func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
 			add(entry{host: host, api: apiURL, user: user, account: h.Users[user], active: active, source: cfg.HostsPath()})
 		}
 	}
+	opts.hostname = f.HostKey(cfg, opts.hostname)
 	if opts.hostname != "" {
 		if _, ok := byHost[opts.hostname]; !ok {
 			fmt.Fprintf(ios.ErrOut, "You are not logged into any accounts on %s\n", opts.hostname)

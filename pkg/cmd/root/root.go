@@ -2,9 +2,13 @@
 package root
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/MakeNowJust/heredoc"
 	"github.com/spf13/cobra"
 	"github.com/zetaoss/mwcli/internal/build"
+	"github.com/zetaoss/mwcli/internal/interwiki"
 	apiCmd "github.com/zetaoss/mwcli/pkg/cmd/api"
 	authCmd "github.com/zetaoss/mwcli/pkg/cmd/auth"
 	pageCmd "github.com/zetaoss/mwcli/pkg/cmd/page"
@@ -20,7 +24,7 @@ func NewCmdRoot(f *cmdutil.Factory) *cobra.Command {
 		Long:  "Work with MediaWiki wikis from the command line.",
 		Example: heredoc.Doc(`
 			$ mw auth login --hostname mediawiki.org
-			$ mw page view 'Main Page' --hostname en.wikipedia.org
+			$ mw page view 'Main Page' --hostname wikipedia
 			$ mw api action=query meta=siteinfo
 		`),
 		SilenceErrors: true,
@@ -40,8 +44,25 @@ func NewCmdRoot(f *cmdutil.Factory) *cobra.Command {
 	cmd.AddCommand(pageCmd.NewCmdPage(f))
 	cmd.AddCommand(apiCmd.NewCmdApi(f))
 	cmd.AddCommand(versionCmd.NewCmdVersion(f))
+	cmd.AddCommand(interwikiHelp())
 	wrapArgs(cmd)
 	return cmd
+}
+
+// interwikiHelp is the `mw help interwiki` topic.
+func interwikiHelp() *cobra.Command {
+	var b strings.Builder
+	b.WriteString("--hostname and MW_HOST accept these interwiki prefixes from MediaWiki's\n")
+	b.WriteString("default interwiki list, limited to MediaWiki wikis:\n\n")
+	for _, p := range interwiki.All() {
+		fmt.Fprintf(&b, "  %-14s %s\n", p.Name, p.API)
+	}
+	b.WriteString("\nA name with a dot is always a host name.\n")
+	return &cobra.Command{
+		Use:   "interwiki",
+		Short: "Interwiki prefixes accepted as host names",
+		Long:  b.String(),
+	}
 }
 
 // wrapArgs makes argument count errors usage errors, like flag errors.

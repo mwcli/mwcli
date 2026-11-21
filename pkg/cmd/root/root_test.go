@@ -247,7 +247,12 @@ func TestDiscovery(t *testing.T) {
 	require.Equal(t, 0, code, stderr)
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
-	assert.Empty(t, cfg.Hosts["other.test"].API, "discovered API stays in the cache")
+	require.Contains(t, cfg.Hosts, e.host, "stored under the host of the discovered API")
+	assert.NotContains(t, cfg.Hosts, "other.test")
+	assert.Empty(t, cfg.Hosts[e.host].API, "discovered API stays in the cache")
+	out, _, code = e.run("", "auth", "token", "-h", "other.test")
+	assert.Equal(t, 0, code)
+	assert.Equal(t, goodToken+"\n", out)
 	out, _, _ = e.run("", "auth", "status")
 	assert.Contains(t, out, "- API: "+e.base+"/w/api.php")
 
@@ -264,4 +269,22 @@ func TestDiscovery(t *testing.T) {
 	out, _, code = e.run("", "page", "view", "Sandbox", "-h", "gone.test")
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "Hello", out)
+}
+
+func TestInterwikiPrefix(t *testing.T) {
+	e := newEnv(t)
+	cfg, _ := config.LoadDir(e.dir)
+	cfg.Login("www.mediawiki.org", "", "Alice", &config.Account{Auth: config.AuthOAuth2, OAuthToken: "mw-token"})
+	require.NoError(t, cfg.Save())
+	for _, h := range []string{"mw", "mediawikiwiki", "www.mediawiki.org"} {
+		out, stderr, code := e.run("", "auth", "token", "-h", h)
+		require.Equal(t, 0, code, h+": "+stderr)
+		assert.Equal(t, "mw-token\n", out, h)
+	}
+	_, stderr, code := e.run("", "auth", "logout", "-h", "mw")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "Logged out of www.mediawiki.org account Alice")
+
+	out, _, _ := e.run("", "help", "interwiki")
+	assert.Contains(t, out, "commons        https://commons.wikimedia.org/w/api.php")
 }

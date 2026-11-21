@@ -21,7 +21,7 @@ func newCmdLogout(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			host, err := storedHost(cfg, hostname)
+			host, err := storedHost(f, cfg, hostname)
 			if err != nil {
 				return err
 			}
