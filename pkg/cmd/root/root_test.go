@@ -150,6 +150,30 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			"categories": []any{map[string]any{"ns": 14, "title": "Category:A"}, map[string]any{"ns": 14, "title": "Category:B"}},
 			"revisions":  []any{rev},
 		}}}, "continue": map[string]string{"clcontinue": "7|B", "continue": "||info|revisions"}})
+	case p("prop") == "revisions" && strings.Contains(p("rvprop"), "flags"):
+		// History: revisions 105 down to 101, two per response.
+		if p("titles") == "Missing" {
+			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": "Missing", "missing": true}}}})
+			return
+		}
+		w.lists = append(w.lists, r.Form)
+		start := 105
+		if c := p("rvcontinue"); c != "" {
+			fmt.Sscan(c, &start)
+		}
+		n := 2
+		fmt.Sscan(p("rvlimit"), &n)
+		n = min(n, 2)
+		var revs []any
+		for id := start; id > start-n && id > 100; id-- {
+			revs = append(revs, map[string]any{"revid": id, "parentid": id - 1, "timestamp": fmt.Sprintf("2026-11-%02dT08:41:11Z", id-90),
+				"user": "Jmnote", "comment": fmt.Sprintf("edit\n%d %s", id, strings.Repeat("가", 70)), "size": id * 10, "minor": id%2 == 0, "tags": []string{}})
+		}
+		resp := map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": p("titles"), "revisions": revs}}}}
+		if next := start - n; next > 100 {
+			resp["continue"] = map[string]string{"rvcontinue": fmt.Sprint(next), "continue": "||"}
+		}
+		send(resp)
 	case p("prop") == "revisions":
 		if p("titles") == "Missing" {
 			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"missing": true}}}})
@@ -204,6 +228,8 @@ type env struct {
 	wiki *fakeWiki
 	// browsed is the last URL --web opened.
 	browsed string
+	// stdoutTTY makes standard output a terminal.
+	stdoutTTY bool
 }
 
 func newEnv(t *testing.T) *env {
@@ -221,6 +247,9 @@ func newEnv(t *testing.T) *env {
 
 func (e *env) run(stdin string, args ...string) (string, string, int) {
 	ios, in, out, errOut := iostreams.Test()
+	if e.stdoutTTY {
+		ios.SetTTY(false, true, false)
+	}
 	in.WriteString(stdin)
 	f := &cmdutil.Factory{IOStreams: ios, Config: func() (*config.Config, error) { return config.LoadDir(e.dir) },
 		Browse: func(u string) error { e.browsed = u; return nil }, Find: discovery.Find}
@@ -984,4 +1013,33 @@ func TestApiPaginateURLQueryAndBigNumbers(t *testing.T) {
 	require.Equal(t, 0, code, stderr)
 	assert.JSONEq(t, `[123456789012345678901234567890, 1.5]`, out)
 	assert.Contains(t, out, "123456789012345678901234567890")
+}
+
+func TestPageHistory(t *testing.T) {
+	e := newEnv(t)
+	out, stderr, code := e.run("", "page", "history", "Sandbox", "--api", e.api)
+	require.Equal(t, 0, code, stderr)
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	require.Len(t, lines, 5)
+	assert.Equal(t, "105\t2026-11-15T08:41:11Z\tJmnote\t1050\t\tedit 105 "+strings.Repeat("가", 70), lines[0])
+	assert.True(t, strings.HasPrefix(lines[1], "104\t2026-11-14T08:41:11Z\tJmnote\t1040\tm\t"))
+	assert.Len(t, e.wiki.lists, 3)
+
+	out, stderr, code = e.run("", "page", "history", "Sandbox", "--api", e.api, "-L", "3", "--json", "revid,minor,tags")
+	require.Equal(t, 0, code, stderr)
+	assert.JSONEq(t, `[{"revid":105,"minor":false,"tags":[]},{"revid":104,"minor":true,"tags":[]},{"revid":103,"minor":false,"tags":[]}]`, out)
+	assert.Equal(t, "1", e.wiki.lists[len(e.wiki.lists)-1].Get("rvlimit"))
+
+	e.stdoutTTY = true
+	out, stderr, code = e.run("", "page", "history", "Sandbox", "--api", e.api, "-L", "1")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "105  2026-11-15 08:41  Jmnote  1050    edit 105 "+strings.Repeat("가", 25)+"…\n", out)
+	e.stdoutTTY = false
+
+	_, stderr, code = e.run("", "page", "history", "Missing", "--api", e.api)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "page does not exist: Missing")
+	_, stderr, code = e.run("", "page", "history", "Sandbox", "--api", e.api, "-L", "0")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "invalid value for --limit")
 }
