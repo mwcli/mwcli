@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ type Client struct {
 	botName, botPassword string
 	botState             int // 0 not tried, 1 logging in, 2 done
 	botErr               error
+	loginDomain          string
 	// oauth1 signs every request to the API host with OAuth 1.0a.
 	oauth1 *OAuth1
 }
@@ -55,6 +57,12 @@ func WithOAuth1(keys OAuth1) Option {
 // the first request. name is the login name, such as Alice@mybot.
 func WithBotPassword(name, password string) Option {
 	return func(c *Client) { c.botName, c.botPassword = name, password }
+}
+
+// WithLoginDomain sets the authentication domain of the bot password login,
+// for a wiki that logs in through LDAP with several domains.
+func WithLoginDomain(domain string) Option {
+	return func(c *Client) { c.loginDomain = domain }
 }
 
 // WithCookies sends session cookies, such as those Cookies returned after a
@@ -151,7 +159,7 @@ func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
 	if c.botName != "" && c.botState == 0 {
 		// A bot password session is short lived, so each run logs in afresh.
 		c.botState = 1
-		c.botErr = c.BotLogin(c.botName, c.botPassword)
+		c.botErr = c.BotLogin(c.botName, c.botPassword, c.loginDomain)
 		c.botState = 2
 	}
 	if c.botErr != nil {
@@ -300,26 +308,110 @@ func (c *Client) TokenOf(kind string) (string, error) {
 	return token, nil
 }
 
-// Login runs the clientlogin flow with a username and password.
-func (c *Client) Login(username, password string) error {
+// LoginField is a field the wiki asks for in the middle of a login, such as
+// the code of a two-factor authenticator (OATHToken) or one sent by email.
+type LoginField struct {
+	// Name is the parameter to send the answer in.
+	Name string
+	// Label and Help describe the field for a person.
+	Label, Help string
+	// Sensitive fields, such as passwords, should not be echoed.
+	Sensitive bool
+	// Options are the values a select field takes, value to label.
+	Options map[string]string
+}
+
+// LoginOptions are the options of Login besides the username and password.
+type LoginOptions struct {
+	// Domain is the authentication domain, for a wiki that logs in through
+	// LDAP with several domains.
+	Domain string
+	// Answer is asked for the fields the wiki needs after the password, with
+	// the wiki's message; it returns a value for each field name. Without it,
+	// a login that needs more fails.
+	Answer func(message string, fields []LoginField) (map[string]string, error)
+}
+
+// ErrLoginNeedsMore means the wiki asked for more than a password, such as a
+// two-factor code, and LoginOptions.Answer was not given.
+var ErrLoginNeedsMore = errors.New("the wiki asks for more than a password")
+
+// maxLoginSteps bounds the rounds of a login that keeps asking for fields.
+const maxLoginSteps = 5
+
+// Login runs the clientlogin flow with a username and password, answering the
+// fields the wiki asks for after the password, such as a two-factor code,
+// through opts.Answer.
+func (c *Client) Login(username, password string, opts LoginOptions) error {
 	token, err := c.TokenOf("login")
 	if err != nil {
 		return err
 	}
 	form := url.Values{"action": {"clientlogin"}, "loginreturnurl": {c.API}, "logintoken": {token}, "username": {username}, "password": {password}, "rememberMe": {"1"}}
-	var result struct {
-		ClientLogin struct {
-			Status  string `json:"status"`
-			Message string `json:"message"`
-		} `json:"clientlogin"`
+	if opts.Domain != "" {
+		form.Set("domain", opts.Domain)
 	}
-	if err := c.request(http.MethodPost, form, &result); err != nil {
+	for step := 0; ; step++ {
+		var result struct {
+			ClientLogin struct {
+				Status   string `json:"status"`
+				Message  string `json:"message"`
+				Requests []struct {
+					Fields map[string]struct {
+						Type    string            `json:"type"`
+						Label   string            `json:"label"`
+						Help    string            `json:"help"`
+						Options map[string]string `json:"options"`
+					} `json:"fields"`
+				} `json:"requests"`
+			} `json:"clientlogin"`
+		}
+		if err := c.request(http.MethodPost, form, &result); err != nil {
+			return err
+		}
+		cl := result.ClientLogin
+		switch cl.Status {
+		case "PASS":
+			return nil
+		case "UI":
+		default:
+			return fmt.Errorf("login %s: %s", cl.Status, cl.Message)
+		}
+		if opts.Answer == nil {
+			return fmt.Errorf("%w: %s", ErrLoginNeedsMore, cl.Message)
+		}
+		if step+1 >= maxLoginSteps {
+			return fmt.Errorf("login: the wiki kept asking for more after %d steps: %s", maxLoginSteps, cl.Message)
+		}
+		var fields []LoginField
+		for _, r := range cl.Requests {
+			for name, f := range r.Fields {
+				if f.Type == "hidden" || f.Type == "null" {
+					continue
+				}
+				fields = append(fields, LoginField{Name: name, Label: f.Label, Help: f.Help, Sensitive: f.Type == "password", Options: f.Options})
+			}
+		}
+		sort.Slice(fields, func(i, j int) bool { return fields[i].Name < fields[j].Name })
+		answers, err := opts.Answer(cl.Message, fields)
+		if err != nil {
+			return err
+		}
+		form = url.Values{"action": {"clientlogin"}, "logincontinue": {"1"}, "logintoken": {token}}
+		for k, v := range answers {
+			form.Set(k, v)
+		}
+	}
+}
+
+// Logout ends the session of the client on the wiki.
+func (c *Client) Logout() error {
+	token, err := c.TokenOf("csrf")
+	if err != nil {
 		return err
 	}
-	if result.ClientLogin.Status != "PASS" {
-		return fmt.Errorf("login %s: %s", result.ClientLogin.Status, result.ClientLogin.Message)
-	}
-	return nil
+	var result map[string]any
+	return c.request(http.MethodPost, url.Values{"action": {"logout"}, "token": {token}}, &result)
 }
 
 // ErrNotLoggedIn means the wiki sees the request as anonymous.
@@ -784,13 +876,17 @@ func (c *Client) NamespaceNames(id int) ([]string, error) {
 func IsBotName(name string) bool { return strings.Contains(name, "@") }
 
 // BotLogin logs in with a bot password from Special:BotPasswords through
-// action=login, the only login module that accepts them.
-func (c *Client) BotLogin(name, password string) error {
+// action=login, the only login module that accepts them. domain is the
+// authentication domain of an LDAP wiki, or empty.
+func (c *Client) BotLogin(name, password, domain string) error {
 	token, err := c.TokenOf("login")
 	if err != nil {
 		return err
 	}
 	form := url.Values{"action": {"login"}, "lgname": {name}, "lgpassword": {password}, "lgtoken": {token}}
+	if domain != "" {
+		form.Set("lgdomain", domain)
+	}
 	var result struct {
 		Login struct {
 			Result string `json:"result"`

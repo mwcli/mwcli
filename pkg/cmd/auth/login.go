@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc"
@@ -22,6 +23,7 @@ type loginOptions struct {
 	username    string
 	botPassword bool
 	oauth1      bool
+	domain      string
 }
 
 func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
@@ -80,6 +82,7 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 	cmdutil.AddTargetFlags(cmd, &opts.wiki)
 	cmd.Flags().BoolVar(&opts.withToken, "with-token", false, "Read an OAuth 2 access token, or the four keys with --oauth1, from standard input")
 	cmd.Flags().BoolVar(&opts.oauth1, "oauth1", false, "Log in with an owner-only OAuth 1.0a consumer")
+	cmd.Flags().StringVar(&opts.domain, "domain", "", "The authentication `domain` of a wiki that logs in through LDAP, with --username")
 	cmd.Flags().StringVarP(&opts.username, "username", "u", "", "Log in with this username and a password, or a bot password login name such as Alice@mybot")
 	cmd.Flags().BoolVar(&opts.botPassword, "bot-password", false, "Treat --username as a bot password login name, for wikis whose delimiter is not @")
 	return cmd
@@ -95,6 +98,9 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	}
 	if opts.oauth1 && opts.username != "" {
 		return cmdutil.FlagErrorf("specify only one of --oauth1 and --username")
+	}
+	if opts.domain != "" && (opts.withToken || opts.oauth1) {
+		return cmdutil.FlagErrorf("--domain is for --username logins")
 	}
 	if opts.botPassword && opts.username == "" {
 		return cmdutil.FlagErrorf("--bot-password needs --username with the bot login name")
@@ -175,7 +181,7 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	} else if useToken {
 		account, user, err = tokenLogin(f, t, opts.withToken)
 	} else {
-		account, user, err = passwordLogin(f, t, opts.username, opts.botPassword || api.IsBotName(opts.username))
+		account, user, err = passwordLogin(f, t, opts.username, opts.botPassword || api.IsBotName(opts.username), opts.domain)
 	}
 	if err != nil {
 		return err
@@ -304,7 +310,7 @@ func oauth1Hint(err error) string {
 	return ""
 }
 
-func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string, bot bool) (*config.Account, string, error) {
+func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string, bot bool, domain string) (*config.Account, string, error) {
 	ios := f.IOStreams
 	var err error
 	if username == "" {
@@ -329,16 +335,16 @@ func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string, bot bo
 		return nil, "", err
 	}
 	if bot {
-		if err := c.BotLogin(username, password); err != nil {
+		if err := c.BotLogin(username, password, domain); err != nil {
 			return nil, "", err
 		}
 		u, err := c.User()
 		if err != nil {
 			return nil, "", fmt.Errorf("check login: %w", err)
 		}
-		return &config.Account{Auth: config.AuthBotPassword, BotName: username, BotPassword: password}, u.Name, nil
+		return &config.Account{Auth: config.AuthBotPassword, BotName: username, BotPassword: password, Domain: domain}, u.Name, nil
 	}
-	if err := c.Login(username, password); err != nil {
+	if err := c.Login(username, password, api.LoginOptions{Domain: domain, Answer: answerLogin(ios)}); err != nil {
 		return nil, "", err
 	}
 	u, err := c.User()
@@ -346,4 +352,66 @@ func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string, bot bo
 		return nil, "", fmt.Errorf("check login: %w", err)
 	}
 	return &config.Account{Auth: config.AuthSession, Cookies: c.Cookies()}, u.Name, nil
+}
+
+// OTPEnv holds a two-factor code for a login without a prompt.
+const OTPEnv = "MW_OTP"
+
+// answerLogin answers the fields a wiki asks for after the password, such as
+// a two-factor code: the OATHToken field from MW_OTP, others from prompts.
+func answerLogin(ios *iostreams.IOStreams) func(string, []api.LoginField) (map[string]string, error) {
+	return func(message string, fields []api.LoginField) (map[string]string, error) {
+		answers := map[string]string{}
+		var missing []string
+		shown := false
+		for _, fl := range fields {
+			if fl.Name == "OATHToken" {
+				if code := os.Getenv(OTPEnv); code != "" {
+					answers[fl.Name] = code
+					continue
+				}
+			}
+			if !ios.CanPrompt() {
+				missing = append(missing, fieldLabel(fl))
+				continue
+			}
+			if !shown && message != "" {
+				fmt.Fprintln(ios.ErrOut, message)
+				shown = true
+			}
+			label := "? " + fieldLabel(fl)
+			if len(fl.Options) > 0 {
+				label += " (" + strings.Join(optionKeys(fl.Options), ", ") + ")"
+			}
+			prompt := ios.Prompt
+			if fl.Sensitive {
+				prompt = ios.PromptSecret
+			}
+			v, err := prompt(label + ": ")
+			if err != nil {
+				return nil, err
+			}
+			answers[fl.Name] = v
+		}
+		if len(missing) > 0 {
+			return nil, cmdutil.FlagErrorf("the wiki asks for %s: %s\nrun interactively, or for a two-factor code set %s", strings.Join(missing, ", "), message, OTPEnv)
+		}
+		return answers, nil
+	}
+}
+
+func fieldLabel(f api.LoginField) string {
+	if f.Label != "" {
+		return f.Label
+	}
+	return f.Name
+}
+
+func optionKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

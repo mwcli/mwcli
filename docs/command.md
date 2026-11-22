@@ -3,7 +3,7 @@
 ```text
 mw
 ├── auth
-│   ├── login   [--wiki WIKI] [--with-token | --oauth1 [--with-token] | -u USER [--bot-password]]
+│   ├── login   [--wiki WIKI] [--with-token | --oauth1 [--with-token] | -u USER [--bot-password] [--domain DOMAIN]]
 │   ├── logout  [--wiki WIKI] [-u USER]
 │   ├── status  [--wiki WIKI] [-a] [-t]
 │   ├── switch  [--wiki WIKI] [-u USER]
@@ -34,6 +34,7 @@ mw
 | `MW_WIKI` | Wiki for commands without `--wiki`; accepts the same values |
 | `MW_TOKEN` | OAuth 2 access token used instead of stored credentials |
 | `MW_PASSWORD` | Password or bot password for `mw auth login --username` without a prompt |
+| `MW_OTP` | Two-factor code for a password login without a prompt |
 | `MW_CONFIG_DIR` | Configuration directory (default `~/.config/mw`) |
 | `MW_CACHE_DIR` | Cache directory for the APIs of wikis that were not added (default `~/.cache/mw`) |
 | `MW_BROWSER` | Browser command for `--web`, before `BROWSER` |
