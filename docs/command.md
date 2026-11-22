@@ -66,6 +66,8 @@ logins:
 
 `context` names the default site, farm alias, host or API URL. Each `farms` entry contains wiki endpoints. An endpoint uses `host`, optional `aliases` and optional `api`. When omitted, `api` defaults to `https://<host>/w/api.php`. The farm name is also the login key, so every wiki in a farm shares its accounts. Each login's `user` is its active account. Account-password logins use `auth: session` and store `cookies`. See [Authentication](auth.md) for credential storage details.
 
+When loading a config that still has the former `sites.default` and `sites.wikis` fields, mw imports the default as `context` and each saved site into `farms`. The next config change saves the migrated form. If an old site name conflicts with a different API already in a farm, mw stops and asks you to resolve that entry in `config.yml` before saving.
+
 ## Exit status
 
 - 0: success
