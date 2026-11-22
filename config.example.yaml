@@ -1,6 +1,5 @@
 # Copy this file to config.yml in the mw configuration directory.
 # A first login sets the default site automatically.
-context: zetawiki.com
 farms:
   zetawiki:
     - host: zetawiki.com
