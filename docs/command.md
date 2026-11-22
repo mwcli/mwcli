@@ -19,7 +19,7 @@ mw
 │   ├── history [--wiki WIKI] [-L N] [--json FIELDS [-q EXPR]] TITLE
 │   ├── diff    [--wiki WIKI] [-w] [--color WHEN] REV|TITLE [REV|TITLE]
 │   ├── create  [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] [--dry-run] (--text WIKITEXT | -F FILE) TITLE
-│   └── edit    [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] [--dry-run] (--text WIKITEXT | -F FILE) TITLE
+│   └── edit    [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] [--baserevid ID] [--dry-run] (--text WIKITEXT | -F FILE) TITLE
 ├── api         [--wiki WIKI] [-X METHOD] [-f key=value] [-F key=@file] [--paginate [--slurp]] [-q EXPR] [key=value ...]
 ├── completion  SHELL
 └── version

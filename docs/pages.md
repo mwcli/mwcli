@@ -63,6 +63,14 @@ mw page diff "$(mw page history 'Main Page' -L 10 --json revid --jq '.[9].revid'
 - `-s`, `--summary` sets the edit summary.
 - `--minor` marks the edit minor. `--bot` marks it a bot edit, which hides it from recent changes when the account has the bot right.
 - When the text is the same as the page's, the wiki saves no revision and mw says `No changes`.
+- `--baserevid ID` (`page edit`) names the revision the new text was made from, such as the `revid` of `mw page view --json revision`. When others edited the page since, the wiki merges their changes as the browser editor does, or the edit fails with an edit conflict instead of undoing them; later edits by the same account do not count. With `--dry-run`, mw says when the page changed since that revision.
+
+  ```sh
+  rev=$(mw page view 'Sandbox' --json revision --jq .revision.revid)
+  mw page view 'Sandbox' > sandbox.wiki
+  # edit sandbox.wiki
+  mw page edit 'Sandbox' -F sandbox.wiki --baserevid "$rev"
+  ```
 - `--dry-run` prints what the command would change as a diff, in the format of `mw page diff`, and saves nothing. The new side is the text as the wiki would save it, which the wiki works out (`action=parse&onlypst`): signatures such as `~~~~`, `subst:` and trailing white space come out as in a real edit, as your account when you are logged in. The text is transformed in the page's content model, or for a new page the model the wiki gives its title, so a JSON page, for one, shows the JSON the wiki would store. It needs no login, and refuses a missing page for `edit` and an existing one for `create` as a real run would.
 
 Creating a page needs the right to create pages; for a token or bot password, the createeditmovepage grant.
