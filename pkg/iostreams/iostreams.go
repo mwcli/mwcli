@@ -61,12 +61,26 @@ func (s *IOStreams) Prompt(label string) (string, error) {
 		return "", ErrNoPrompt
 	}
 	fmt.Fprint(s.ErrOut, label)
-	var line string
-	_, err := fmt.Fscanln(s.In, &line)
-	if err != nil && err.Error() != "unexpected newline" {
-		return "", err
+	// One byte at a time, so that nothing after the line is read ahead and
+	// lost to a later prompt.
+	var line []byte
+	b := make([]byte, 1)
+	for {
+		n, err := s.In.Read(b)
+		if n == 1 {
+			if b[0] == '\n' {
+				break
+			}
+			line = append(line, b[0])
+		}
+		if errors.Is(err, io.EOF) && len(line) > 0 {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
 	}
-	return strings.TrimSpace(line), nil
+	return strings.TrimSpace(string(line)), nil
 }
 
 // PromptSecret reads one line without echo after printing label to stderr.

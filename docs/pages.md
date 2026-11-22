@@ -111,3 +111,16 @@ Creating a page needs the right to create pages; for a token or bot password, th
 mw page view 'Sandbox' | sed 's/teh/the/' | mw page edit 'Sandbox' -F - -s 'Fix typo' --minor
 mw page create 'Sandbox/Test' --text 'Hello' -s 'New test page'
 ```
+
+## Moving and deleting pages
+
+`mw page move TITLE NEW-TITLE` renames a page with its history and leaves a redirect at the old title. `--move-talk` moves its talk page too and `--move-subpages` its subpages, as far as the wiki allows; `--no-redirect` leaves no redirect, which needs the right to suppress redirects. A new title that is taken is an error.
+
+`mw page delete TITLE` deletes a page with all its revisions; administrators can undelete it. On a terminal mw asks to type the title to confirm, and in a script `--yes` is needed.
+
+Both take `--reason`, shown in the log, and need a login with the right: move (such as the `createeditmovepage` grant of a token) or delete (the `delete` grant).
+
+```sh
+mw page move 'Sandbox/Old' 'Sandbox/New' --reason 'Better name' --move-talk
+mw page delete 'Sandbox/New' --reason 'Test done' --yes
+```
