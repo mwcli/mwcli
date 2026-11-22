@@ -100,7 +100,7 @@ func newCmdDiff(f *cmdutil.Factory) *cobra.Command {
 	}
 	cmdutil.AddTargetFlags(cmd, &wiki)
 	cmd.Flags().BoolVarP(&web, "web", "w", false, "Open the diff in the browser")
-	cmd.Flags().StringVar(&color, "color", "auto", "Use color in diff output: {always|never|auto}")
+	cmd.Flags().StringVar(&color, "color", "auto", "Use color in diff output: `when` is always, never or auto")
 	return cmd
 }
 

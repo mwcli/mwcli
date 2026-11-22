@@ -52,7 +52,7 @@ func newCmdToken(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
-	cmdutil.AddWikiFlag(cmd, &wiki, "The wiki whose token to print")
-	cmd.Flags().StringVarP(&user, "user", "u", "", "The account to print the token of")
+	cmdutil.AddWikiFlag(cmd, &wiki, "The `wiki` whose token to print")
+	cmd.Flags().StringVarP(&user, "user", "u", "", "The `account` to print the token of")
 	return cmd
 }

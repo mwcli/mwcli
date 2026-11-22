@@ -109,8 +109,8 @@ type editFlags struct {
 
 func (o *editFlags) add(cmd *cobra.Command) {
 	cmdutil.AddTargetFlags(cmd, &o.wiki)
-	cmd.Flags().StringVarP(&o.summary, "summary", "s", "", "Edit summary")
-	cmd.Flags().StringVar(&o.text, "text", "", "New wikitext")
+	cmd.Flags().StringVarP(&o.summary, "summary", "s", "", "Edit summary `text`")
+	cmd.Flags().StringVar(&o.text, "text", "", "New `wikitext`")
 	cmd.Flags().StringVarP(&o.file, "file", "F", "", "Read the new wikitext from `file` (use \"-\" to read from standard input)")
 	cmd.Flags().BoolVar(&o.minor, "minor", false, "Mark the edit as minor")
 	cmd.Flags().BoolVar(&o.bot, "bot", false, "Mark the edit as a bot edit, when the account has the bot right")

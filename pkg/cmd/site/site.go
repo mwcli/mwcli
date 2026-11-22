@@ -147,7 +147,7 @@ func newCmdAdd(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringSliceVar(&aliases, "alias", nil, "Another `name` for the site; repeat or separate with commas")
-	cmd.Flags().StringVar(&farmFlag, "farm", "", "Add this wiki to an existing farm and share its login")
+	cmd.Flags().StringVar(&farmFlag, "farm", "", "Add this wiki to an existing `farm` and share its login")
 	return cmd
 }
 

@@ -46,7 +46,7 @@ func newCmdSwitch(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
-	cmdutil.AddWikiFlag(cmd, &wiki, "The wiki whose active account to switch")
-	cmd.Flags().StringVarP(&user, "user", "u", "", "The account to switch to")
+	cmdutil.AddWikiFlag(cmd, &wiki, "The `wiki` whose active account to switch")
+	cmd.Flags().StringVarP(&user, "user", "u", "", "The `account` to switch to")
 	return cmd
 }

@@ -212,7 +212,7 @@ func AddWikiFlag(cmd *cobra.Command, wiki *string, usage string) {
 
 // AddTargetFlags adds --wiki to a command that talks to a wiki.
 func AddTargetFlags(cmd *cobra.Command, wiki *string) {
-	AddWikiFlag(cmd, wiki, "The wiki: a site name, a host such as mediawiki.org, an interwiki prefix such as wikipedia, or a URL of the wiki or its api.php")
+	AddWikiFlag(cmd, wiki, "The `wiki`: a site name, a host such as mediawiki.org, an interwiki prefix such as wikipedia, or a URL of the wiki or its api.php")
 }
 
 // FlagError is a usage error; it exits with status 2.
