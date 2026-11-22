@@ -182,6 +182,26 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		send(map[string]any{"query": map[string]any{"userinfo": map[string]any{"id": 7, "name": "Jmnote", "rights": []string{"read", "edit", "minoredit"}}}})
 	case p("meta") == "tokens":
 		send(map[string]any{"query": map[string]any{"tokens": map[string]string{p("type") + "token": "tok+\\"}}})
+	case p("list") == "usercontribs":
+		w.lists = append(w.lists, r.Form)
+		if p("ucuser") != "Jmnote" {
+			send(map[string]any{"query": map[string]any{"usercontribs": []any{}}})
+			return
+		}
+		all := []any{
+			map[string]any{"revid": 303, "parentid": 302, "pageid": 7, "ns": 0, "title": "Sandbox", "timestamp": "2026-11-22T08:41:00Z", "user": "Jmnote", "comment": "Fix\ttypo\nagain", "size": 120, "sizediff": -3, "minor": true, "new": false, "top": true, "tags": []string{"mw-undo"}},
+			map[string]any{"revid": 205, "parentid": 0, "pageid": 9, "ns": 2, "title": "User:Jmnote/새 문서", "timestamp": "2026-11-21T01:02:03Z", "user": "Jmnote", "comment": "New page", "size": 240, "sizediff": 240, "minor": false, "new": true, "top": true},
+			map[string]any{"revid": 101, "parentid": 100, "pageid": 7, "ns": 0, "title": "Sandbox", "timestamp": "2026-11-20T00:00:00Z", "user": "Jmnote", "comment": "", "size": 123, "sizediff": 0, "minor": false, "new": false, "top": false},
+		}
+		start, n := 0, 2
+		fmt.Sscan(p("uccontinue"), &start)
+		fmt.Sscan(p("uclimit"), &n)
+		end := min(start+min(n, 2), len(all))
+		resp := map[string]any{"query": map[string]any{"usercontribs": all[start:end]}}
+		if end < len(all) {
+			resp["continue"] = map[string]any{"uccontinue": fmt.Sprint(end), "continue": "-||"}
+		}
+		send(resp)
 	case p("list") != "":
 		w.lists = append(w.lists, r.Form)
 		key := p("list")
@@ -1651,4 +1671,55 @@ func TestSiteView(t *testing.T) {
 	assert.Contains(t, stderr, "either as an argument or with --wiki")
 	_, _, code = e.run("", "site", "view", e.api, "--web", "--json", "api")
 	assert.Equal(t, 2, code)
+}
+
+func TestUserContribs(t *testing.T) {
+	e := newEnv(t)
+	out, stderr, code := e.run("", "user", "contribs", "Jmnote", "--wiki", e.api)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "303\t2026-11-22T08:41:00Z\tSandbox\t-3\tm*\tFix typo again\n"+
+		"205\t2026-11-21T01:02:03Z\tUser:Jmnote/새 문서\t+240\tN*\tNew page\n"+
+		"101\t2026-11-20T00:00:00Z\tSandbox\t0\t\t\n", out)
+	require.Len(t, e.wiki.lists, 2)
+	assert.Equal(t, "Jmnote", e.wiki.lists[0].Get("ucuser"))
+	assert.Equal(t, "30", e.wiki.lists[0].Get("uclimit"))
+	assert.Equal(t, "2", e.wiki.lists[1].Get("uccontinue"))
+	assert.False(t, e.wiki.lists[0].Has("ucnamespace"))
+
+	e.stdoutTTY = true
+	out, stderr, code = e.run("", "user", "contribs", "Jmnote", "--wiki", e.api, "-L", "2")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, heredoc.Doc(`
+		2026-11-22 08:41  Sandbox              -3    m*  Fix typo again
+		2026-11-21 01:02  User:Jmnote/새 문서  +240  N*  New page
+	`), out)
+
+	_, stderr, code = e.run("", "user", "contribs", "Nobody", "--wiki", e.api)
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "No contributions found")
+	e.stdoutTTY = false
+
+	e.wiki.lists = nil
+	out, stderr, code = e.run("", "user", "contribs", "Jmnote", "--wiki", e.api, "-n", "2", "-L", "1", "--json", "title,new,tags")
+	require.Equal(t, 0, code, stderr)
+	assert.JSONEq(t, `[{"title":"Sandbox","new":false,"tags":["mw-undo"]}]`, out)
+	assert.Equal(t, "2", e.wiki.lists[0].Get("ucnamespace"))
+	assert.Equal(t, "1", e.wiki.lists[0].Get("uclimit"))
+
+	out, _, code = e.run("", "user", "contribs", "Jmnote", "--wiki", e.api, "--json", "tags", "--jq", ".[2].tags")
+	require.Equal(t, 0, code)
+	assert.Equal(t, "[]\n", out)
+
+	out, _, code = e.run("", "user", "contribs", "Nobody", "--wiki", e.api, "--json", "title")
+	require.Equal(t, 0, code)
+	assert.Equal(t, "[]\n", out)
+
+	_, stderr, code = e.run("", "user", "contribs", "Jmnote", "--wiki", e.api, "--web")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, e.base+"/w/index.php?title=Special%3AContributions%2FJmnote", e.browsed)
+
+	for _, args := range [][]string{{"a|b"}, {" "}, {"Jmnote", "-L", "0"}, {"Jmnote", "--web", "--json", "title"}} {
+		_, _, code = e.run("", append([]string{"user", "contribs", "--wiki", e.api}, args...)...)
+		assert.Equal(t, 2, code, args)
+	}
 }
