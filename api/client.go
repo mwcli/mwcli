@@ -169,8 +169,16 @@ func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	// Keep the query of the API URL itself, such as one that picks the wiki,
+	// and drop the parameters of this request.
 	final := *resp.Request.URL
-	final.RawQuery, final.Fragment = "", ""
+	fq := final.Query()
+	if method == http.MethodGet {
+		for k := range params {
+			fq.Del(k)
+		}
+	}
+	final.RawQuery, final.Fragment = fq.Encode(), ""
 	c.Resolved = final.String()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		e := &HTTPError{Status: resp.Status}

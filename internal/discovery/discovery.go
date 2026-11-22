@@ -112,7 +112,11 @@ func editURI(page string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// The link is the RSD request, api.php?action=rsd; other parameters, such
+	// as one that picks the wiki, belong to the API URL.
 	u := resp.Request.URL.ResolveReference(ref)
-	u.RawQuery, u.Fragment = "", ""
+	q := u.Query()
+	q.Del("action")
+	u.RawQuery, u.Fragment = q.Encode(), ""
 	return u.String(), nil
 }

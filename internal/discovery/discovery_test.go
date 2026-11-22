@@ -73,11 +73,12 @@ func TestEditURI(t *testing.T) {
 	defer srv.Close()
 	s, err := Find(srv.URL)
 	require.NoError(t, err)
-	assert.Equal(t, srv.URL+"/mw/api.php", s.API)
+	// action=rsd is dropped; another parameter of the link belongs to the API URL.
+	assert.Equal(t, srv.URL+"/mw/api.php?x=1", s.API)
 
 	s, err = Find(srv.URL + "/b/index.php?title=Main_Page")
 	require.NoError(t, err)
-	assert.Equal(t, srv.URL+"/b/api.php", s.API)
+	assert.Equal(t, srv.URL+"/b/api.php?x=1", s.API)
 }
 
 func TestAPIURLIsOnlyChecked(t *testing.T) {

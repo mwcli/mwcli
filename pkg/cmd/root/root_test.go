@@ -1243,3 +1243,49 @@ func TestWikiURLQueryPicksWiki(t *testing.T) {
 	assert.Equal(t, e.base+"/a/api.php", ea.API)
 	assert.Equal(t, e.base+"/b/api.php", eb.API)
 }
+
+// A farm whose api.php picks the wiki by a query: discovery keeps that query
+// from the EditURI link, and the cache gives it back on the next run.
+func TestWikiURLAPIQueryPicksWiki(t *testing.T) {
+	var siteinfos int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		wiki := q.Get("wiki")
+		switch r.URL.Path {
+		case "/index.php":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprintf(w, `<link rel="EditURI" type="application/rsd+xml" href="/api.php?wiki=%s&amp;action=rsd"/>`, wiki)
+		case "/api.php":
+			w.Header().Set("Content-Type", "application/json")
+			if wiki == "" {
+				_, _ = w.Write([]byte(`{"error":{"code":"nowiki","info":"no wiki chosen"}}`))
+				return
+			}
+			if q.Get("meta") == "siteinfo" {
+				siteinfos++
+				_ = json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]string{"sitename": wiki, "generator": "MediaWiki 1.43.1", "server": "http://" + r.Host, "script": "/index.php", "articlepath": "/index.php?wiki=" + wiki + "&title=$1"}}})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"revisions": []any{map[string]any{"slots": map[string]any{"main": map[string]string{"content": "Wiki " + wiki}}}}}}}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	e := newEnv(t)
+	for _, wiki := range []string{"a", "b"} {
+		page := srv.URL + "/index.php?wiki=" + wiki + "&title=Main_Page"
+		out, stderr, code := e.run("", "page", "view", "Sandbox", "--wiki", page)
+		require.Equal(t, 0, code, stderr)
+		assert.Equal(t, "Wiki "+wiki, out)
+		entry, _, ok := apicache.Load().Get(page)
+		require.True(t, ok)
+		assert.Equal(t, srv.URL+"/api.php?wiki="+wiki, entry.API)
+
+		before := siteinfos
+		out, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", page)
+		require.Equal(t, 0, code, stderr)
+		assert.Equal(t, "Wiki "+wiki, out)
+		assert.Equal(t, before, siteinfos, "the cache is used")
+	}
+}
