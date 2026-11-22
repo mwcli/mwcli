@@ -213,7 +213,7 @@ func TestLoginStatusTokenLogout(t *testing.T) {
 	e.login()
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
-	assert.Equal(t, e.api, cfg.Sites.Default)
+	assert.Equal(t, e.api, cfg.Context)
 	require.Contains(t, cfg.Sites.Wikis, e.host, "the first login adds the site")
 	assert.Equal(t, e.api, cfg.Sites.Wikis[e.host].API)
 	assert.Equal(t, "//fake.test", cfg.Sites.Wikis[e.host].Server)
@@ -337,7 +337,7 @@ func TestSite(t *testing.T) {
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
 	require.Contains(t, cfg.Logins, "other", "logins are stored under the site name")
-	assert.Equal(t, "other", cfg.Sites.Default)
+	assert.Equal(t, "other", cfg.Context)
 	out, _, code = e.run("", "auth", "token", "--wiki", "o")
 	assert.Equal(t, 0, code)
 	assert.Equal(t, goodToken+"\n", out)
@@ -606,7 +606,7 @@ func TestBotPasswordFlag(t *testing.T) {
 func TestStatusEnvTokenForFarmSite(t *testing.T) {
 	e := newEnv(t)
 	t.Setenv("MW_TOKEN", goodToken)
-	cfg := &config.Config{Sites: config.Sites{Default: "handbook", Wikis: map[string]*config.Site{}},
+	cfg := &config.Config{Context: "handbook", Sites: config.Sites{Wikis: map[string]*config.Site{}},
 		Farms:  map[string][]config.FarmSite{"docs": {{Host: e.host, Aliases: []string{"handbook"}, API: e.api}}},
 		Logins: map[string]*config.Login{}, Dir: e.dir}
 	require.NoError(t, cfg.Save())
@@ -665,8 +665,8 @@ func TestFarmAliasAndAPISelectSameWikiAndPreserveDefault(t *testing.T) {
 	require.Equal(t, 0, code, stderr)
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
-	assert.Equal(t, secondAPI, cfg.Sites.Default)
-	r, err := sites.Lookup(cfg, cfg.Sites.Default)
+	assert.Equal(t, secondAPI, cfg.Context)
+	r, err := sites.Lookup(cfg, cfg.Context)
 	require.NoError(t, err)
 	assert.Equal(t, secondAPI, r.Site.API)
 }
@@ -685,18 +685,18 @@ func TestAPILoginWithoutAliasPersistsResolvableDefault(t *testing.T) {
 	require.Equal(t, 0, code, stderr)
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
-	assert.Equal(t, secondAPI, cfg.Sites.Default)
+	assert.Equal(t, secondAPI, cfg.Context)
 	_, stderr, code = e.run("", "page", "view", "Main Page")
 	require.Equal(t, 0, code, stderr)
 }
 
 func TestSiteRemoveClearsAPIDefault(t *testing.T) {
 	e := newEnv(t)
-	cfg := &config.Config{Dir: e.dir, Sites: config.Sites{Default: e.api, Wikis: map[string]*config.Site{"docs": {API: e.api}}}}
+	cfg := &config.Config{Dir: e.dir, Context: e.api, Sites: config.Sites{Wikis: map[string]*config.Site{"docs": {API: e.api}}}}
 	require.NoError(t, cfg.Save())
 	_, stderr, code := e.run("", "site", "remove", "docs")
 	require.Equal(t, 0, code, stderr)
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
-	assert.Empty(t, cfg.Sites.Default)
+	assert.Empty(t, cfg.Context)
 }

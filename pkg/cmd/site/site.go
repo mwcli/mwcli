@@ -127,7 +127,7 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 			}
 			for _, n := range names {
 				mark := " "
-				if !builtin && n == cfg.Sites.Default {
+				if !builtin && n == cfg.Context {
 					mark = "*"
 				}
 				line := fmt.Sprintf("%s %-*s  %s", mark, width, n, m[n].API)
@@ -161,9 +161,9 @@ func newCmdRemove(f *cmdutil.Factory) *cobra.Command {
 			if !ok {
 				return fmt.Errorf("no site named %s was added", name)
 			}
-			defaultPointsToRemoved := cfg.Sites.Default == name || cfg.Sites.Default == removedSite.API
-			if cfg.Sites.Default != "" && !defaultPointsToRemoved {
-				if current, err := sites.Lookup(cfg, cfg.Sites.Default); err == nil {
+			defaultPointsToRemoved := cfg.Context == name || cfg.Context == removedSite.API
+			if cfg.Context != "" && !defaultPointsToRemoved {
+				if current, err := sites.Lookup(cfg, cfg.Context); err == nil {
 					defaultPointsToRemoved = current.Name == name
 				}
 			}
@@ -171,7 +171,7 @@ func newCmdRemove(f *cmdutil.Factory) *cobra.Command {
 			_, hadLogin := cfg.Logins[name]
 			delete(cfg.Logins, name)
 			if defaultPointsToRemoved {
-				cfg.Sites.Default = ""
+				cfg.Context = ""
 			}
 			if err := cfg.Save(); err != nil {
 				return err
@@ -205,7 +205,7 @@ func newCmdDefault(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return cmdutil.FlagErrorf("%v", err)
 			}
-			cfg.Sites.Default = r.Name
+			cfg.Context = r.Name
 			if err := cfg.Save(); err != nil {
 				return err
 			}

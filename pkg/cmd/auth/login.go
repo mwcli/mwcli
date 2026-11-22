@@ -163,12 +163,12 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	if err != nil {
 		return err
 	}
-	wasDefaultUnset := cfg.Sites.Default == ""
+	wasDefaultUnset := cfg.Context == ""
 	cfg.Login(t.LoginKey, user, account)
 	if wasDefaultUnset {
-		cfg.Sites.Default = t.Name
+		cfg.Context = t.Name
 		if opts.apiURL != "" {
-			cfg.Sites.Default = t.API
+			cfg.Context = t.API
 		}
 	}
 	if err := cfg.Save(); err != nil {

@@ -63,10 +63,9 @@ func (s *Site) PageURL(title string) string {
 	return server + s.Script + "?title=" + url.QueryEscape(title)
 }
 
-// Sites are the wikis the user added and the default one.
+// Sites are the wikis the user added.
 type Sites struct {
-	Default string           `yaml:"default,omitempty"`
-	Wikis   map[string]*Site `yaml:"wikis,omitempty"`
+	Wikis map[string]*Site `yaml:"wikis,omitempty"`
 }
 
 // FarmSite is a wiki endpoint and the names accepted for it within a farm.
@@ -84,10 +83,11 @@ type Login struct {
 
 // Config is config.yml of the configuration directory.
 type Config struct {
-	Dir    string                `yaml:"-"`
-	Sites  Sites                 `yaml:"sites,omitempty"`
-	Farms  map[string][]FarmSite `yaml:"farms,omitempty"`
-	Logins map[string]*Login     `yaml:"logins,omitempty"`
+	Dir     string                `yaml:"-"`
+	Context string                `yaml:"context,omitempty"`
+	Sites   Sites                 `yaml:"sites,omitempty"`
+	Farms   map[string][]FarmSite `yaml:"farms,omitempty"`
+	Logins  map[string]*Login     `yaml:"logins,omitempty"`
 }
 
 // Dir returns the configuration directory: MW_CONFIG_DIR, $XDG_CONFIG_HOME/mw,
@@ -253,8 +253,8 @@ func (c *Config) Login(site, user string, a *Account) {
 	}
 	l.Users[user] = a
 	l.User = user
-	if c.Sites.Default == "" {
-		c.Sites.Default = site
+	if c.Context == "" {
+		c.Context = site
 	}
 }
 

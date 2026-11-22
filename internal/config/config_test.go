@@ -38,7 +38,7 @@ func TestLoginLogoutSwitchSave(t *testing.T) {
 
 	c, err = LoadDir(dir)
 	require.NoError(t, err)
-	assert.Equal(t, "zeta", c.Sites.Default, "the first login sets the default; later ones keep it")
+	assert.Equal(t, "zeta", c.Context, "the first login sets the default; later ones keep it")
 	assert.Equal(t, []string{"wiki.example.com", "zeta"}, c.LoginNames())
 	assert.Equal(t, []string{"zeta"}, c.SiteNames())
 	assert.Equal(t, []string{"z"}, c.Sites.Wikis["zeta"].Aliases)
