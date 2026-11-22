@@ -296,6 +296,9 @@ func ClientOptions(account *config.Account) []api.Option {
 		opts = append(opts, api.WithOAuth1(api.OAuth1{ConsumerKey: account.ConsumerKey, ConsumerSecret: account.ConsumerSecret, AccessToken: account.AccessToken, AccessSecret: account.AccessSecret}))
 	case config.AuthBotPassword:
 		opts = append(opts, api.WithBotPassword(account.BotName, account.BotPassword))
+		if account.Domain != "" {
+			opts = append(opts, api.WithLoginDomain(account.Domain))
+		}
 	default:
 		opts = append(opts, api.WithCookies(account.Cookies))
 	}

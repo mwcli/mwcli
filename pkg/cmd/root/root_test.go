@@ -37,6 +37,10 @@ type fakeWiki struct {
 	siteinfos int
 	// pstModels are the contentmodel parameters of pre-save transforms.
 	pstModels []string
+	// domains are the domain or lgdomain parameters of logins; logouts counts
+	// action=logout requests.
+	domains []string
+	logouts int
 }
 
 func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
@@ -112,7 +116,39 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			sig = "[[User:Jmnote|Jmnote]]"
 		}
 		send(map[string]any{"parse": map[string]string{"text": strings.ReplaceAll(strings.TrimRight(p("text"), " \n"), "~~~", sig)}})
+	case p("action") == "clientlogin":
+		// Jmnote logs in with pw; TwoFA also needs the code 123456 next.
+		if r.Form.Has("loginmessageformat") && p("loginmessageformat") != "wikitext" && p("loginmessageformat") != "html" {
+			send(map[string]any{"error": map[string]string{"code": "badvalue", "info": "Unrecognized value for parameter \"loginmessageformat\""}})
+			return
+		}
+		w.domains = append(w.domains, p("domain"))
+		pass := func() {
+			http.SetCookie(rw, &http.Cookie{Name: "fakesession", Value: "bot", Path: "/"})
+			send(map[string]any{"clientlogin": map[string]string{"status": "PASS", "username": "Jmnote"}})
+		}
+		switch {
+		case p("logincontinue") != "" && p("OATHToken") == "123456":
+			pass()
+		case p("logincontinue") != "":
+			send(map[string]any{"clientlogin": map[string]string{"status": "FAIL", "message": "Verification failed."}})
+		case p("password") != "pw" || p("logintoken") != "tok+\\":
+			send(map[string]any{"clientlogin": map[string]string{"status": "FAIL", "message": "Incorrect username or password entered."}})
+		case p("username") == "TwoFA":
+			send(map[string]any{"clientlogin": map[string]any{"status": "UI", "message": "Enter a verification code from your authentication device.",
+				"requests": []any{map[string]any{"id": "TOTPAuthenticationRequest", "fields": map[string]any{
+					"OATHToken":   map[string]string{"type": "string", "label": "Token"},
+					"hiddenfield": map[string]string{"type": "hidden"}}}}}})
+		default:
+			pass()
+		}
+	case p("action") == "logout":
+		if p("token") == "tok+\\" && authed {
+			w.logouts++
+		}
+		send(map[string]any{})
 	case p("action") == "login":
+		w.domains = append(w.domains, p("lgdomain"))
 		w.botLogins++
 		if (p("lgname") != "Jmnote@mw" && p("lgname") != "Jmnote#mw") || p("lgpassword") != "botpw" || p("lgtoken") != "tok+\\" {
 			send(map[string]any{"login": map[string]string{"result": "Failed", "reason": "Incorrect username or password entered."}})
@@ -314,8 +350,9 @@ type env struct {
 	wiki *fakeWiki
 	// browsed is the last URL --web opened.
 	browsed string
-	// stdoutTTY makes standard output a terminal.
-	stdoutTTY bool
+	// stdoutTTY makes standard output a terminal; interactive also makes
+	// standard input and error terminals, so that mw prompts.
+	stdoutTTY, interactive bool
 }
 
 func newEnv(t *testing.T) *env {
@@ -336,6 +373,9 @@ func (e *env) run(stdin string, args ...string) (string, string, int) {
 	ios, in, out, errOut := iostreams.Test()
 	if e.stdoutTTY {
 		ios.SetTTY(false, true, false)
+	}
+	if e.interactive {
+		ios.SetTTY(true, false, true)
 	}
 	in.WriteString(stdin)
 	f := &cmdutil.Factory{IOStreams: ios, Config: func() (*config.Config, error) { return config.LoadDir(e.dir) },
@@ -1375,4 +1415,81 @@ func TestPageEditDryRun(t *testing.T) {
 	assert.Equal(t, []string{"json", ""}, e.wiki.pstModels)
 
 	assert.Empty(t, e.wiki.edits, "nothing is saved")
+}
+
+// A password login answers the fields the wiki asks for next, such as a
+// two-factor code, from MW_OTP or a prompt.
+func TestPasswordLoginTwoFactor(t *testing.T) {
+	e := newEnv(t)
+	t.Setenv("MW_PASSWORD", "pw")
+	t.Setenv("MW_OTP", "")
+	_, stderr, code := e.run("", "auth", "login", "--wiki", e.api, "--username", "Jmnote")
+	require.Equal(t, 0, code, stderr)
+	cfg, _ := config.LoadDir(e.dir)
+	assert.Equal(t, config.AuthSession, cfg.Logins[e.host].Users["Jmnote"].Auth)
+
+	_, stderr, code = e.run("", "auth", "login", "--wiki", e.api, "--username", "TwoFA")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "the wiki asks for Token: Enter a verification code from your authentication device.")
+	assert.Contains(t, stderr, "set MW_OTP")
+
+	t.Setenv("MW_OTP", "000000")
+	_, stderr, code = e.run("", "auth", "login", "--wiki", e.api, "--username", "TwoFA")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "login FAIL: Verification failed.")
+
+	t.Setenv("MW_OTP", "123456")
+	_, stderr, code = e.run("", "auth", "login", "--wiki", e.api, "--username", "TwoFA")
+	require.Equal(t, 0, code, stderr)
+
+	// Asked at a prompt, with the wiki's message; hidden fields are not asked.
+	t.Setenv("MW_OTP", "")
+	e.interactive = true
+	_, stderr, code = e.run("123456\n", "auth", "login", "--wiki", e.api, "--username", "TwoFA")
+	e.interactive = false
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "Enter a verification code from your authentication device.\n? Token: ")
+	assert.NotContains(t, stderr, "hiddenfield")
+}
+
+// --domain goes with a password or bot password login, and a bot password
+// keeps it for the logins of later runs.
+func TestLoginDomain(t *testing.T) {
+	e := newEnv(t)
+	t.Setenv("MW_PASSWORD", "pw")
+	_, stderr, code := e.run("", "auth", "login", "--wiki", e.api, "--username", "Jmnote", "--domain", "corp")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, []string{"corp"}, e.wiki.domains)
+
+	t.Setenv("MW_PASSWORD", "botpw")
+	e.wiki.domains = nil
+	_, stderr, code = e.run("", "auth", "login", "--wiki", e.api, "--username", "Jmnote@mw", "--domain", "corp")
+	require.Equal(t, 0, code, stderr)
+	cfg, _ := config.LoadDir(e.dir)
+	assert.Equal(t, "corp", cfg.Logins[e.host].Users["Jmnote"].Domain)
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", e.api)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, []string{"corp", "corp"}, e.wiki.domains)
+
+	_, stderr, code = e.run("tok", "auth", "login", "--wiki", e.api, "--with-token", "--domain", "corp")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--domain is for --username logins")
+}
+
+// Logging out of an account password ends its session on the wiki; a token
+// has no session to end.
+func TestLogoutEndsSession(t *testing.T) {
+	e := newEnv(t)
+	t.Setenv("MW_PASSWORD", "pw")
+	_, stderr, code := e.run("", "auth", "login", "--wiki", e.api, "--username", "Jmnote")
+	require.Equal(t, 0, code, stderr)
+	_, stderr, code = e.run("", "auth", "logout", "--wiki", e.api)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, 1, e.wiki.logouts)
+	assert.NotContains(t, stderr, "Could not end the session")
+
+	e.login()
+	_, stderr, code = e.run("", "auth", "logout", "--wiki", e.api)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, 1, e.wiki.logouts)
 }

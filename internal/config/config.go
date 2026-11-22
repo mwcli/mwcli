@@ -37,6 +37,8 @@ type Account struct {
 	// BotName is the login name, such as Alice@mybot.
 	BotName     string `yaml:"bot_name,omitempty"`
 	BotPassword string `yaml:"bot_password,omitempty"`
+	// Domain is the LDAP authentication domain a bot password logs in with.
+	Domain string `yaml:"domain,omitempty"`
 	// ConsumerKey, ConsumerSecret, AccessToken and AccessSecret are the keys of
 	// an owner-only OAuth 1.0a consumer.
 	ConsumerKey    string `yaml:"consumer_key,omitempty"`

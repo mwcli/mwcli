@@ -49,9 +49,13 @@ mw stores credentials in plaintext per farm and account in `config.yml` in the c
 
 ## Account password
 
-**Log in**: `mw auth login --wiki <site> --username Alice` reads the password from `MW_PASSWORD` or a no-echo prompt and logs in through `clientlogin`, asking the wiki to keep the session. mw stores only the session cookies. Extra steps such as two-factor authentication are not supported.
+**Log in**: `mw auth login --wiki <site> --username Alice` reads the password from `MW_PASSWORD` or a no-echo prompt and logs in through `clientlogin`, asking the wiki to keep the session. mw stores only the session cookies.
 
-**End**: when the session expires, `mw auth status` says so; log in again. `mw auth logout` forgets the session.
+**Two-factor and other steps**: when the wiki asks for more after the password, such as the code of an authenticator app (OATHAuth) or one sent by email, mw shows the wiki's message and asks for each field. Without a terminal, set `MW_OTP` to the two-factor code; another field cannot be answered without a prompt. Consider a bot password for scripts instead: it needs no second step.
+
+**LDAP domains**: on a wiki that logs in through LDAP with several domains, add `--domain NAME` to a password or bot password login. A bot password keeps its domain for the logins of later runs.
+
+**End**: when the session expires, `mw auth status` says so; log in again. `mw auth logout` ends the session on the wiki, as the browser's log out does, and forgets it.
 
 ## Checking what a login can do
 
