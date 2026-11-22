@@ -146,9 +146,9 @@ func TestOAuth1Redirect(t *testing.T) {
 	assert.Empty(t, otherAuth)
 }
 
-// A POST to an API URL with a query signs the query and the form body, with a
-// name that appears in both kept twice. The GET for the token keeps the query
-// too, so both reach the same wiki.
+// A POST to an API URL with a query signs the query and the form body. A
+// parameter of the request replaces a query value of the same name. The GET
+// for the token keeps the query too, so both reach the same wiki.
 func TestOAuth1PostWithQuery(t *testing.T) {
 	keys := &OAuth1{ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
 	var forms []url.Values
@@ -176,6 +176,6 @@ func TestOAuth1PostWithQuery(t *testing.T) {
 	assert.Equal(t, "a", forms[0].Get("wiki"))
 	assert.Equal(t, []string{"Q"}, forms[0]["title"])
 	assert.Equal(t, "tokens", forms[0].Get("meta"))
-	assert.Equal(t, []string{"A", "Q"}, forms[1]["title"])
+	assert.Equal(t, []string{"A"}, forms[1]["title"])
 	assert.Equal(t, "a", forms[1].Get("wiki"))
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"reflect"
 	"slices"
 	"strings"
@@ -96,18 +97,72 @@ func (j *JSONFlags) Write(w io.Writer, v any, tty bool) error {
 	if j.jq == "" {
 		return writeJSON(w, out, tty)
 	}
-	q, err := gojq.Parse(j.jq)
+	b, _ = json.Marshal(out)
+	generic, err := DecodeJSON(b)
 	if err != nil {
-		return FlagErrorf("invalid --jq expression: %v", err)
+		return err
+	}
+	return WriteJQ(w, j.jq, generic, tty)
+}
+
+// DecodeJSON decodes b for jq, keeping integers exact: a page or revision ID
+// beyond 2^53 would change as a float64.
+func DecodeJSON(b []byte) (any, error) {
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.UseNumber()
+	var v any
+	if err := d.Decode(&v); err != nil {
+		return nil, err
+	}
+	return normalizeNumbers(v), nil
+}
+
+// normalizeNumbers turns json.Number into int, *big.Int or float64, the number
+// types gojq works with.
+func normalizeNumbers(v any) any {
+	switch v := v.(type) {
+	case json.Number:
+		if i, err := v.Int64(); err == nil {
+			return int(i)
+		}
+		if n, ok := new(big.Int).SetString(v.String(), 10); ok {
+			return n
+		}
+		f, _ := v.Float64()
+		return f
+	case []any:
+		for i, x := range v {
+			v[i] = normalizeNumbers(x)
+		}
+	case map[string]any:
+		for k, x := range v {
+			v[k] = normalizeNumbers(x)
+		}
+	}
+	return v
+}
+
+// CompileJQ parses a --jq expression.
+func CompileJQ(expr string) (*gojq.Code, error) {
+	q, err := gojq.Parse(expr)
+	if err != nil {
+		return nil, FlagErrorf("invalid --jq expression: %v", err)
 	}
 	code, err := gojq.Compile(q)
 	if err != nil {
-		return FlagErrorf("invalid --jq expression: %v", err)
+		return nil, FlagErrorf("invalid --jq expression: %v", err)
 	}
-	var generic any
-	b, _ = json.Marshal(out)
-	_ = json.Unmarshal(b, &generic)
-	iter := code.Run(generic)
+	return code, nil
+}
+
+// WriteJQ prints the results of expr on v, a value decoded from JSON: strings
+// as plain lines, other values as JSON, indented on a terminal.
+func WriteJQ(w io.Writer, expr string, v any, tty bool) error {
+	code, err := CompileJQ(expr)
+	if err != nil {
+		return err
+	}
+	iter := code.Run(v)
 	for {
 		r, ok := iter.Next()
 		if !ok {
