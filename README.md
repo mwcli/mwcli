@@ -18,7 +18,8 @@ It runs on macOS, Windows and Linux.
 
 ## Documentation
 
-- [Choosing a wiki](docs/wikis.md): `--wiki`, interwiki prefixes, API discovery
+- [Getting started](docs/getting-started.md): connect to a wiki, log in and edit a page
+- [Choosing a wiki](docs/wikis.md): built-in sites, `mw site add`, `--wiki` and the default site
 - [Authentication](docs/auth.md): choosing between OAuth 2 tokens, bot passwords and passwords, keeping them secure
 - [Pages](docs/pages.md): `mw page view` with `--json`, `--jq` and `--web`, `mw page list`, `mw page edit`
 - [API requests](docs/api.md): `mw api`

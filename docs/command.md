@@ -8,69 +8,56 @@ mw
 │   ├── status  [--wiki WIKI] [-a] [-t]
 │   ├── switch  [--wiki WIKI] [-u USER]
 │   └── token   [--wiki WIKI] [-u USER]
+├── site
+│   ├── add     [NAME] WIKI [--alias ALIAS]
+│   ├── list    [--builtin]
+│   ├── remove  NAME
+│   └── default [NAME]
 ├── page
 │   ├── view    [--wiki WIKI] [--api URL] [-w] [--json FIELDS [-q EXPR]] TITLE
 │   ├── list    [--wiki WIKI] [--api URL] [--prefix TEXT | --category NAME | -S QUERY | --links-to TITLE | --embeds TITLE] [-n ID] [-L N] [--json FIELDS [-q EXPR]]
 │   └── edit    [--wiki WIKI] [--api URL] [-s SUMMARY] (--text WIKITEXT | -F FILE) TITLE
 ├── api         [--wiki WIKI] [--api URL] [-X METHOD] [-f key=value] [-F key=@file] [key=value ...]
 ├── completion  SHELL
-├── version
-└── help interwiki   interwiki prefixes accepted by --wiki
+└── version
 ```
 
-`WIKI` is a host name such as `mediawiki.org` or an interwiki prefix such as `wikipedia`; `--api URL` names an exact Action API endpoint. Every command prints its own help with `-h, --help`.
+`--wiki WIKI` accepts a site name, an alias or a host. `--api URL` names an exact Action API endpoint. See [Choosing a wiki](wikis.md) for the target selection order. Every command prints its own help with `-h, --help`.
 
 ## Environment
 
 | Variable | Use |
 | --- | --- |
-| `MW_WIKI` | Default wiki when `--wiki` is not given |
+| `MW_WIKI` | Wiki override for requests that omit `--wiki` and `--api` |
 | `MW_TOKEN` | OAuth 2 access token used instead of stored credentials |
 | `MW_PASSWORD` | Password or bot password for `mw auth login --username` without a prompt |
 | `MW_CONFIG_DIR` | Configuration directory (default `~/.config/mw`) |
 | `MW_BROWSER` | Browser command for `--web`, before `BROWSER` |
 
-## hosts.yml
+## config.yml
 
 ```yaml
-mediawiki.org:
-    user: Alice
-    users:
-        Alice:
-            auth: oauth2
-            oauth_token: ...
-wiki.example.org:
-    api: https://wiki.example.org/api.php
-    user: Ann
-    users:
-        Ann:
-            auth: session
-            cookies:
-                examplewiki_session: ...
-        Bob:
-            auth: botpassword
-            bot_name: Bob@mybot
-            bot_password: ...
-            bot_api: https://wiki.example.org/api.php
+sites:
+    default: docs
+    wikis:
+        docs:
+            api: https://wiki.example.org/docs/api.php
+            aliases:
+                - handbook
+logins:
+    docs:
+        user: Alice
+        users:
+            Alice:
+                auth: oauth2
+                oauth_token: ...
+            Bob:
+                auth: botpassword
+                bot_name: Bob@mybot
+                bot_password: ...
 ```
 
-`api` is stored only when it was given with `mw auth login --api` and differs from `https://HOST/w/api.php`; a discovered API stays in the cache. `user` is the active account. `config.yml` in the same directory holds `default_host`, set by the last login.
-
-## Discovery cache
-
-`~/.cache/mw/discovery/HOST/siteinfo.json` (under `$XDG_CACHE_HOME` when set) records what mw found for a host without a stored `api`, the default path included, for 24 hours:
-
-```json
-{
-  "api": "https://www.mediawiki.org/w/api.php",
-  "server": "//www.mediawiki.org",
-  "script": "/w/index.php",
-  "articlepath": "/wiki/$1",
-  "generator": "MediaWiki 1.48.0-wmf.5",
-  "sitename": "MediaWiki",
-  "checked": "2026-11-21T10:00:00Z"
-}
-```
+`sites.wikis` holds added sites. An entry can also include `server`, `script` and `articlepath` from the wiki's site information. `sites.default` names the configured default. `logins` holds accounts by site name, including accounts for built-in sites. Each site's `user` is its active account. Account-password logins use `auth: session` and store `cookies`. See [Authentication](auth.md) for credential storage details.
 
 ## Exit status
 
