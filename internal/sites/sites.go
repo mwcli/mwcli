@@ -299,7 +299,7 @@ func byFarm(cfg *config.Config, name string) (Resolved, bool) {
 				if api == "" {
 					api = config.DefaultAPI(wiki.Host)
 				}
-				return Resolved{Name: strings.ToLower(wiki.Host), LoginKey: farm, Site: &config.Site{API: api, Aliases: wiki.Aliases}, Kind: Added}, true
+				return Resolved{Name: name, LoginKey: farm, Site: &config.Site{API: api, Aliases: wiki.Aliases}, Kind: Added}, true
 			}
 		}
 	}

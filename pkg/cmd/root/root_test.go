@@ -636,3 +636,14 @@ func TestStatusUsesFarmAPIWhenSiteAliasConflicts(t *testing.T) {
 	assert.Contains(t, out, "API: "+e.api)
 	assert.NotContains(t, out, "API: https://other.example.org/api.php")
 }
+
+func TestFirstLoginRejectsFarmNameCollision(t *testing.T) {
+	e := newEnv(t)
+	cfg := &config.Config{Dir: e.dir, Farms: map[string][]config.FarmSite{"unrelated.example.org": {{Host: "wiki.example.org"}}}}
+	require.NoError(t, cfg.Save())
+	_, stderr, code := e.run(goodToken, "auth", "login", "--wiki", "unrelated.example.org", "--with-token")
+	require.Equal(t, 2, code)
+	assert.Contains(t, stderr, "conflicts with a farm name")
+	cfg, _ = config.LoadDir(e.dir)
+	assert.NotContains(t, cfg.Sites.Wikis, "unrelated.example.org")
+}

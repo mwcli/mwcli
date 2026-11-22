@@ -52,3 +52,18 @@ func TestUnregisteredHostCannotSelectSameNamedFarm(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "api:https://unrelated.example.org/w/api.php", r.LoginKey)
 }
+
+func TestFarmAliasKeepsSelectedAPIIdentity(t *testing.T) {
+	cfg := &config.Config{Sites: config.Sites{Wikis: map[string]*config.Site{}}, Farms: map[string][]config.FarmSite{
+		"multi": {
+			{Host: "wiki.example.org", Aliases: []string{"first"}, API: "https://wiki.example.org/one/api.php"},
+			{Host: "wiki.example.org", Aliases: []string{"second"}, API: "https://wiki.example.org/two/api.php"},
+		},
+	}}
+	selected, err := Lookup(cfg, "second")
+	require.NoError(t, err)
+	cfg.Sites.Default = selected.Name
+	restored, err := Lookup(cfg, cfg.Sites.Default)
+	require.NoError(t, err)
+	assert.Equal(t, "https://wiki.example.org/two/api.php", restored.Site.API)
+}

@@ -106,6 +106,9 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	}
 	if t.Kind == sites.Unregistered {
 		// A first login to a wiki that was not added finds and adds it.
+		if sites.IsFarmName(cfg, t.Name) {
+			return cmdutil.FlagErrorf("site name %q conflicts with a farm name; add it with a different site name", t.Name)
+		}
 		target := opts.apiURL
 		if target == "" {
 			target = t.Name
