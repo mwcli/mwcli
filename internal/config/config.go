@@ -51,8 +51,8 @@ type Config struct {
 	DefaultHost string
 }
 
-// Dir returns the configuration directory, following the same order as gh:
-// MW_CONFIG_DIR, $XDG_CONFIG_HOME/mw, %AppData%\mw on Windows, ~/.config/mw.
+// Dir returns the configuration directory: MW_CONFIG_DIR, $XDG_CONFIG_HOME/mw,
+// %AppData%\mw on Windows, else ~/.config/mw.
 func Dir() string {
 	if d := os.Getenv("MW_CONFIG_DIR"); d != "" {
 		return d
