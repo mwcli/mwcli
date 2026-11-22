@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +30,7 @@ func TestPostIsNotRedirected(t *testing.T) {
 		api := source.URL + "/w/api.php"
 		c, err := New(api, WithBotPassword("Alice@bot", "secret"))
 		require.NoError(t, err)
-		_, err = c.CurrentUser()
+		_, err = c.CurrentUser(context.Background())
 		assert.ErrorContains(t, err, "refusing to follow a redirect of a POST request", status)
 		assert.Zero(t, posts, status)
 		source.Close()
@@ -48,7 +50,7 @@ func TestGetIsRedirected(t *testing.T) {
 	defer source.Close()
 	c, err := New(source.URL + "/w/api.php")
 	require.NoError(t, err)
-	u, err := c.CurrentUser()
+	u, err := c.CurrentUser(context.Background())
 	require.NoError(t, err)
 	assert.True(t, u.Anon)
 	assert.Equal(t, target.URL+"/w/api.php", c.Resolved)
@@ -67,7 +69,7 @@ func TestUserAgent(t *testing.T) {
 	for _, opts := range [][]Option{nil, {WithUserAgent("mytool/1.0 (me@example.org)")}} {
 		c, err := New(srv.URL+"/w/api.php", opts...)
 		require.NoError(t, err)
-		_, err = c.CurrentUser()
+		_, err = c.CurrentUser(context.Background())
 		require.NoError(t, err)
 	}
 	assert.Equal(t, []string{DefaultUserAgent, "mytool/1.0 (me@example.org)"}, got)
@@ -86,7 +88,28 @@ func TestWithCookies(t *testing.T) {
 	defer srv.Close()
 	c, err := New(srv.URL+"/w/api.php", WithCookies(map[string]string{"session": "abc"}))
 	require.NoError(t, err)
-	_, err = c.User()
+	_, err = c.User(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "abc", cookie)
+}
+
+// A request ends when its context does, such as at Ctrl-C or a deadline.
+func TestContextCancels(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release)
+	c, err := New(srv.URL + "/w/api.php")
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err = c.CurrentUser(ctx)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+
+	ctx, cancel = context.WithCancel(context.Background())
+	cancel()
+	_, err = c.SiteInfo(ctx)
+	assert.ErrorIs(t, err, context.Canceled)
 }

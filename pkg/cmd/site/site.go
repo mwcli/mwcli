@@ -76,7 +76,7 @@ func newCmdAdd(f *cmdutil.Factory) *cobra.Command {
 					return cmdutil.FlagErrorf("invalid alias %q", a)
 				}
 			}
-			s, err := f.Find(target)
+			s, err := f.Find(cmd.Context(), target)
 			if err != nil {
 				return err
 			}

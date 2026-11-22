@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -27,7 +28,7 @@ func TestDefaultPath(t *testing.T) {
 		siteinfo(rw, "Test")
 	}))
 	defer srv.Close()
-	s, err := Find(srv.URL)
+	s, err := Find(context.Background(), srv.URL)
 	require.NoError(t, err)
 	assert.Equal(t, srv.URL+"/w/api.php", s.API)
 	assert.Equal(t, "//wiki.test", s.Server)
@@ -45,7 +46,7 @@ func TestRootAPIPath(t *testing.T) {
 		http.NotFound(rw, r)
 	}))
 	defer srv.Close()
-	s, err := Find(srv.URL + "/")
+	s, err := Find(context.Background(), srv.URL+"/")
 	require.NoError(t, err)
 	assert.Equal(t, srv.URL+"/api.php", s.API)
 }
@@ -71,12 +72,12 @@ func TestEditURI(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	s, err := Find(srv.URL)
+	s, err := Find(context.Background(), srv.URL)
 	require.NoError(t, err)
 	// action=rsd is dropped; another parameter of the link belongs to the API URL.
 	assert.Equal(t, srv.URL+"/mw/api.php?x=1", s.API)
 
-	s, err = Find(srv.URL + "/b/index.php?title=Main_Page")
+	s, err = Find(context.Background(), srv.URL+"/b/index.php?title=Main_Page")
 	require.NoError(t, err)
 	assert.Equal(t, srv.URL+"/b/api.php?x=1", s.API)
 }
@@ -88,7 +89,7 @@ func TestAPIURLIsOnlyChecked(t *testing.T) {
 		siteinfo(rw, "Direct")
 	}))
 	defer srv.Close()
-	s, err := Find(srv.URL + "/x/api.php")
+	s, err := Find(context.Background(), srv.URL+"/x/api.php")
 	require.NoError(t, err)
 	assert.Equal(t, srv.URL+"/x/api.php", s.API)
 	assert.Equal(t, []string{"/x/api.php"}, paths)
@@ -101,7 +102,7 @@ func TestRedirectRecordsFinalAPI(t *testing.T) {
 		http.Redirect(rw, r, target.URL+r.URL.RequestURI(), http.StatusMovedPermanently)
 	}))
 	defer bare.Close()
-	s, err := Find(bare.URL)
+	s, err := Find(context.Background(), bare.URL)
 	require.NoError(t, err)
 	assert.Equal(t, target.URL+"/w/api.php", s.API)
 }
@@ -112,11 +113,11 @@ func TestNotMediaWiki(t *testing.T) {
 		_, _ = rw.Write([]byte(`{"query":{"general":{"generator":"Other"}}}`))
 	}))
 	defer srv.Close()
-	_, err := Find(srv.URL)
+	_, err := Find(context.Background(), srv.URL)
 	assert.ErrorContains(t, err, "could not find the MediaWiki API of "+srv.URL)
 }
 
 func TestHostDefaultsToHTTPS(t *testing.T) {
-	_, err := Find("wiki.invalid")
+	_, err := Find(context.Background(), "wiki.invalid")
 	assert.ErrorContains(t, err, "https://wiki.invalid")
 }

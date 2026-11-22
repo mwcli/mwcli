@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -92,7 +93,7 @@ func TestOAuth1SignsGetAndPost(t *testing.T) {
 	account := OAuth1{ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
 	c, err := New(srv.URL+"/w/api.php", WithOAuth1(account))
 	require.NoError(t, err)
-	res, err := c.Edit("A b/c", "Text with spaces, + and ~ and 한글", EditOptions{Summary: "summary!"})
+	res, err := c.Edit(context.Background(), "A b/c", "Text with spaces, + and ~ and 한글", EditOptions{Summary: "summary!"})
 	require.NoError(t, err)
 	assert.Equal(t, "A b/c", res.Title)
 	assert.Equal(t, 1, edits)
@@ -100,7 +101,7 @@ func TestOAuth1SignsGetAndPost(t *testing.T) {
 	account.AccessSecret = "wrong"
 	c, err = New(srv.URL+"/w/api.php", WithOAuth1(account))
 	require.NoError(t, err)
-	_, err = c.Edit("A", "x", EditOptions{})
+	_, err = c.Edit(context.Background(), "A", "x", EditOptions{})
 	assert.ErrorContains(t, err, "mwoauth-invalid-authorization")
 }
 
@@ -134,13 +135,13 @@ func TestOAuth1Redirect(t *testing.T) {
 	account := OAuth1{ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
 	c, err := New(srv.URL+"/old/api.php", WithOAuth1(account))
 	require.NoError(t, err)
-	u, err := c.User()
+	u, err := c.User(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "Alice", u.Name)
 
 	c, err = New(srv.URL+"/away/api.php", WithOAuth1(account))
 	require.NoError(t, err)
-	_, err = c.CurrentUser()
+	_, err = c.CurrentUser(context.Background())
 	require.NoError(t, err)
 	assert.Empty(t, otherAuth)
 }
@@ -169,7 +170,7 @@ func TestOAuth1PostWithQuery(t *testing.T) {
 	account := OAuth1{ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
 	c, err := New(srv.URL+"/w/api.php?wiki=a&title=Q", WithOAuth1(account))
 	require.NoError(t, err)
-	_, err = c.Edit("A", "x", EditOptions{})
+	_, err = c.Edit(context.Background(), "A", "x", EditOptions{})
 	require.NoError(t, err)
 	require.Len(t, forms, 2)
 	assert.Equal(t, "a", forms[0].Get("wiki"))

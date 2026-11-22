@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -76,7 +77,7 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 		`),
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return loginRun(f, opts)
+			return loginRun(cmd.Context(), f, opts)
 		},
 	}
 	cmdutil.AddTargetFlags(cmd, &opts.wiki)
@@ -88,7 +89,7 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 	return cmd
 }
 
-func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
+func loginRun(ctx context.Context, f *cmdutil.Factory, opts *loginOptions) error {
 	io := f.IOStreams
 	if os.Getenv(cmdutil.TokenEnv) != "" {
 		return fmt.Errorf("the value of the %s environment variable is being used for authentication.\nTo have mw store credentials instead, first clear the value from the environment", cmdutil.TokenEnv)
@@ -109,7 +110,7 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	if err != nil {
 		return err
 	}
-	t, err := f.Resolve(cfg, opts.wiki)
+	t, err := f.Resolve(ctx, cfg, opts.wiki)
 	if err != nil {
 		return err
 	}
@@ -119,7 +120,7 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 			return err
 		}
 		if h != "" {
-			if t, err = f.Resolve(cfg, h); err != nil {
+			if t, err = f.Resolve(ctx, cfg, h); err != nil {
 				return err
 			}
 			opts.wiki = h
@@ -134,7 +135,7 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 			return fmt.Errorf("a site with this host already points to another API; add this one with `mw site add NAME %s` and log in with --wiki NAME", t.API)
 		}
 		// The API is known by now; this checks it and reads the site's URLs.
-		site, err := f.Find(t.API)
+		site, err := f.Find(ctx, t.API)
 		if err != nil {
 			return err
 		}
@@ -177,11 +178,11 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	var account *config.Account
 	var user string
 	if opts.oauth1 {
-		account, user, err = oauth1Login(f, t, opts.withToken)
+		account, user, err = oauth1Login(ctx, f, t, opts.withToken)
 	} else if useToken {
-		account, user, err = tokenLogin(f, t, opts.withToken)
+		account, user, err = tokenLogin(ctx, f, t, opts.withToken)
 	} else {
-		account, user, err = passwordLogin(f, t, opts.username, opts.botPassword || api.IsBotName(opts.username), opts.domain)
+		account, user, err = passwordLogin(ctx, f, t, opts.username, opts.botPassword || api.IsBotName(opts.username), opts.domain)
 	}
 	if err != nil {
 		return err
@@ -206,7 +207,7 @@ func hostFromAPI(apiURL string) string {
 	return host
 }
 
-func tokenLogin(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.Account, string, error) {
+func tokenLogin(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.Account, string, error) {
 	ios := f.IOStreams
 	var token string
 	if fromStdin {
@@ -230,7 +231,7 @@ func tokenLogin(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.A
 	if err != nil {
 		return nil, "", err
 	}
-	u, err := c.User()
+	u, err := c.User(ctx)
 	if errors.Is(err, api.ErrNotLoggedIn) {
 		return nil, "", fmt.Errorf("the token was not accepted by %s", t.Name)
 	}
@@ -240,7 +241,7 @@ func tokenLogin(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.A
 	return account, u.Name, nil
 }
 
-func oauth1Login(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.Account, string, error) {
+func oauth1Login(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.Account, string, error) {
 	ios := f.IOStreams
 	var keys []string
 	if fromStdin {
@@ -277,7 +278,7 @@ func oauth1Login(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.
 	if err != nil {
 		return nil, "", err
 	}
-	u, err := c.User()
+	u, err := c.User(ctx)
 	if errors.Is(err, api.ErrNotLoggedIn) {
 		return nil, "", fmt.Errorf("the OAuth 1.0a keys were not accepted by %s", t.Name)
 	}
@@ -310,7 +311,7 @@ func oauth1Hint(err error) string {
 	return ""
 }
 
-func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string, bot bool, domain string) (*config.Account, string, error) {
+func passwordLogin(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, username string, bot bool, domain string) (*config.Account, string, error) {
 	ios := f.IOStreams
 	var err error
 	if username == "" {
@@ -335,19 +336,19 @@ func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string, bot bo
 		return nil, "", err
 	}
 	if bot {
-		if err := c.BotLogin(username, password, domain); err != nil {
+		if err := c.BotLogin(ctx, username, password, domain); err != nil {
 			return nil, "", err
 		}
-		u, err := c.User()
+		u, err := c.User(ctx)
 		if err != nil {
 			return nil, "", fmt.Errorf("check login: %w", err)
 		}
 		return &config.Account{Auth: config.AuthBotPassword, BotName: username, BotPassword: password, Domain: domain}, u.Name, nil
 	}
-	if err := c.Login(username, password, api.LoginOptions{Domain: domain, Answer: answerLogin(ios)}); err != nil {
+	if err := c.Login(ctx, username, password, api.LoginOptions{Domain: domain, Answer: answerLogin(ios)}); err != nil {
 		return nil, "", err
 	}
-	u, err := c.User()
+	u, err := c.User(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("check login: %w", err)
 	}

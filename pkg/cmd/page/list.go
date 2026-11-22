@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -71,7 +72,7 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := f.Resolve(cfg, wiki)
+			t, err := f.Resolve(cmd.Context(), cfg, wiki)
 			if err != nil {
 				return err
 			}
@@ -80,11 +81,11 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			if opts.Source == api.CategoryMembers {
-				if opts.Value, err = categoryTitle(c, opts.Value); err != nil {
+				if opts.Value, err = categoryTitle(cmd.Context(), c, opts.Value); err != nil {
 					return err
 				}
 			}
-			pages, err := c.ListPages(opts)
+			pages, err := c.ListPages(cmd.Context(), opts)
 			if err != nil {
 				return err
 			}
@@ -117,13 +118,13 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 // with a name of the category namespace, local, canonical or an alias, else
 // Category: followed by name, so that a category named "A: B" works without
 // its prefix too.
-func categoryTitle(c *api.Client, name string) (string, error) {
+func categoryTitle(ctx context.Context, c *api.Client, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	prefix, _, ok := strings.Cut(name, ":")
 	if !ok {
 		return "Category:" + name, nil
 	}
-	names, err := c.NamespaceNames(14)
+	names, err := c.NamespaceNames(ctx, 14)
 	if err != nil {
 		return "", err
 	}

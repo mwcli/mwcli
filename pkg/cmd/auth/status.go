@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -35,7 +36,7 @@ func newCmdStatus(f *cmdutil.Factory) *cobra.Command {
 			"The status is 1 when an account fails the check.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return statusRun(f, opts)
+			return statusRun(cmd.Context(), f, opts)
 		},
 	}
 	cmdutil.AddWikiFlag(cmd, &opts.wiki, "Check only this wiki")
@@ -53,7 +54,7 @@ type entry struct {
 	source  string
 }
 
-func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
+func statusRun(ctx context.Context, f *cmdutil.Factory, opts *statusOptions) error {
 	ios := f.IOStreams
 	cfg, err := f.Config()
 	if err != nil {
@@ -69,7 +70,7 @@ func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
 	}
 	envToken := false
 	if src, ok := cmdutil.Credentials(cfg, cmdutil.Target{}); ok && src.FromEnv {
-		t, err := f.Resolve(cfg, opts.wiki)
+		t, err := f.Resolve(ctx, cfg, opts.wiki)
 		if err != nil {
 			return err
 		}
@@ -119,7 +120,7 @@ func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
 			if opts.active && !e.active {
 				continue
 			}
-			if !printEntry(ios.Out, ios, e, opts.showToken) {
+			if !printEntry(ctx, ios.Out, ios, e, opts.showToken) {
 				failed = true
 			}
 		}
@@ -130,11 +131,11 @@ func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
 	return nil
 }
 
-func printEntry(w io.Writer, ios *iostreams.IOStreams, e entry, showToken bool) bool {
+func printEntry(ctx context.Context, w io.Writer, ios *iostreams.IOStreams, e entry, showToken bool) bool {
 	c, err := cmdutil.NewClient(e.api, e.account)
 	var u *api.UserInfo
 	if err == nil {
-		u, err = c.User()
+		u, err = c.User(ctx)
 	}
 	name := e.user
 	if u != nil {

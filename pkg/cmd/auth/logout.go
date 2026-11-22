@@ -36,7 +36,7 @@ func newCmdLogout(f *cmdutil.Factory) *cobra.Command {
 				// the account is forgotten either way.
 				c, err := cmdutil.NewClient(siteAPI(cfg, host), a)
 				if err == nil {
-					err = c.Logout()
+					err = c.Logout(cmd.Context())
 				}
 				if err != nil {
 					fmt.Fprintf(io.ErrOut, "%s Could not end the session on %s: %v\n", io.WarningIcon(), host, err)
