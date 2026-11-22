@@ -47,6 +47,17 @@ mw page history 'Main Page' -L 5
 mw page history 'Main Page' --json revid --jq '.[0].revid'
 ```
 
+## Contributions of a user
+
+`mw user contribs USER` lists the edits of a user or an IP address, newest first: time in UTC, page, change in bytes, marks and the edit summary. The marks are `N` for a new page, `m` for a minor edit and `*` when the edit is still the latest revision of its page. On a terminal the columns line up and long summaries are shortened; in a pipe each line is the revision ID, the time in ISO 8601, the title, the change in bytes, the marks and the full summary, separated by tabs. `--namespace` (`-n`) keeps one namespace, `-L` sets how many edits (30 by default), and `--web` opens the wiki's contributions page. A user with no edits, or who does not exist, lists nothing.
+
+```sh
+mw user contribs Example -L 100
+mw user contribs Example --namespace 0 --json title --jq '.[].title' | sort -u
+```
+
+The JSON fields are named as in the MediaWiki API (`list=usercontribs`): `revid`, `parentid`, `pageid`, `ns`, `title`, `timestamp`, `user`, `comment`, `size`, `sizediff`, `minor`, `new`, `top` and `tags`.
+
 ## Comparing revisions
 
 `mw page diff` prints the changes between two revisions of wikitext as a unified diff, which tools such as `patch` and editors understand. A number is a revision ID; anything else is a page title, meaning its latest revision.

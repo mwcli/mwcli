@@ -21,6 +21,8 @@ mw
 │   ├── diff    [--wiki WIKI] [-w] [--color WHEN] REV|TITLE [REV|TITLE]
 │   ├── create  [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] [--dry-run] (--text WIKITEXT | -F FILE) TITLE
 │   └── edit    [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] [--baserevid ID] [--dry-run] (--text WIKITEXT | -F FILE) TITLE
+├── user
+│   └── contribs [--wiki WIKI] [-n ID] [-L N] [-w] [--json FIELDS [-q EXPR]] USER
 ├── browse      [--wiki WIKI] [-n] [TITLE]
 ├── api         [--wiki WIKI] [-X METHOD] [-f key=value] [-F key=@file] [--paginate [--slurp]] [-q EXPR] [key=value ...]
 ├── completion  SHELL
