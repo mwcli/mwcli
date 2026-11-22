@@ -368,12 +368,18 @@ func listedSites(cfg *config.Config, builtin bool) []listedSite {
 			entries = append(entries, listedSite{Name: name, Site: site, Aliases: site.Aliases})
 		}
 		sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+		for _, p := range sites.BuiltinPatterns() {
+			entries = append(entries, listedSite{Name: p.Host, Site: &config.Site{API: sites.TemplateAPI(p)}})
+		}
 		return entries
 	}
 	var entries []listedSite
 	for farm, wikis := range cfg.Farms {
 		for _, wiki := range wikis {
 			api := farmAPI(wiki)
+			if sites.IsPattern(wiki.Host) {
+				api = sites.TemplateAPI(wiki)
+			}
 			aliases := sortedUnique(wiki.Aliases)
 			name := displayName(cfg, farm, wikis, wiki, aliases, api)
 			s := &config.Site{API: api, Aliases: aliases, Server: wiki.Server, Script: wiki.Script, ArticlePath: wiki.ArticlePath}

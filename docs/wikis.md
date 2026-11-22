@@ -59,3 +59,20 @@ mw site add handbook https://docs.example.org/w/api.php --farm docs
 
 
 Built-in and custom wikis are organized under named farms in `config.yml`. A farm is the login-sharing scope. Every wiki entry in one farm uses the farm’s stored accounts. See [Commands](command.md) for the configuration shape.
+
+## Host patterns
+
+A farm entry whose `host` is a pattern such as `*.wikipedia.org` takes in every host with one more label in front: `de.wikipedia.org` matches, while `wikipedia.org` and `de.m.wikipedia.org` do not. Its `api` may use `{host}`; without one, it is `https://{host}/w/api.php`. The pattern must be one leading `*.` before a domain with a dot in it, so `*.org` is refused.
+
+A wiki the pattern takes in needs no lookup and shares the farm's login. That login is sent only to the API the pattern gives a host, not to another path or scheme on it. Wikis named exactly, by host, name or alias, come before patterns, and the patterns of your farms before the built-in ones.
+
+The built-in `wikimedia` farm has patterns for the language editions of Wikipedia, Wiktionary, Wikibooks, Wikiquote, Wikisource, Wikinews, Wikiversity and Wikivoyage, so one Wikimedia login works on all of them. `*.wikimedia.org` is not a pattern, as some of its hosts are not wikis. `mw site list --builtin` lists the patterns with their API template.
+
+```yaml
+farms:
+  acme:
+    - host: wiki.acme.example
+      aliases: [acme]
+    - host: "*.acme.example"
+      api: https://{host}/api.php
+```
