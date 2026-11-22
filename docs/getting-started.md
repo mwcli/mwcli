@@ -113,7 +113,7 @@ mw page edit 'Sandbox' --file sandbox.wiki --summary 'Testing mw'
 ✓ Updated Sandbox on wiki.example.org
 ```
 
-If the wiki has no page named Sandbox, `mw page view` says the page does not exist; start from an empty file instead. Creating a page needs the grant to create pages (createeditmovepage) as well as editpage.
+If the wiki has no page named Sandbox, `mw page view` says the page does not exist; write the file from scratch and make the page with `mw page create 'Sandbox' --file sandbox.wiki` instead. Creating a page needs the grant to create pages (createeditmovepage) as well as editpage.
 
 Open the page in the browser to check the result:
 

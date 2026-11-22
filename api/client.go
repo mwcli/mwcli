@@ -353,26 +353,84 @@ func (c *Client) Page(title string) (string, error) {
 	return p.Revisions[0].Slots["main"].Content, nil
 }
 
-// Edit replaces the text of title and returns the normalized title.
-func (c *Client) Edit(title, text, summary string) (string, error) {
+// EditMode says whether an edit may create a page or change an existing one.
+type EditMode int
+
+const (
+	// CreateOrEdit saves the text whether or not the page exists.
+	CreateOrEdit EditMode = iota
+	// EditOnly fails with ErrMissingPage when the page does not exist.
+	EditOnly
+	// CreateOnly fails with ErrPageExists when the page exists.
+	CreateOnly
+)
+
+// ErrPageExists means the page to create exists already.
+var ErrPageExists = errors.New("page already exists")
+
+// EditOptions are the options of Edit besides the title and text.
+type EditOptions struct {
+	Summary string
+	Mode    EditMode
+	// Minor marks the edit minor; Bot marks it a bot edit, which hides it from
+	// recent changes when the account has the bot right.
+	Minor, Bot bool
+}
+
+// EditResult is the outcome of an edit.
+type EditResult struct {
+	// Title is the normalized title.
+	Title string
+	// NoChange is true when the text was the same, so no revision was saved.
+	NoChange bool
+	// New is true when the edit created the page.
+	New bool
+}
+
+// Edit saves text as the new wikitext of title.
+func (c *Client) Edit(title, text string, opts EditOptions) (*EditResult, error) {
 	token, err := c.TokenOf("csrf")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	form := url.Values{"action": {"edit"}, "assert": {"user"}, "title": {title}, "text": {text}, "summary": {summary}, "token": {token}}
+	form := url.Values{"action": {"edit"}, "assert": {"user"}, "title": {title}, "text": {text}, "summary": {opts.Summary}, "token": {token}}
+	switch opts.Mode {
+	case EditOnly:
+		form.Set("nocreate", "1")
+	case CreateOnly:
+		form.Set("createonly", "1")
+	}
+	if opts.Minor {
+		form.Set("minor", "1")
+	}
+	if opts.Bot {
+		form.Set("bot", "1")
+	}
 	var result struct {
 		Edit struct {
-			Result string `json:"result"`
-			Title  string `json:"title"`
+			Result   string `json:"result"`
+			Title    string `json:"title"`
+			NoChange bool   `json:"nochange"`
+			New      bool   `json:"new"`
 		} `json:"edit"`
 	}
-	if err := c.request(http.MethodPost, form, &result); err != nil {
-		return "", err
+	err = c.request(http.MethodPost, form, &result)
+	var ae *APIError
+	if errors.As(err, &ae) {
+		switch ae.Code {
+		case "missingtitle":
+			return nil, fmt.Errorf("%w: %s", ErrMissingPage, title)
+		case "articleexists":
+			return nil, fmt.Errorf("%w: %s", ErrPageExists, title)
+		}
+	}
+	if err != nil {
+		return nil, err
 	}
 	if result.Edit.Result != "Success" {
-		return "", fmt.Errorf("edit did not succeed (result: %q)", result.Edit.Result)
+		return nil, fmt.Errorf("edit did not succeed (result: %q)", result.Edit.Result)
 	}
-	return result.Edit.Title, nil
+	return &EditResult{Title: result.Edit.Title, NoChange: result.Edit.NoChange, New: result.Edit.New}, nil
 }
 
 // Actions maps the actions `mw auth status` summarizes to the user right they need.

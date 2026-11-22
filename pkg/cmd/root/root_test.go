@@ -29,6 +29,9 @@ type fakeWiki struct {
 	prop       string
 	lists      []url.Values
 	botLogins  int
+	// editFlags are the flags of the last edit, such as "nocreate minor".
+	editFlags string
+	created   map[string]bool
 }
 
 func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
@@ -158,8 +161,35 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			send(map[string]any{"error": map[string]string{"code": "assertuserfailed", "info": "not logged in"}})
 			return
 		}
-		w.edits = append(w.edits, map[string]string{"title": p("title"), "text": p("text"), "summary": p("summary"), "token": p("token")})
-		send(map[string]any{"edit": map[string]string{"result": "Success", "title": p("title")}})
+		var flags []string
+		for _, k := range []string{"nocreate", "createonly", "minor", "bot"} {
+			if p(k) != "" {
+				flags = append(flags, k)
+			}
+		}
+		w.editFlags = strings.Join(flags, " ")
+		title := p("title")
+		// Pages under New/ and Missing do not exist until created.
+		exists := !(title == "Missing" || strings.HasPrefix(title, "New/")) || w.created[title]
+		switch {
+		case p("nocreate") != "" && !exists:
+			send(map[string]any{"error": map[string]string{"code": "missingtitle", "info": "The page you specified doesn't exist."}})
+			return
+		case p("createonly") != "" && exists:
+			send(map[string]any{"error": map[string]string{"code": "articleexists", "info": "The article you tried to create has been created already."}})
+			return
+		case exists && p("text") == "Hello":
+			send(map[string]any{"edit": map[string]any{"result": "Success", "title": title, "nochange": true}})
+			return
+		}
+		w.edits = append(w.edits, map[string]string{"title": title, "text": p("text"), "summary": p("summary"), "token": p("token")})
+		if !exists {
+			if w.created == nil {
+				w.created = map[string]bool{}
+			}
+			w.created[title] = true
+		}
+		send(map[string]any{"edit": map[string]any{"result": "Success", "title": title, "new": !exists}})
 	default:
 		send(map[string]any{"error": map[string]string{"code": "badvalue", "info": "unknown"}})
 	}
@@ -305,6 +335,31 @@ func TestPageViewEdit(t *testing.T) {
 	assert.Contains(t, stderr, "Updated Sandbox on "+e.host)
 	require.Len(t, e.wiki.edits, 1)
 	assert.Equal(t, map[string]string{"title": "Sandbox", "text": "New text", "summary": "sum", "token": "tok+\\"}, e.wiki.edits[0])
+	assert.Equal(t, "nocreate", e.wiki.editFlags)
+
+	_, stderr, code = e.run("Hello", "page", "edit", "Sandbox", "-F", "-", "--minor", "--bot")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "No changes to Sandbox on "+e.host)
+	assert.Equal(t, "nocreate minor bot", e.wiki.editFlags)
+	require.Len(t, e.wiki.edits, 1)
+
+	// edit does not create a page; create does not change one.
+	_, stderr, code = e.run("", "page", "edit", "New/Page one", "--text", "x")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "page does not exist: New/Page one on "+e.host+"; to make it, run: mw page create 'New/Page one'")
+	_, stderr, code = e.run("", "page", "create", "Sandbox", "--text", "x")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "page already exists: Sandbox on "+e.host+"; to change it, run: mw page edit Sandbox")
+
+	_, stderr, code = e.run("", "page", "create", "New/Page one", "--text", "First", "-s", "new")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "Created New/Page one on "+e.host)
+	assert.Equal(t, "createonly", e.wiki.editFlags)
+	require.Len(t, e.wiki.edits, 2)
+	assert.Equal(t, "First", e.wiki.edits[1]["text"])
+
+	_, _, code = e.run("", "page", "create", "New/Page two")
+	assert.Equal(t, 2, code)
 }
 
 func TestApi(t *testing.T) {

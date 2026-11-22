@@ -30,6 +30,17 @@ mw page list --category 'Living people' -L 100
 mw page list --embeds 'Template:Infobox' --namespace 0 --json title --jq '.[].title'
 ```
 
-## Editing pages
+## Creating and editing pages
 
-`mw page edit TITLE` replaces the wikitext from `--text` or `--file` (`-` for standard input).
+`mw page edit TITLE` replaces the wikitext of an existing page from `--text` or `--file` (`-` for standard input). `mw page create TITLE` makes a new page the same way. Each refuses the other's job, so a typo in a title does not create a page and a new page does not overwrite one made meanwhile; the error names the command to run instead.
+
+- `-s`, `--summary` sets the edit summary.
+- `--minor` marks the edit minor. `--bot` marks it a bot edit, which hides it from recent changes when the account has the bot right.
+- When the text is the same as the page's, the wiki saves no revision and mw says `No changes`.
+
+Creating a page needs the right to create pages; for a token or bot password, the createeditmovepage grant.
+
+```sh
+mw page view 'Sandbox' | sed 's/teh/the/' | mw page edit 'Sandbox' -F - -s 'Fix typo' --minor
+mw page create 'Sandbox/Test' --text 'Hello' -s 'New test page'
+```

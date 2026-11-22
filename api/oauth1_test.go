@@ -93,15 +93,15 @@ func TestOAuth1SignsGetAndPost(t *testing.T) {
 	account := &config.Account{Auth: config.AuthOAuth1, ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
 	c, err := New(srv.URL+"/w/api.php", account)
 	require.NoError(t, err)
-	title, err := c.Edit("A b/c", "Text with spaces, + and ~ and 한글", "summary!")
+	res, err := c.Edit("A b/c", "Text with spaces, + and ~ and 한글", EditOptions{Summary: "summary!"})
 	require.NoError(t, err)
-	assert.Equal(t, "A b/c", title)
+	assert.Equal(t, "A b/c", res.Title)
 	assert.Equal(t, 1, edits)
 
 	account.AccessSecret = "wrong"
 	c, err = New(srv.URL+"/w/api.php", account)
 	require.NoError(t, err)
-	_, err = c.Edit("A", "x", "")
+	_, err = c.Edit("A", "x", EditOptions{})
 	assert.ErrorContains(t, err, "mwoauth-invalid-authorization")
 }
 
@@ -170,7 +170,7 @@ func TestOAuth1PostWithQuery(t *testing.T) {
 	account := &config.Account{Auth: config.AuthOAuth1, ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
 	c, err := New(srv.URL+"/w/api.php?wiki=a&title=Q", account)
 	require.NoError(t, err)
-	_, err = c.Edit("A", "x", "")
+	_, err = c.Edit("A", "x", EditOptions{})
 	require.NoError(t, err)
 	require.Len(t, forms, 2)
 	assert.Equal(t, "a", forms[0].Get("wiki"))
