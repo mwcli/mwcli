@@ -156,6 +156,12 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			201: {"title": "Sandbox", "parentid": 0, "content": "a\nb\nc"},
 			202: {"title": "Sandbox", "parentid": 201, "content": "a\nB\nc"},
 			203: {"title": "Hidden", "parentid": 202, "hidden": true},
+			// Only the final newline differs between 204 and 205.
+			204: {"title": "Newline", "parentid": 0, "content": "hello"},
+			205: {"title": "Newline", "parentid": 204, "content": "hello\n"},
+			206: {"title": "Empty", "parentid": 0, "content": ""},
+			207: {"title": "Empty", "parentid": 206, "noslot": true},
+			208: {"title": "Empty", "parentid": 206, "nocontent": true},
 		}
 		id := 0
 		switch {
@@ -173,11 +179,18 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		r := revs[id]
 		slot := map[string]any{"content": r["content"]}
-		if r["hidden"] == true {
+		switch {
+		case r["hidden"] == true:
 			slot = map[string]any{"texthidden": true}
+		case r["nocontent"] == true:
+			slot = map[string]any{"contentmodel": "wikitext"}
+		}
+		slots := map[string]any{"main": slot}
+		if r["noslot"] == true {
+			slots = map[string]any{}
 		}
 		send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": r["title"], "revisions": []any{map[string]any{
-			"revid": id, "parentid": r["parentid"], "timestamp": "2026-11-22T00:00:00Z", "user": "Jmnote", "slots": map[string]any{"main": slot}}}}}}})
+			"revid": id, "parentid": r["parentid"], "timestamp": "2026-11-22T00:00:00Z", "user": "Jmnote", "slots": slots}}}}}})
 	case p("prop") == "revisions" && strings.Contains(p("rvprop"), "flags"):
 		// History: revisions 105 down to 101, two per response.
 		if p("titles") == "Missing" {
@@ -1075,9 +1088,10 @@ func TestPageHistory(t *testing.T) {
 
 func TestPageDiff(t *testing.T) {
 	e := newEnv(t)
+	// The API leaves off the final newline; the diff marks it as diff -u does.
 	want := "--- Sandbox\trevision 201 (2026-11-22T00:00:00Z, Jmnote)\n" +
 		"+++ Sandbox\trevision 202 (2026-11-22T00:00:00Z, Jmnote)\n" +
-		"@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n"
+		"@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n\\ No newline at end of file\n"
 	for _, args := range [][]string{{"Sandbox"}, {"202"}, {"201", "202"}, {"201", "Sandbox"}} {
 		out, stderr, code := e.run("", append([]string{"page", "diff", "--api", e.api}, args...)...)
 		require.Equal(t, 0, code, stderr)
@@ -1087,7 +1101,17 @@ func TestPageDiff(t *testing.T) {
 	// The first revision is compared with empty text.
 	out, stderr, code := e.run("", "page", "diff", "--api", e.api, "201")
 	require.Equal(t, 0, code, stderr)
-	assert.Equal(t, "--- /dev/null\n+++ Sandbox\trevision 201 (2026-11-22T00:00:00Z, Jmnote)\n@@ -0,0 +1,3 @@\n+a\n+b\n+c\n", out)
+	assert.Equal(t, "--- /dev/null\n+++ Sandbox\trevision 201 (2026-11-22T00:00:00Z, Jmnote)\n@@ -0,0 +1,3 @@\n+a\n+b\n+c\n\\ No newline at end of file\n", out)
+
+	// A change of the final newline alone shows.
+	out, stderr, code = e.run("", "page", "diff", "--api", e.api, "205")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "--- Newline\trevision 204 (2026-11-22T00:00:00Z, Jmnote)\n+++ Newline\trevision 205 (2026-11-22T00:00:00Z, Jmnote)\n@@ -1 +1 @@\n-hello\n\\ No newline at end of file\n+hello\n", out)
+
+	// An empty text is a text; a revision whose text did not come is an error.
+	out, stderr, code = e.run("", "page", "diff", "--api", e.api, "206")
+	require.Equal(t, 0, code, stderr)
+	assert.Empty(t, out)
 
 	out, stderr, code = e.run("", "page", "diff", "--api", e.api, "202", "202")
 	require.Equal(t, 0, code, stderr)
@@ -1114,6 +1138,8 @@ func TestPageDiff(t *testing.T) {
 		{[]string{"999"}, 1, "revision does not exist: revision 999"},
 		{[]string{"Nowhere"}, 1, "page does not exist: Nowhere"},
 		{[]string{"203"}, 1, "the text of revision 203 of Hidden is hidden or missing"},
+		{[]string{"207"}, 1, "the API returned no text for revision 207 of Empty"},
+		{[]string{"208"}, 1, "the API returned no text for revision 208 of Empty"},
 		{[]string{"Sandbox", "--color", "sometimes"}, 2, "invalid value for --color"},
 		{[]string{"1", "2", "3"}, 2, "accepts between 1 and 2 arg(s)"},
 	} {

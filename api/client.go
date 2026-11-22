@@ -877,9 +877,11 @@ func (c *Client) revisionText(params url.Values, what string) (*RevisionText, er
 					User       string `json:"user"`
 					TextHidden bool   `json:"texthidden"`
 					Slots      map[string]struct {
-						Content     string `json:"content"`
-						TextHidden  bool   `json:"texthidden"`
-						TextMissing bool   `json:"textmissing"`
+						// Content is nil when the response has none, which
+						// differs from an empty text.
+						Content     *string `json:"content"`
+						TextHidden  bool    `json:"texthidden"`
+						TextMissing bool    `json:"textmissing"`
 					} `json:"slots"`
 				} `json:"revisions"`
 			} `json:"pages"`
@@ -904,9 +906,12 @@ func (c *Client) revisionText(params url.Values, what string) (*RevisionText, er
 		return nil, fmt.Errorf("%s has no readable revision", what)
 	}
 	r := p.Revisions[0]
-	main := r.Slots["main"]
+	main, ok := r.Slots["main"]
 	if r.TextHidden || main.TextHidden || main.TextMissing {
 		return nil, fmt.Errorf("the text of revision %d of %s is hidden or missing", r.RevID, p.Title)
 	}
-	return &RevisionText{Title: p.Title, RevID: r.RevID, ParentID: r.ParentID, Timestamp: r.Timestamp, User: r.User, Content: main.Content}, nil
+	if !ok || main.Content == nil {
+		return nil, fmt.Errorf("the API returned no text for revision %d of %s", r.RevID, p.Title)
+	}
+	return &RevisionText{Title: p.Title, RevID: r.RevID, ParentID: r.ParentID, Timestamp: r.Timestamp, User: r.User, Content: *main.Content}, nil
 }

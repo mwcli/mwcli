@@ -82,11 +82,13 @@ func newCmdDiff(f *cmdutil.Factory) *cobra.Command {
 				}
 				return f.Browse(u)
 			}
+			// The texts are compared as they are, so that a change of the
+			// final newline shows; a text without one is marked as diff -u does.
 			oldLabel, oldText := "/dev/null", ""
 			if older != nil {
-				oldLabel, oldText = label(older), withNewline(older.Content)
+				oldLabel, oldText = label(older), older.Content
 			}
-			out := udiff.Unified(oldLabel, label(newer), oldText, withNewline(newer.Content))
+			out := udiff.Unified(oldLabel, label(newer), oldText, newer.Content)
 			useColor := color == "always" || color == "auto" && ios.IsStdoutTTY() && os.Getenv("NO_COLOR") == ""
 			if useColor {
 				out = colorize(out)
@@ -113,15 +115,6 @@ func lookupRevision(c *api.Client, arg string) (*api.RevisionText, error) {
 // a time, the revision, its time and user.
 func label(r *api.RevisionText) string {
 	return fmt.Sprintf("%s\trevision %d (%s, %s)", r.Title, r.RevID, r.Timestamp, r.User)
-}
-
-// withNewline ends non-empty text with a newline, as the API leaves it off,
-// so that the diff does not report a missing one on both sides.
-func withNewline(s string) string {
-	if s == "" || strings.HasSuffix(s, "\n") {
-		return s
-	}
-	return s + "\n"
 }
 
 func colorize(diff string) string {

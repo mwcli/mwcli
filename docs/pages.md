@@ -48,7 +48,7 @@ mw page history 'Main Page' --json revid --jq '.[0].revid'
 - `mw page diff A`: the changes made by revision `A`, or by the latest edit of page `A`, from the revision before it. A page's first revision is compared with empty text (`/dev/null`).
 - `mw page diff A B`: from `A` to `B`, which may be revisions of different pages.
 
-Each side is labeled with the title and, after a tab, the revision, its time and user. Identical revisions print nothing. On a terminal, removed lines are red and added lines green; `--color always|never|auto` overrides this, and `NO_COLOR` turns it off. `--web` opens the wiki's own diff page (`Special:Diff`) instead.
+Each side is labeled with the title and, after a tab, the revision, its time and user. The texts are compared as they are: MediaWiki keeps no final newline, which the diff marks with `\ No newline at end of file`, so a change of that newline shows too. Identical revisions print nothing. On a terminal, removed lines are red and added lines green; `--color always|never|auto` overrides this, and `NO_COLOR` turns it off. `--web` opens the wiki's own diff page (`Special:Diff`) instead.
 
 ```sh
 mw page diff 'Main Page'
