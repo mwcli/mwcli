@@ -1,15 +1,14 @@
 # Copy and edit this file as config.yml in the mw configuration directory.
 sites:
-  default: handbook
+  default: zetawiki
 farms:
-  docs:
-    - host: wiki.example.org
-      aliases: [handbook]
-      # api: https://wiki.example.org/docs/api.php
-logins:
-  docs:
-    user: ExampleUser
-    users:
-      ExampleUser:
-        auth: oauth2
-        # Credentials are stored in config.yml as plaintext with mode 0600.
+  archwiki:
+    - host: wiki.archlinux.org
+      aliases: [arch, archwiki]
+      api: https://wiki.archlinux.org/api.php
+  zetawiki:
+    - host: zetawiki.com
+      aliases: [zeta, zetawiki]
+      api: https://zetawiki.com/w/api.php
+# Run `mw auth login --wiki archwiki` or `mw auth login --wiki zetawiki`
+# to store credentials for either farm.
