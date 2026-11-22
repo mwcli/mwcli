@@ -45,7 +45,7 @@ wikis:
     aliases: [memoryalpha]
   meta.wikimedia.org:
     api: https://meta.wikimedia.org/w/api.php
-    aliases: [metawikimedia]
+    aliases: [meta, metawikimedia]
   species.wikimedia.org:
     api: https://species.wikimedia.org/w/api.php
     aliases: [species, wikispecies]
