@@ -35,18 +35,18 @@ See [AGENTS.md](https://github.com/mwcli/mwcli/blob/main/AGENTS.md) for how chan
 
 ## Installation
 
-### Windows
-
-```sh
-winget install mwcli.mwcli
-```
-
 ### Linux and macOS
 
 Download an archive from the [releases](https://github.com/mwcli/mwcli/releases) page, or install with Go:
 
 ```sh
 go install github.com/mwcli/mwcli/cmd/mw@latest
+```
+
+### Windows
+
+```sh
+winget install mwcli.mwcli
 ```
 
 ### Build from source
