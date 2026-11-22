@@ -32,21 +32,15 @@ func (o *OAuth1) header(method, endpoint string, params url.Values, timestamp, n
 		"oauth_nonce":            nonce,
 		"oauth_version":          "1.0",
 	}
-	var pairs []string
+	all := url.Values{}
 	for k, vs := range params {
-		for _, v := range vs {
-			pairs = append(pairs, percentEncode(k)+"="+percentEncode(v))
-		}
+		all[k] = append([]string(nil), vs...)
 	}
 	for k, v := range oauth {
-		pairs = append(pairs, percentEncode(k)+"="+percentEncode(v))
+		all.Add(k, v)
 	}
-	// Encoded keys and values never contain "=", so sorting the pairs sorts
-	// by key, then by value.
-	sort.Strings(pairs)
-	base := strings.ToUpper(method) + "&" + percentEncode(endpoint) + "&" + percentEncode(strings.Join(pairs, "&"))
 	mac := hmac.New(sha1.New, []byte(percentEncode(o.ConsumerSecret)+"&"+percentEncode(o.AccessSecret)))
-	mac.Write([]byte(base))
+	mac.Write([]byte(baseString(method, endpoint, all)))
 	oauth["oauth_signature"] = base64.StdEncoding.EncodeToString(mac.Sum(nil))
 
 	keys := make([]string, 0, len(oauth))
@@ -65,9 +59,36 @@ func (o *OAuth1) header(method, endpoint string, params url.Values, timestamp, n
 	return b.String()
 }
 
-// sign sets the Authorization header of req with params, the query or form
-// values it carries.
-func (o *OAuth1) sign(req *http.Request, params url.Values) {
+// baseString is the signature base string of RFC 5849 3.4.1: the encoded
+// parameters are sorted by name and, for the same name, by value.
+func baseString(method, endpoint string, params url.Values) string {
+	type pair struct{ k, v string }
+	var pairs []pair
+	for k, vs := range params {
+		for _, v := range vs {
+			pairs = append(pairs, pair{percentEncode(k), percentEncode(v)})
+		}
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].k != pairs[j].k {
+			return pairs[i].k < pairs[j].k
+		}
+		return pairs[i].v < pairs[j].v
+	})
+	joined := make([]string, len(pairs))
+	for i, p := range pairs {
+		joined[i] = p.k + "=" + p.v
+	}
+	return strings.ToUpper(method) + "&" + percentEncode(endpoint) + "&" + percentEncode(strings.Join(joined, "&"))
+}
+
+// sign sets the Authorization header of req, signing the query of its URL and
+// form, the form body values it carries. A name may appear in both.
+func (o *OAuth1) sign(req *http.Request, form url.Values) {
+	params := req.URL.Query()
+	for k, vs := range form {
+		params[k] = append(params[k], vs...)
+	}
 	nonce := make([]byte, 16)
 	_, _ = rand.Read(nonce)
 	req.Header.Set("Authorization", o.header(req.Method, baseURL(req.URL), params, strconv.FormatInt(time.Now().Unix(), 10), hex.EncodeToString(nonce)))

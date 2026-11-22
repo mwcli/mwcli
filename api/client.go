@@ -76,7 +76,7 @@ func (c *Client) checkRedirect(req *http.Request, via []*http.Request) error {
 	}
 	if c.oauth1 != nil {
 		if strings.EqualFold(req.URL.Host, c.url.Host) {
-			c.oauth1.sign(req, req.URL.Query())
+			c.oauth1.sign(req, nil)
 		} else {
 			req.Header.Del("Authorization")
 		}
@@ -146,7 +146,11 @@ func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
 	if c.oauth1 != nil {
-		c.oauth1.sign(req, params)
+		var form url.Values
+		if method != http.MethodGet {
+			form = params
+		}
+		c.oauth1.sign(req, form)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {

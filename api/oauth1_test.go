@@ -21,6 +21,13 @@ func TestOAuth1SpecExample(t *testing.T) {
 	assert.True(t, strings.HasPrefix(h, "OAuth "))
 }
 
+// Names that are prefixes of others sort by name first: a before a-b, though
+// "a-b=" sorts before "a=" as a string. Values of one name sort by value.
+func TestBaseStringOrder(t *testing.T) {
+	got := baseString("post", "https://example.com/w/api.php", url.Values{"a-b": {"2"}, "a": {"z", "1"}, "b": {"x"}})
+	assert.Equal(t, "POST&https%3A%2F%2Fexample.com%2Fw%2Fapi.php&"+percentEncode("a=1&a=z&a-b=2&b=x"), got)
+}
+
 func TestPercentEncode(t *testing.T) {
 	assert.Equal(t, "Ladies%20%2B%20Gentlemen", percentEncode("Ladies + Gentlemen"))
 	assert.Equal(t, "An%20encoded%20string%21", percentEncode("An encoded string!"))
@@ -135,4 +142,34 @@ func TestOAuth1Redirect(t *testing.T) {
 	_, err = c.CurrentUser()
 	require.NoError(t, err)
 	assert.Empty(t, otherAuth)
+}
+
+// A POST to an API URL with a query signs the query and the form body, with a
+// name that appears in both kept twice.
+func TestOAuth1PostWithQuery(t *testing.T) {
+	keys := &OAuth1{ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
+	var forms []url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if !verifyOAuth1(r, keys) {
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": "mwoauth-invalid-authorization", "info": "bad signature"}})
+			return
+		}
+		forms = append(forms, r.Form)
+		switch r.PostForm.Get("action") {
+		case "edit":
+			_ = json.NewEncoder(w).Encode(map[string]any{"edit": map[string]string{"result": "Success", "title": r.PostForm.Get("title")}})
+		default:
+			_ = json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"tokens": map[string]string{"csrftoken": "t+\\"}}})
+		}
+	}))
+	defer srv.Close()
+	account := &config.Account{Auth: config.AuthOAuth1, ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
+	c, err := New(srv.URL+"/w/api.php?wiki=a&title=Q", account)
+	require.NoError(t, err)
+	_, err = c.Edit("A", "x", "")
+	require.NoError(t, err)
+	require.Len(t, forms, 2)
+	assert.Equal(t, []string{"A", "Q"}, forms[1]["title"])
+	assert.Equal(t, "a", forms[1].Get("wiki"))
 }
