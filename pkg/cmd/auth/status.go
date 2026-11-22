@@ -69,7 +69,7 @@ func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
 	}
 	envToken := false
 	if src, ok := cmdutil.Credentials(cfg, cmdutil.Target{}); ok && src.FromEnv {
-		t, err := f.Resolve(cfg, opts.wiki, "")
+		t, err := f.Resolve(cfg, opts.wiki)
 		if err != nil {
 			return err
 		}

@@ -27,7 +27,7 @@ mw stores credentials in plaintext per farm and account in `config.yml` in the c
 
 **Log in**: `mw auth login --wiki <site> --with-token` reads the token from standard input; without `--with-token`, mw asks for it.
 
-**Replace**: open `Special:OAuthConsumerRegistration/list` on the wiki where the consumer was registered, choose the consumer, tick "Reset the secret key to a new value" and submit: the wiki shows a new token and the old one stops working. To log in again to the wiki you use with mw, run `mw auth login --wiki <site> --with-token` (or `--api <url>`); when a script or CI passes the token in `MW_TOKEN`, update that variable or secret instead.
+**Replace**: open `Special:OAuthConsumerRegistration/list` on the wiki where the consumer was registered, choose the consumer, tick "Reset the secret key to a new value" and submit: the wiki shows a new token and the old one stops working. To log in again to the wiki you use with mw, run `mw auth login --wiki <site> --with-token`; when a script or CI passes the token in `MW_TOKEN`, update that variable or secret instead.
 
 **Revoke**: disable the consumer on the same page.
 

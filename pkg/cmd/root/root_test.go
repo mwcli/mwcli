@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mwcli/mwcli/internal/apicache"
 	"github.com/mwcli/mwcli/internal/config"
 	"github.com/mwcli/mwcli/internal/discovery"
 	"github.com/mwcli/mwcli/internal/sites"
@@ -32,6 +33,8 @@ type fakeWiki struct {
 	// editFlags are the flags of the last edit, such as "nocreate minor".
 	editFlags string
 	created   map[string]bool
+	// siteinfos counts general siteinfo requests, which discovery makes.
+	siteinfos int
 }
 
 func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
@@ -65,6 +68,18 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		send(map[string]any{"error": map[string]string{"code": "mwoauth-invalid-authorization", "info": "Invalid access token"}})
 		return
 	}
+	if r.URL.Path == "/index.php" && r.URL.Query().Get("wiki") != "" {
+		// A farm that picks the wiki by query: each wiki has its own API.
+		rw.Header().Set("Content-Type", "text/html")
+		fmt.Fprintf(rw, `<html><head><link rel="EditURI" type="application/rsd+xml" href="http://%s/%s/api.php?action=rsd"/></head></html>`, r.Host, r.URL.Query().Get("wiki"))
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/wiki/") {
+		// A page of the wiki points to its API, as MediaWiki's pages do.
+		rw.Header().Set("Content-Type", "text/html")
+		fmt.Fprintf(rw, `<html><head><link rel="EditURI" type="application/rsd+xml" href="http://%s/w/api.php?action=rsd"/></head></html>`, r.Host)
+		return
+	}
 	if r.URL.Path == "/gone/api.php" {
 		http.NotFound(rw, r)
 		return
@@ -84,7 +99,8 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		http.SetCookie(rw, &http.Cookie{Name: "fakesession", Value: "bot", Path: "/"})
 		send(map[string]any{"login": map[string]string{"result": "Success", "lgusername": "Jmnote"}})
 	case p("meta") == "siteinfo":
-		send(map[string]any{"query": map[string]any{"general": map[string]string{"sitename": "Fake", "generator": "MediaWiki 1.43.1", "server": "//fake.test", "script": "/w/index.php"}}})
+		w.siteinfos++
+		send(map[string]any{"query": map[string]any{"general": map[string]string{"sitename": "Fake", "generator": "MediaWiki 1.43.1", "server": "//fake.test", "script": "/w/index.php", "articlepath": "/wiki/$1"}}})
 	case p("meta") == "userinfo":
 		if !authed {
 			send(map[string]any{"query": map[string]any{"userinfo": map[string]any{"id": 0, "name": "127.0.0.1", "anon": true, "rights": []string{"read", "edit"}}}})
@@ -280,6 +296,7 @@ func newEnv(t *testing.T) *env {
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("MW_CONFIG_DIR", dir+"/mw")
+	t.Setenv("MW_CACHE_DIR", dir+"/cache")
 	t.Setenv("MW_TOKEN", "")
 	t.Setenv("MW_WIKI", "")
 	host, _ := config.HostOf(srv.URL)
@@ -315,7 +332,7 @@ func (e *env) store(user string, a *config.Account) *config.Config {
 }
 
 func (e *env) login() {
-	_, stderr, code := e.run(goodToken+"\n", "auth", "login", "--api", e.api, "--with-token")
+	_, stderr, code := e.run(goodToken+"\n", "auth", "login", "--wiki", e.api, "--with-token")
 	require.Equal(e.t, 0, code, stderr)
 }
 
@@ -325,7 +342,7 @@ func TestLoginStatusTokenLogout(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "not logged into any wikis")
 
-	_, stderr, code = e.run("bad\n", "auth", "login", "--api", e.api, "--with-token")
+	_, stderr, code = e.run("bad\n", "auth", "login", "--wiki", e.api, "--with-token")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "check token")
 
@@ -372,7 +389,7 @@ func TestStatusInvalidToken(t *testing.T) {
 func TestEnvToken(t *testing.T) {
 	e := newEnv(t)
 	t.Setenv("MW_TOKEN", goodToken)
-	_, stderr, code := e.run(goodToken, "auth", "login", "--api", e.api, "--with-token")
+	_, stderr, code := e.run(goodToken, "auth", "login", "--wiki", e.api, "--with-token")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "MW_TOKEN")
 
@@ -385,15 +402,15 @@ func TestEnvToken(t *testing.T) {
 
 func TestPageViewEdit(t *testing.T) {
 	e := newEnv(t)
-	out, _, code := e.run("", "page", "view", "Sandbox", "--api", e.api)
+	out, _, code := e.run("", "page", "view", "Sandbox", "--wiki", e.api)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "Hello", out)
 
-	_, stderr, code := e.run("", "page", "view", "Missing", "--api", e.api)
+	_, stderr, code := e.run("", "page", "view", "Missing", "--wiki", e.api)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "page does not exist")
 
-	_, _, code = e.run("", "page", "edit", "Sandbox", "--api", e.api, "--text", "x")
+	_, _, code = e.run("", "page", "edit", "Sandbox", "--wiki", e.api, "--text", "x")
 	assert.Equal(t, 4, code)
 
 	e.login()
@@ -521,9 +538,9 @@ func TestSite(t *testing.T) {
 // An API that was not added gets a hint when it does not answer like MediaWiki.
 func TestUnregisteredHint(t *testing.T) {
 	e := newEnv(t)
-	_, stderr, code := e.run("", "page", "view", "Sandbox", "--api", e.base+"/gone/api.php")
+	_, stderr, code := e.run("", "page", "view", "Sandbox", "--wiki", e.base+"/gone/api.php")
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "add it with `mw site add")
+	assert.Contains(t, stderr, "mw tried "+e.base+"/gone/api.php; check the URL, or add the wiki with `mw site add NAME URL`")
 }
 
 func TestBuiltinSites(t *testing.T) {
@@ -568,7 +585,7 @@ func TestStatusJWTToken(t *testing.T) {
 
 func TestPageViewJSON(t *testing.T) {
 	e := newEnv(t)
-	out, stderr, code := e.run("", "page", "view", "Sandbox", "--api", e.api, "--json", "pageid,url,revision,protection")
+	out, stderr, code := e.run("", "page", "view", "Sandbox", "--wiki", e.api, "--json", "pageid,url,revision,protection")
 	require.Equal(t, 0, code, stderr)
 	assert.JSONEq(t, `{"pageid":7,"url":"https://fake.test/wiki/Sandbox",
 		"revision":{"revid":42,"parentid":41,"timestamp":"2026-11-22T00:00:00Z","user":"Jmnote","comment":"fix","size":5},
@@ -576,53 +593,53 @@ func TestPageViewJSON(t *testing.T) {
 	assert.NotContains(t, e.wiki.rvprop, "content")
 	assert.Equal(t, "info|revisions", e.wiki.prop)
 
-	out, _, code = e.run("", "page", "view", "Sandbox", "--api", e.api, "--json", "categories,content", "--jq", ".categories[]")
+	out, _, code = e.run("", "page", "view", "Sandbox", "--wiki", e.api, "--json", "categories,content", "--jq", ".categories[]")
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "Category:A\nCategory:B\nCategory:C\n", out)
 	assert.Contains(t, e.wiki.rvprop, "content")
 
-	out, _, _ = e.run("", "page", "view", "Sandbox", "--api", e.api, "--json", "content", "--jq", ".content")
+	out, _, _ = e.run("", "page", "view", "Sandbox", "--wiki", e.api, "--json", "content", "--jq", ".content")
 	assert.Equal(t, "Hello\n", out)
 
-	_, stderr, code = e.run("", "page", "view", "Sandbox", "--api", e.api, "--json")
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", e.api, "--json")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "Specify one or more comma-separated fields")
 	assert.Contains(t, stderr, "categories")
 
 	for _, args := range [][]string{{"--json="}, {"--json", ""}, {"--web", "--json="}} {
-		out, stderr, code = e.run("", append([]string{"page", "view", "Sandbox", "--api", e.api}, args...)...)
+		out, stderr, code = e.run("", append([]string{"page", "view", "Sandbox", "--wiki", e.api}, args...)...)
 		assert.Equal(t, 2, code, args)
 		assert.Empty(t, out, args)
 		assert.Contains(t, stderr, "Specify one or more comma-separated fields", args)
 	}
 	assert.Empty(t, e.browsed)
 
-	_, stderr, code = e.run("", "page", "view", "Sandbox", "--api", e.api, "--json", "nope")
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", e.api, "--json", "nope")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, `Unknown JSON field: "nope"`)
 
-	_, stderr, code = e.run("", "page", "view", "Sandbox", "--api", e.api, "--jq", ".")
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", e.api, "--jq", ".")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "without specifying `--json`")
 
-	_, stderr, code = e.run("", "page", "view", "Missing", "--api", e.api, "--json", "title")
+	_, stderr, code = e.run("", "page", "view", "Missing", "--wiki", e.api, "--json", "title")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "page does not exist")
 }
 
 func TestPageViewWeb(t *testing.T) {
 	e := newEnv(t)
-	_, stderr, code := e.run("", "page", "view", "Main Page", "--api", e.api, "--web")
+	_, stderr, code := e.run("", "page", "view", "Main Page", "--wiki", e.api, "--web")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, e.base+"/w/index.php?title=Main+Page", e.browsed)
 
-	_, _, code = e.run("", "page", "view", "Main Page", "--api", e.api, "--web", "--json", "title")
+	_, _, code = e.run("", "page", "view", "Main Page", "--wiki", e.api, "--web", "--json", "title")
 	assert.Equal(t, 2, code)
 }
 
 func TestPageList(t *testing.T) {
 	e := newEnv(t)
-	out, stderr, code := e.run("", "page", "list", "--api", e.api, "-L", "5")
+	out, stderr, code := e.run("", "page", "list", "--wiki", e.api, "-L", "5")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "P1\nP2\nP3\nP4\nP5\n", out)
 	require.Len(t, e.wiki.lists, 2)
@@ -632,7 +649,7 @@ func TestPageList(t *testing.T) {
 	assert.Equal(t, "2", e.wiki.lists[1].Get("aplimit"))
 
 	e.wiki.lists = nil
-	out, _, code = e.run("", "page", "list", "--api", e.api, "--category", "Living people", "-n", "0", "--json", "title,pageid", "-L", "2")
+	out, _, code = e.run("", "page", "list", "--wiki", e.api, "--category", "Living people", "-n", "0", "--json", "title,pageid", "-L", "2")
 	require.Equal(t, 0, code)
 	assert.JSONEq(t, `[{"title":"P1","pageid":1},{"title":"P2","pageid":2}]`, out)
 	assert.Equal(t, "Category:Living people", e.wiki.lists[0].Get("cmtitle"))
@@ -645,17 +662,17 @@ func TestPageList(t *testing.T) {
 		"CS1 errors: periodical": "Category:CS1 errors: periodical",
 	} {
 		e.wiki.lists = nil
-		_, stderr, code = e.run("", "page", "list", "--api", e.api, "--category", in)
+		_, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--category", in)
 		require.Equal(t, 0, code, stderr)
 		assert.Equal(t, want, e.wiki.lists[0].Get("cmtitle"), in)
 	}
 
-	out, _, code = e.run("", "page", "list", "--api", e.api, "--prefix", "Nothing", "--json", "title")
+	out, _, code = e.run("", "page", "list", "--wiki", e.api, "--prefix", "Nothing", "--json", "title")
 	require.Equal(t, 0, code)
 	assert.Equal(t, "[]\n", out)
 
 	e.wiki.lists = nil
-	out, stderr, code = e.run("", "page", "list", "--api", e.api, "-S", "jq", "-L", "100", "--json", "title", "--jq", "length")
+	out, stderr, code = e.run("", "page", "list", "--wiki", e.api, "-S", "jq", "-L", "100", "--json", "title", "--jq", "length")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "7\n", out)
 	require.Len(t, e.wiki.lists, 3)
@@ -663,30 +680,30 @@ func TestPageList(t *testing.T) {
 
 	for flag, list := range map[string]string{"--links-to": "backlinks", "--embeds": "embeddedin", "--prefix": "allpages"} {
 		e.wiki.lists = nil
-		_, stderr, code = e.run("", "page", "list", "--api", e.api, flag, "X", "-L", "1")
+		_, stderr, code = e.run("", "page", "list", "--wiki", e.api, flag, "X", "-L", "1")
 		require.Equal(t, 0, code, stderr)
 		assert.Equal(t, list, e.wiki.lists[0].Get("list"), flag)
 	}
 
-	_, stderr, code = e.run("", "page", "list", "--api", e.api, "--prefix", "A", "--search", "b")
+	_, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--prefix", "A", "--search", "b")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "specify only one of --prefix, --search")
-	_, stderr, code = e.run("", "page", "list", "--api", e.api, "--category", "")
+	_, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--category", "")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "--category needs a value")
-	_, _, code = e.run("", "page", "list", "--api", e.api, "-L", "0")
+	_, _, code = e.run("", "page", "list", "--wiki", e.api, "-L", "0")
 	assert.Equal(t, 2, code)
 }
 
 func TestBotPassword(t *testing.T) {
 	e := newEnv(t)
 	t.Setenv("MW_PASSWORD", "wrong")
-	_, stderr, code := e.run("", "auth", "login", "--api", e.api, "--username", "Jmnote@mw")
+	_, stderr, code := e.run("", "auth", "login", "--wiki", e.api, "--username", "Jmnote@mw")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "bot password login failed for Jmnote@mw: Incorrect username or password")
 
 	t.Setenv("MW_PASSWORD", "botpw")
-	_, stderr, code = e.run("", "auth", "login", "--api", e.api, "--username", "Jmnote@mw")
+	_, stderr, code = e.run("", "auth", "login", "--wiki", e.api, "--username", "Jmnote@mw")
 	require.Equal(t, 0, code, stderr)
 	assert.Contains(t, stderr, "Logged in to "+e.host+" as Jmnote")
 	cfg, err := config.LoadDir(e.dir)
@@ -718,10 +735,10 @@ func TestBotPassword(t *testing.T) {
 	// Another wiki on the same host never gets the bot password.
 	other := e.base + "/other/api.php"
 	before = e.wiki.botLogins
-	out, stderr, code = e.run("", "page", "view", "Sandbox", "--api", other)
+	out, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", other)
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "Hello", out)
-	_, _, code = e.run("x", "page", "edit", "Sandbox", "--api", other, "-F", "-")
+	_, _, code = e.run("x", "page", "edit", "Sandbox", "--wiki", other, "-F", "-")
 	assert.Equal(t, 4, code)
 	assert.Equal(t, before, e.wiki.botLogins)
 	require.Len(t, e.wiki.edits, 1)
@@ -736,14 +753,14 @@ func TestBotPassword(t *testing.T) {
 func TestBotPasswordFlag(t *testing.T) {
 	e := newEnv(t)
 	t.Setenv("MW_PASSWORD", "botpw")
-	_, stderr, code := e.run("", "auth", "login", "--api", e.api, "--username", "Jmnote#mw", "--bot-password")
+	_, stderr, code := e.run("", "auth", "login", "--wiki", e.api, "--username", "Jmnote#mw", "--bot-password")
 	require.Equal(t, 0, code, stderr)
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
 	assert.Equal(t, config.AuthBotPassword, cfg.Logins[e.host].Users["Jmnote"].Auth)
 	assert.Equal(t, "Jmnote#mw", cfg.Logins[e.host].Users["Jmnote"].BotName)
 
-	_, stderr, code = e.run("", "auth", "login", "--api", e.api, "--bot-password")
+	_, stderr, code = e.run("", "auth", "login", "--wiki", e.api, "--bot-password")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "--bot-password needs --username")
 }
@@ -850,14 +867,14 @@ func TestStatusUsesFarmAPIWhenSiteAliasConflicts(t *testing.T) {
 
 func TestFirstLoginRejectsFarmNameCollision(t *testing.T) {
 	e := newEnv(t)
-	cfg := &config.Config{Dir: e.dir, Farms: map[string][]config.FarmSite{"unrelated.example.org": {{Host: "wiki.example.org"}}}}
+	cfg := &config.Config{Dir: e.dir, Farms: map[string][]config.FarmSite{e.host: {{Host: "wiki.example.org"}}}}
 	require.NoError(t, cfg.Save())
-	_, stderr, code := e.run(goodToken, "auth", "login", "--wiki", "unrelated.example.org", "--with-token")
-	require.Equal(t, 2, code)
+	_, stderr, code := e.run(goodToken, "auth", "login", "--wiki", e.base, "--with-token")
+	require.Equal(t, 2, code, stderr)
 	assert.Contains(t, stderr, "conflicts with a farm name")
 	cfg, _ = config.LoadDir(e.dir)
-	assert.Equal(t, 1, len(cfg.Farms["unrelated.example.org"]))
-	assert.Equal(t, "wiki.example.org", cfg.Farms["unrelated.example.org"][0].Host)
+	assert.Equal(t, 1, len(cfg.Farms[e.host]))
+	assert.Equal(t, "wiki.example.org", cfg.Farms[e.host][0].Host)
 }
 
 func TestFarmAliasAndAPISelectSameWikiAndPreserveDefault(t *testing.T) {
@@ -870,10 +887,12 @@ func TestFarmAliasAndAPISelectSameWikiAndPreserveDefault(t *testing.T) {
 		},
 	}}
 	require.NoError(t, cfg.Save())
-	_, stderr, code := e.run("", "page", "view", "Main Page", "--wiki", "second", "--api", secondAPI)
+	_, stderr, code := e.run("", "page", "view", "Main Page", "--wiki", "second")
+	require.Equal(t, 0, code, stderr)
+	_, stderr, code = e.run("", "page", "view", "Main Page", "--wiki", secondAPI)
 	require.Equal(t, 0, code, stderr)
 
-	_, stderr, code = e.run(goodToken, "auth", "login", "--api", secondAPI, "--with-token")
+	_, stderr, code = e.run(goodToken, "auth", "login", "--wiki", secondAPI, "--with-token")
 	require.Equal(t, 0, code, stderr)
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
@@ -893,7 +912,7 @@ func TestAPILoginWithoutAliasPersistsResolvableDefault(t *testing.T) {
 		},
 	}}
 	require.NoError(t, cfg.Save())
-	_, stderr, code := e.run(goodToken, "auth", "login", "--api", secondAPI, "--with-token")
+	_, stderr, code := e.run(goodToken, "auth", "login", "--wiki", secondAPI, "--with-token")
 	require.Equal(t, 0, code, stderr)
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
@@ -915,20 +934,20 @@ func TestSiteRemoveClearsAPIDefault(t *testing.T) {
 
 func TestOAuth1Login(t *testing.T) {
 	e := newEnv(t)
-	_, stderr, code := e.run("ck cs at", "auth", "login", "--api", e.api, "--oauth1", "--with-token")
+	_, stderr, code := e.run("ck cs at", "auth", "login", "--wiki", e.api, "--oauth1", "--with-token")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "standard input has 3 values")
 
-	_, stderr, code = e.run("bad cs at as", "auth", "login", "--api", e.api, "--oauth1", "--with-token")
+	_, stderr, code = e.run("bad cs at as", "auth", "login", "--wiki", e.api, "--oauth1", "--with-token")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "mwoauth-invalid-authorization")
 	assert.Contains(t, stderr, "The wiki does not know the consumer token")
 
-	_, stderr, code = e.run("ck cs bad as", "auth", "login", "--api", e.api, "--oauth1", "--with-token")
+	_, stderr, code = e.run("ck cs bad as", "auth", "login", "--wiki", e.api, "--oauth1", "--with-token")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "The wiki does not know the access token")
 
-	_, stderr, code = e.run("ck\ncs\nat\nas\n", "auth", "login", "--api", e.api, "--oauth1", "--with-token")
+	_, stderr, code = e.run("ck\ncs\nat\nas\n", "auth", "login", "--wiki", e.api, "--oauth1", "--with-token")
 	require.Equal(t, 0, code, stderr)
 	assert.Contains(t, stderr, "Logged in to "+e.host+" as Jmnote")
 	cfg, err := config.LoadDir(e.dir)
@@ -951,7 +970,7 @@ func TestOAuth1Login(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "uses OAuth 1.0a keys")
 
-	_, stderr, code = e.run("", "auth", "login", "--api", e.api, "--oauth1", "--username", "Jmnote")
+	_, stderr, code = e.run("", "auth", "login", "--wiki", e.api, "--oauth1", "--username", "Jmnote")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "only one of --oauth1 and --username")
 
@@ -964,21 +983,21 @@ func TestOAuth1Login(t *testing.T) {
 
 func TestApiPaginate(t *testing.T) {
 	e := newEnv(t)
-	out, stderr, code := e.run("", "api", "--api", e.api, "action=query", "list=allpages", "--paginate", "--jq", ".query.allpages[].title")
+	out, stderr, code := e.run("", "api", "--wiki", e.api, "action=query", "list=allpages", "--paginate", "--jq", ".query.allpages[].title")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "P1\nP2\nP3\nP4\nP5\nP6\nP7\n", out)
 	require.Len(t, e.wiki.lists, 3)
 	assert.Equal(t, "6", e.wiki.lists[2].Get("fakecontinue"))
 
 	// Numbers in continue, as sroffset, are sent as they are.
-	out, stderr, code = e.run("", "api", "--api", e.api, "action=query", "list=search", "srsearch=x", "--paginate", "--slurp")
+	out, stderr, code = e.run("", "api", "--wiki", e.api, "action=query", "list=search", "srsearch=x", "--paginate", "--slurp")
 	require.Equal(t, 0, code, stderr)
 	var pages []map[string]any
 	require.NoError(t, json.Unmarshal([]byte(out), &pages))
 	assert.Len(t, pages, 3)
 	assert.Equal(t, "6", e.wiki.lists[5].Get("sroffset"))
 
-	out, stderr, code = e.run("", "api", "--api", e.api, "action=query", "list=allpages", "--jq", ".query.allpages | length")
+	out, stderr, code = e.run("", "api", "--wiki", e.api, "action=query", "list=allpages", "--jq", ".query.allpages | length")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "3\n", out)
 
@@ -991,7 +1010,7 @@ func TestApiPaginate(t *testing.T) {
 		{[]string{"--paginate", "format=xml"}, "need format=json"},
 		{[]string{"--jq", ".["}, "invalid --jq expression"},
 	} {
-		_, stderr, code := e.run("", append([]string{"api", "--api", e.api, "action=query", "list=allpages"}, c.args...)...)
+		_, stderr, code := e.run("", append([]string{"api", "--wiki", e.api, "action=query", "list=allpages"}, c.args...)...)
 		assert.Equal(t, 2, code, c.args)
 		assert.Contains(t, stderr, c.want, c.args)
 	}
@@ -1016,7 +1035,7 @@ func TestApiPaginateResetsContinue(t *testing.T) {
 	}))
 	defer srv.Close()
 	e := newEnv(t)
-	out, stderr, code := e.run("", "api", "--api", srv.URL+"/w/api.php", "action=query", "list=x", "--paginate", "-q", ".query.n")
+	out, stderr, code := e.run("", "api", "--wiki", srv.URL+"/w/api.php", "action=query", "list=x", "--paginate", "-q", ".query.n")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "1\n2\n3\n", out)
 	require.Len(t, got, 3)
@@ -1041,7 +1060,7 @@ func TestApiPaginateURLQueryAndBigNumbers(t *testing.T) {
 	}))
 	defer srv.Close()
 	e := newEnv(t)
-	out, stderr, code := e.run("", "api", "--api", srv.URL+"/w/api.php?sroffset=5&wiki=a", "action=query", "list=search", "--paginate", "-q", ".query.id")
+	out, stderr, code := e.run("", "api", "--wiki", srv.URL+"/w/api.php?sroffset=5&wiki=a", "action=query", "list=search", "--paginate", "-q", ".query.id")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "9007199254740993\n9007199254740995\n", out)
 	require.Len(t, got, 2)
@@ -1050,7 +1069,7 @@ func TestApiPaginateURLQueryAndBigNumbers(t *testing.T) {
 	assert.Equal(t, "a", got[1].Get("wiki"))
 
 	got = nil
-	out, stderr, code = e.run("", "api", "--api", srv.URL+"/w/api.php", "action=query", "-q", ".query | [.big, .f]")
+	out, stderr, code = e.run("", "api", "--wiki", srv.URL+"/w/api.php", "action=query", "-q", ".query | [.big, .f]")
 	require.Equal(t, 0, code, stderr)
 	assert.JSONEq(t, `[123456789012345678901234567890, 1.5]`, out)
 	assert.Contains(t, out, "123456789012345678901234567890")
@@ -1058,7 +1077,7 @@ func TestApiPaginateURLQueryAndBigNumbers(t *testing.T) {
 
 func TestPageHistory(t *testing.T) {
 	e := newEnv(t)
-	out, stderr, code := e.run("", "page", "history", "Sandbox", "--api", e.api)
+	out, stderr, code := e.run("", "page", "history", "Sandbox", "--wiki", e.api)
 	require.Equal(t, 0, code, stderr)
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
 	require.Len(t, lines, 5)
@@ -1067,21 +1086,21 @@ func TestPageHistory(t *testing.T) {
 	assert.True(t, strings.HasPrefix(lines[1], "104\t2026-11-14T08:41:11Z\tJmnote\t1040\tm\t"))
 	assert.Len(t, e.wiki.lists, 3)
 
-	out, stderr, code = e.run("", "page", "history", "Sandbox", "--api", e.api, "-L", "3", "--json", "revid,minor,tags")
+	out, stderr, code = e.run("", "page", "history", "Sandbox", "--wiki", e.api, "-L", "3", "--json", "revid,minor,tags")
 	require.Equal(t, 0, code, stderr)
 	assert.JSONEq(t, `[{"revid":105,"minor":false,"tags":[]},{"revid":104,"minor":true,"tags":[]},{"revid":103,"minor":false,"tags":[]}]`, out)
 	assert.Equal(t, "1", e.wiki.lists[len(e.wiki.lists)-1].Get("rvlimit"))
 
 	e.stdoutTTY = true
-	out, stderr, code = e.run("", "page", "history", "Sandbox", "--api", e.api, "-L", "1")
+	out, stderr, code = e.run("", "page", "history", "Sandbox", "--wiki", e.api, "-L", "1")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "105  2026-11-15 08:41  Jmnote  1050    edit 105 "+strings.Repeat("가", 25)+"…\n", out)
 	e.stdoutTTY = false
 
-	_, stderr, code = e.run("", "page", "history", "Missing", "--api", e.api)
+	_, stderr, code = e.run("", "page", "history", "Missing", "--wiki", e.api)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "page does not exist: Missing")
-	_, stderr, code = e.run("", "page", "history", "Sandbox", "--api", e.api, "-L", "0")
+	_, stderr, code = e.run("", "page", "history", "Sandbox", "--wiki", e.api, "-L", "0")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "invalid value for --limit")
 }
@@ -1093,40 +1112,40 @@ func TestPageDiff(t *testing.T) {
 		"+++ Sandbox\trevision 202 (2026-11-22T00:00:00Z, Jmnote)\n" +
 		"@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n\\ No newline at end of file\n"
 	for _, args := range [][]string{{"Sandbox"}, {"202"}, {"201", "202"}, {"201", "Sandbox"}} {
-		out, stderr, code := e.run("", append([]string{"page", "diff", "--api", e.api}, args...)...)
+		out, stderr, code := e.run("", append([]string{"page", "diff", "--wiki", e.api}, args...)...)
 		require.Equal(t, 0, code, stderr)
 		assert.Equal(t, want, out, args)
 	}
 
 	// The first revision is compared with empty text.
-	out, stderr, code := e.run("", "page", "diff", "--api", e.api, "201")
+	out, stderr, code := e.run("", "page", "diff", "--wiki", e.api, "201")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "--- /dev/null\n+++ Sandbox\trevision 201 (2026-11-22T00:00:00Z, Jmnote)\n@@ -0,0 +1,3 @@\n+a\n+b\n+c\n\\ No newline at end of file\n", out)
 
 	// A change of the final newline alone shows.
-	out, stderr, code = e.run("", "page", "diff", "--api", e.api, "205")
+	out, stderr, code = e.run("", "page", "diff", "--wiki", e.api, "205")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "--- Newline\trevision 204 (2026-11-22T00:00:00Z, Jmnote)\n+++ Newline\trevision 205 (2026-11-22T00:00:00Z, Jmnote)\n@@ -1 +1 @@\n-hello\n\\ No newline at end of file\n+hello\n", out)
 
 	// An empty text is a text; a revision whose text did not come is an error.
-	out, stderr, code = e.run("", "page", "diff", "--api", e.api, "206")
+	out, stderr, code = e.run("", "page", "diff", "--wiki", e.api, "206")
 	require.Equal(t, 0, code, stderr)
 	assert.Empty(t, out)
 
-	out, stderr, code = e.run("", "page", "diff", "--api", e.api, "202", "202")
+	out, stderr, code = e.run("", "page", "diff", "--wiki", e.api, "202", "202")
 	require.Equal(t, 0, code, stderr)
 	assert.Empty(t, out)
 
-	out, _, _ = e.run("", "page", "diff", "--api", e.api, "--color", "always", "Sandbox")
+	out, _, _ = e.run("", "page", "diff", "--wiki", e.api, "--color", "always", "Sandbox")
 	assert.Contains(t, out, "\x1b[31m-b\x1b[0m\n\x1b[32m+B\x1b[0m\n")
 	assert.Contains(t, out, "\x1b[36m@@ -1,3 +1,3 @@\x1b[0m")
 	e.stdoutTTY = true
 	t.Setenv("NO_COLOR", "1")
-	out, _, _ = e.run("", "page", "diff", "--api", e.api, "Sandbox")
+	out, _, _ = e.run("", "page", "diff", "--wiki", e.api, "Sandbox")
 	assert.Equal(t, want, out)
 	e.stdoutTTY = false
 
-	_, stderr, code = e.run("", "page", "diff", "--api", e.api, "Sandbox", "--web")
+	_, stderr, code = e.run("", "page", "diff", "--wiki", e.api, "Sandbox", "--web")
 	require.Equal(t, 0, code, stderr)
 	assert.Contains(t, e.browsed, "Special%3ADiff%2F201%2F202")
 
@@ -1143,8 +1162,131 @@ func TestPageDiff(t *testing.T) {
 		{[]string{"Sandbox", "--color", "sometimes"}, 2, "invalid value for --color"},
 		{[]string{"1", "2", "3"}, 2, "accepts between 1 and 2 arg(s)"},
 	} {
-		_, stderr, code := e.run("", append([]string{"page", "diff", "--api", e.api}, c.args...)...)
+		_, stderr, code := e.run("", append([]string{"page", "diff", "--wiki", e.api}, c.args...)...)
 		assert.Equal(t, c.code, code, c.args)
 		assert.Contains(t, stderr, c.want, c.args)
+	}
+}
+
+// A page URL of a wiki that was not added is looked up once and cached; a
+// cached API that stops answering is forgotten and found again next time.
+func TestWikiURLAndAPICache(t *testing.T) {
+	e := newEnv(t)
+	page := e.base + "/wiki/Sandbox"
+	out, stderr, code := e.run("", "page", "view", "Sandbox", "--wiki", page)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "Hello", out)
+	found := e.wiki.siteinfos
+	assert.Positive(t, found)
+
+	c := apicache.Load()
+	entry, key, ok := c.Get(page)
+	require.True(t, ok)
+	assert.Equal(t, e.api, entry.API)
+	assert.Equal(t, e.base+"/wiki/", key)
+
+	// Another page of the same wiki uses the cache too.
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", e.base+"/wiki/Other_page")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, found, e.wiki.siteinfos, "the second run uses the cache")
+
+	out, stderr, code = e.run("", "site", "list", "--cached")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, out, e.base+"/wiki/  "+e.api+"  ")
+
+	// A cached API that no longer answers is forgotten.
+	old := e.base + "/old/Page"
+	require.NoError(t, c.Put(old, &config.Site{API: e.base + "/gone/api.php"}))
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", old)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "mw had found the API of "+apicache.Key(old)+" at "+e.base+"/gone/api.php and has now forgotten it")
+	old = e.base + "/wiki/Old"
+	out, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", old)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "Hello", out)
+
+	_, stderr, code = e.run("", "site", "remove", e.base+"/wiki/")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "Forgot the cached API of")
+	_, _, ok = apicache.Load().Get(page)
+	assert.False(t, ok)
+
+	// An api.php URL is used as given, without looking or caching.
+	before := e.wiki.siteinfos
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", e.api)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, before, e.wiki.siteinfos)
+	assert.Empty(t, apicache.Load().Entries)
+
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--api", e.api)
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stderr, "unknown flag: --api")
+}
+
+// Page URLs that differ only in a query that picks the wiki are found and
+// cached apart.
+func TestWikiURLQueryPicksWiki(t *testing.T) {
+	e := newEnv(t)
+	a := e.base + "/index.php?wiki=a&title=Main_Page"
+	b := e.base + "/index.php?wiki=b&title=Main_Page"
+	_, stderr, code := e.run("", "page", "view", "Sandbox", "--wiki", a)
+	require.Equal(t, 0, code, stderr)
+	before := e.wiki.siteinfos
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", b)
+	require.Equal(t, 0, code, stderr)
+	assert.Greater(t, e.wiki.siteinfos, before, "the second wiki is looked up, not taken from the first")
+	c := apicache.Load()
+	ea, _, ok := c.Get(a)
+	require.True(t, ok)
+	eb, _, ok := c.Get(b)
+	require.True(t, ok)
+	assert.Equal(t, e.base+"/a/api.php", ea.API)
+	assert.Equal(t, e.base+"/b/api.php", eb.API)
+}
+
+// A farm whose api.php picks the wiki by a query: discovery keeps that query
+// from the EditURI link, and the cache gives it back on the next run.
+func TestWikiURLAPIQueryPicksWiki(t *testing.T) {
+	var siteinfos int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		wiki := q.Get("wiki")
+		switch r.URL.Path {
+		case "/index.php", "/":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprintf(w, `<link rel="EditURI" type="application/rsd+xml" href="/api.php?wiki=%s&amp;action=rsd"/>`, wiki)
+		case "/api.php":
+			w.Header().Set("Content-Type", "application/json")
+			if wiki == "" {
+				_, _ = w.Write([]byte(`{"error":{"code":"nowiki","info":"no wiki chosen"}}`))
+				return
+			}
+			if q.Get("meta") == "siteinfo" {
+				siteinfos++
+				_ = json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"general": map[string]string{"sitename": wiki, "generator": "MediaWiki 1.43.1", "server": "http://" + r.Host, "script": "/index.php", "articlepath": "/index.php?wiki=" + wiki + "&title=$1"}}})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"revisions": []any{map[string]any{"slots": map[string]any{"main": map[string]string{"content": "Wiki " + wiki}}}}}}}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	e := newEnv(t)
+	// A page URL, and a root URL without a path whose query picks the wiki.
+	for _, page := range []string{srv.URL + "/index.php?wiki=a&title=Main_Page", srv.URL + "/index.php?wiki=b&title=Main_Page", srv.URL + "?wiki=c", srv.URL + "?wiki=d"} {
+		wiki := page[strings.Index(page, "wiki=")+5 : strings.Index(page, "wiki=")+6]
+		out, stderr, code := e.run("", "page", "view", "Sandbox", "--wiki", page)
+		require.Equal(t, 0, code, stderr)
+		assert.Equal(t, "Wiki "+wiki, out)
+		entry, _, ok := apicache.Load().Get(page)
+		require.True(t, ok)
+		assert.Equal(t, srv.URL+"/api.php?wiki="+wiki, entry.API)
+
+		before := siteinfos
+		out, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", page)
+		require.Equal(t, 0, code, stderr)
+		assert.Equal(t, "Wiki "+wiki, out)
+		assert.Equal(t, before, siteinfos, "the cache is used")
 	}
 }

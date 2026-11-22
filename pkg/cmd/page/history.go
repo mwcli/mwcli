@@ -19,7 +19,7 @@ var historyFields = []string{"revid", "parentid", "timestamp", "user", "comment"
 const maxComment = 60
 
 func newCmdHistory(f *cmdutil.Factory) *cobra.Command {
-	var wiki, apiURL string
+	var wiki string
 	var limit int
 	var jsonFlags *cmdutil.JSONFlags
 	cmd := &cobra.Command{
@@ -49,7 +49,7 @@ func newCmdHistory(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := f.Resolve(cfg, wiki, apiURL)
+			t, err := f.Resolve(cfg, wiki)
 			if err != nil {
 				return err
 			}
@@ -81,7 +81,7 @@ func newCmdHistory(f *cmdutil.Factory) *cobra.Command {
 			return cmdutil.WriteTable(ios.Out, rows)
 		},
 	}
-	cmdutil.AddTargetFlags(cmd, &wiki, &apiURL)
+	cmdutil.AddTargetFlags(cmd, &wiki)
 	cmd.Flags().IntVarP(&limit, "limit", "L", 30, "Maximum number of revisions to list")
 	jsonFlags = cmdutil.AddJSONFlags(cmd, historyFields)
 	return cmd

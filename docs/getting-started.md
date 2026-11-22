@@ -24,17 +24,16 @@ mw --version
 
 ## 2. Connect to your wiki
 
-Use a built-in site such as `wikipedia` or give your wiki's host name. A host that mw has never seen is tried at `https://HOST/w/api.php`.
+Use a built-in site such as `wikipedia`, or give your wiki's host name or the URL of any of its pages. The first time, mw finds the wiki's API and remembers it.
 
 ```sh
 mw page view 'Main Page' --wiki wiki.example.org
 ```
 
-If this prints the wikitext of the main page, mw can reach the wiki. Reading public pages needs no login. If your wiki uses a different API path, add it by its exact API URL and retry with the site name:
+If this prints the wikitext of the main page, mw can reach the wiki. Reading public pages needs no login. If mw cannot find the API from the host, give the URL of a page of the wiki, or of its `api.php`:
 
 ```sh
-mw site add wiki.example.org https://wiki.example.org/path/api.php
-mw page view 'Main Page' --wiki wiki.example.org
+mw page view 'Main Page' --wiki https://wiki.example.org/path/index.php?title=Main_Page
 ```
 
 See [Choosing a wiki](wikis.md) for more ways to add a site.

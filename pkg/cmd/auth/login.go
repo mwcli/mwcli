@@ -18,7 +18,6 @@ import (
 
 type loginOptions struct {
 	wiki        string
-	apiURL      string
 	withToken   bool
 	username    string
 	botPassword bool
@@ -71,14 +70,14 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 			$ mw auth login --wiki mediawiki.org --oauth1 --with-token < oauth1.txt
 
 			# a wiki whose API is not at /w/api.php
-			$ mw auth login --api https://wiki.example.org/api.php
+			$ mw auth login --wiki https://wiki.example.org/api.php
 		`),
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return loginRun(f, opts)
 		},
 	}
-	cmdutil.AddTargetFlags(cmd, &opts.wiki, &opts.apiURL)
+	cmdutil.AddTargetFlags(cmd, &opts.wiki)
 	cmd.Flags().BoolVar(&opts.withToken, "with-token", false, "Read an OAuth 2 access token, or the four keys with --oauth1, from standard input")
 	cmd.Flags().BoolVar(&opts.oauth1, "oauth1", false, "Log in with an owner-only OAuth 1.0a consumer")
 	cmd.Flags().StringVarP(&opts.username, "username", "u", "", "Log in with this username and a password, or a bot password login name such as Alice@mybot")
@@ -104,19 +103,20 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	if err != nil {
 		return err
 	}
-	t, err := f.Resolve(cfg, opts.wiki, opts.apiURL)
+	t, err := f.Resolve(cfg, opts.wiki)
 	if err != nil {
 		return err
 	}
-	if opts.wiki == "" && opts.apiURL == "" && io.CanPrompt() {
-		h, err := io.Prompt(fmt.Sprintf("? Wiki (site name or host) [%s]: ", t.Name))
+	if opts.wiki == "" && io.CanPrompt() {
+		h, err := io.Prompt(fmt.Sprintf("? Wiki (site name, host or URL) [%s]: ", t.Name))
 		if err != nil {
 			return err
 		}
 		if h != "" {
-			if t, err = f.Resolve(cfg, h, ""); err != nil {
+			if t, err = f.Resolve(cfg, h); err != nil {
 				return err
 			}
+			opts.wiki = h
 		}
 	}
 	if t.Kind == sites.Unregistered {
@@ -124,14 +124,11 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 		if sites.IsFarmName(cfg, t.Name) {
 			return cmdutil.FlagErrorf("site name %q conflicts with a farm name; add it with a different site name", t.Name)
 		}
-		target := opts.apiURL
-		if target == "" {
-			target = t.Name
-		}
 		if !config.ValidSiteName(t.Name) {
-			return fmt.Errorf("a site with this host already points to another API; add this one with `mw site add NAME %s` and log in with --wiki NAME", target)
+			return fmt.Errorf("a site with this host already points to another API; add this one with `mw site add NAME %s` and log in with --wiki NAME", t.API)
 		}
-		site, err := f.Find(target)
+		// The API is known by now; this checks it and reads the site's URLs.
+		site, err := f.Find(t.API)
 		if err != nil {
 			return err
 		}
@@ -187,7 +184,7 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	cfg.Login(t.LoginKey, user, account)
 	if wasDefaultUnset {
 		cfg.Context = t.Name
-		if opts.apiURL != "" {
+		if cmdutil.IsURL(opts.wiki) {
 			cfg.Context = t.API
 		}
 	}

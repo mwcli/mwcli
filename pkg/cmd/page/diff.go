@@ -14,7 +14,7 @@ import (
 )
 
 func newCmdDiff(f *cmdutil.Factory) *cobra.Command {
-	var wiki, apiURL, color string
+	var wiki, color string
 	var web bool
 	cmd := &cobra.Command{
 		Use:   "diff <revision | title> [<revision | title>]",
@@ -49,7 +49,7 @@ func newCmdDiff(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := f.Resolve(cfg, wiki, apiURL)
+			t, err := f.Resolve(cfg, wiki)
 			if err != nil {
 				return err
 			}
@@ -97,7 +97,7 @@ func newCmdDiff(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
-	cmdutil.AddTargetFlags(cmd, &wiki, &apiURL)
+	cmdutil.AddTargetFlags(cmd, &wiki)
 	cmd.Flags().BoolVarP(&web, "web", "w", false, "Open the diff in the browser")
 	cmd.Flags().StringVar(&color, "color", "auto", "Use color in diff output: {always|never|auto}")
 	return cmd
