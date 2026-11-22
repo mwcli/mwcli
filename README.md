@@ -59,11 +59,21 @@ sha256sum --check --ignore-missing checksums.txt
 
 ## Similar projects
 
-- [a Wikimedia CLI](https://gitlab.wikimedia.org/repos/releng/cli) (`wm`, formerly `mw`): Wikimedia services and a MediaWiki development environment. It was called MediaWiki CLI before; if you use both, run it as `wm`.
-- [MediaWiki CLI](https://mwcli.toolforge.org/) by Sam Wilson (`mwcli`, PHP): uploads, downloads and page exports. A separate project with the same short name.
-- [Pywikibot](https://www.mediawiki.org/wiki/Manual:Pywikibot) (`pwb`, Python): a bot framework with many maintenance scripts.
-- [mwclient](https://github.com/mwclient/mwclient) (Python): a MediaWiki API library.
-- [wikibase-cli](https://codeberg.org/maxlath/wikibase-cli) (`wb`, JavaScript): Wikidata and other Wikibase instances.
-- [mwcli on PyPI](https://pypi.org/project/mwcli/) (Python): helpers for building MediaWiki command-line utilities, from mediawiki-utilities.
+Command-line tools:
 
-mwcli is a single Go binary, `mw`, for reading and editing any MediaWiki wiki.
+| Project | Command | Language | Works with |
+| --- | --- | --- | --- |
+| mwcli (this project) | `mw` | Go | any MediaWiki wiki: pages, accounts, the Action API |
+| [a Wikimedia CLI](https://gitlab.wikimedia.org/repos/releng/cli) | `wm`, formerly `mw` | Go | Wikimedia services and a MediaWiki development environment |
+| [MediaWiki CLI](https://mwcli.toolforge.org/) by Sam Wilson | `mwcli` | PHP | any MediaWiki wiki: uploads, downloads, page exports |
+| [wikibase-cli](https://codeberg.org/maxlath/wikibase-cli) | `wb` | JavaScript | Wikidata and other Wikibase instances |
+
+Libraries and frameworks:
+
+| Project | Language | Works with |
+| --- | --- | --- |
+| [Pywikibot](https://www.mediawiki.org/wiki/Manual:Pywikibot) | Python | any MediaWiki wiki: a bot framework with maintenance scripts (`pwb`) |
+| [mwclient](https://github.com/mwclient/mwclient) | Python | the MediaWiki API |
+| [mwcli on PyPI](https://pypi.org/project/mwcli/) | Python | helpers for MediaWiki command-line utilities, from mediawiki-utilities |
+
+a Wikimedia CLI still installs `mw` while it moves to `wm`; if you use both, run that one as `wm`. Sam Wilson's MediaWiki CLI and the PyPI package share the name mwcli but are separate projects.
