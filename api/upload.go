@@ -93,7 +93,7 @@ func (c *Client) Upload(ctx context.Context, filename string, r io.Reader, size 
 		if opts.Progress != nil {
 			opts.Progress(size, size)
 		}
-		return uploadResult(body)
+		return c.uploadResult(body)
 	}
 	// In parts: each goes to the stash, then the stashed file is published.
 	var filekey string
@@ -128,7 +128,9 @@ func (c *Client) Upload(ctx context.Context, filename string, r io.Reader, size 
 		default:
 			return nil, fmt.Errorf("upload part at byte %d: result %q", offset, res.Upload.Result)
 		}
-		filekey = res.Upload.FileKey
+		if res.Upload.FileKey != "" {
+			filekey = res.Upload.FileKey
+		}
 		if opts.Progress != nil {
 			opts.Progress(offset+n, size)
 		}
@@ -141,7 +143,7 @@ func (c *Client) Upload(ctx context.Context, filename string, r io.Reader, size 
 	if err != nil {
 		return nil, err
 	}
-	return uploadResult(body)
+	return c.uploadResult(body)
 }
 
 // withJSON adds format=json and formatversion=2 to params.
@@ -156,7 +158,7 @@ func withJSON(params url.Values) url.Values {
 }
 
 // uploadResult reads the response of a published upload.
-func uploadResult(body []byte) (*UploadResult, error) {
+func (c *Client) uploadResult(body []byte) (*UploadResult, error) {
 	if err := CheckError(body); err != nil {
 		var ae *APIError
 		if errors.As(err, &ae) && ae.Code == "fileexists-no-change" {
@@ -179,7 +181,7 @@ func uploadResult(body []byte) (*UploadResult, error) {
 	}
 	switch res.Upload.Result {
 	case "Success":
-		return &UploadResult{FileName: res.Upload.Filename, URL: res.Upload.ImageInfo.URL}, nil
+		return &UploadResult{FileName: res.Upload.Filename, URL: c.normalizeFileURL(res.Upload.ImageInfo.URL)}, nil
 	case "Warning":
 		w := UploadWarnings{}
 		for k, raw := range res.Upload.Warnings {
@@ -220,13 +222,24 @@ func (c *Client) ensureLogin(ctx context.Context) error {
 
 // multipart POSTs params with the content of r as the file field and returns
 // the response body. An API error is returned in the body, not as an error.
+// It sends no maxlag: a request refused for lag could not be sent again, as
+// r is read as it goes. The final publish of a stashed file goes through Raw
+// and has maxlag.
 func (c *Client) multipart(ctx context.Context, params url.Values, field, filename string, r io.Reader) ([]byte, error) {
 	pr, pw := io.Pipe()
+	// Closing the reader stops the writer below on any early return.
+	defer pr.Close()
 	mw := multipart.NewWriter(pw)
 	go func() {
 		err := func() error {
-			for k, vs := range withJSON(params) {
-				for _, v := range vs {
+			fields := withJSON(params)
+			keys := make([]string, 0, len(fields))
+			for k := range fields {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				for _, v := range fields[k] {
 					if err := mw.WriteField(k, v); err != nil {
 						return err
 					}
@@ -246,7 +259,6 @@ func (c *Client) multipart(ctx context.Context, params url.Values, field, filena
 	u := *c.url
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), pr)
 	if err != nil {
-		pr.Close()
 		return nil, err
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())

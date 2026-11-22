@@ -53,7 +53,7 @@ func newCmdMove(f *cmdutil.Factory) *cobra.Command {
 			}
 			opts.Reason = reason
 			res, err := c.Move(ctx, from, to, opts)
-			if err := loginError(err, t); err != nil {
+			if err := cmdutil.LoginError(err, t); err != nil {
 				return err
 			}
 			switch {
@@ -136,7 +136,7 @@ func newCmdDelete(f *cmdutil.Factory) *cobra.Command {
 				}
 			}
 			deleted, err := c.Delete(ctx, title, reason)
-			if err := loginError(err, t); err != nil {
+			if err := cmdutil.LoginError(err, t); err != nil {
 				return err
 			}
 			if err != nil {
@@ -150,14 +150,4 @@ func newCmdDelete(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().StringVar(&reason, "reason", "", "The reason for the deletion, shown in the log")
 	cmd.Flags().BoolVar(&yes, "yes", false, "Delete without asking for confirmation")
 	return cmd
-}
-
-// loginError returns the not-logged-in error when the wiki refused the
-// request for an expired login, else nil.
-func loginError(err error, t cmdutil.Target) error {
-	var ae *api.APIError
-	if errors.As(err, &ae) && ae.Code == "assertuserfailed" {
-		return cmdutil.NotLoggedIn(t.Name)
-	}
-	return nil
 }

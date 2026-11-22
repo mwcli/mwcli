@@ -50,6 +50,9 @@ func newCmdUpload(f *cmdutil.Factory) *cobra.Command {
 			if cmd.Flags().Changed("name") && strings.TrimSpace(name) == "" {
 				return cmdutil.FlagErrorf("--name needs a value")
 			}
+			if cmd.Flags().Changed("text-file") && textFile == "" {
+				return cmdutil.FlagErrorf("--text-file needs a file, or - for standard input")
+			}
 			if cmd.Flags().Changed("text") && cmd.Flags().Changed("text-file") {
 				return cmdutil.FlagErrorf("specify only one of --text and --text-file")
 			}
@@ -110,7 +113,11 @@ func newCmdUpload(f *cmdutil.Factory) *cobra.Command {
 				if err != nil {
 					return f.Hint(err)
 				}
-				_, uploads[i].name, _ = strings.Cut(title, ":")
+				_, n, _ := strings.Cut(title, ":")
+				uploads[i].name = strings.TrimLeft(n, " _")
+				if strings.TrimSpace(uploads[i].name) == "" {
+					return cmdutil.FlagErrorf("--name needs a file name after %q", strings.TrimSpace(title))
+				}
 			}
 			failed := false
 			for _, u := range uploads {
@@ -119,17 +126,23 @@ func newCmdUpload(f *cmdutil.Factory) *cobra.Command {
 					return err
 				}
 				opts := api.UploadOptions{Comment: summary, Text: text, IgnoreWarnings: ignoreWarnings}
+				// open is true while a progress line waits for its line break.
+				open := false
 				if ios.IsStdoutTTY() && u.size > api.DefaultChunkSize {
 					opts.Progress = func(sent, total int64) {
 						fmt.Fprintf(ios.ErrOut, "\r%s: %d%%", u.name, sent*100/total)
-						if sent == total {
+						open = sent < total
+						if !open {
 							fmt.Fprintln(ios.ErrOut)
 						}
 					}
 				}
 				res, err := c.Upload(ctx, u.name, fh, u.size, opts)
 				fh.Close()
-				if err := loginError(err, t); err != nil {
+				if open {
+					fmt.Fprintln(ios.ErrOut)
+				}
+				if err := cmdutil.LoginError(err, t); err != nil {
 					return err
 				}
 				var warn api.UploadWarnings
@@ -160,14 +173,4 @@ func newCmdUpload(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().StringVar(&textFile, "text-file", "", "Read the description page wikitext from `file` (use \"-\" to read from standard input)")
 	cmd.Flags().BoolVar(&ignoreWarnings, "ignore-warnings", false, "Upload even when the wiki warns, such as about an existing file")
 	return cmd
-}
-
-// loginError returns the not-logged-in error when the wiki refused the
-// request for an expired login, else nil.
-func loginError(err error, t cmdutil.Target) error {
-	var ae *api.APIError
-	if errors.As(err, &ae) && ae.Code == "assertuserfailed" {
-		return cmdutil.NotLoggedIn(t.Name)
-	}
-	return nil
 }

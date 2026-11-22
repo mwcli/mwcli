@@ -562,6 +562,10 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			send(map[string]any{"error": map[string]string{"code": "assertuserfailed", "info": "not logged in"}})
 			return
 		}
+		if req.Stash && req.Filename == "broken.bin" && req.Offset != "0" {
+			send(map[string]any{"error": map[string]string{"code": "stashfailed", "info": "Could not store the chunk."}})
+			return
+		}
 		if req.Stash {
 			var off, size int
 			fmt.Sscan(req.Offset, &off)
@@ -582,7 +586,7 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			send(map[string]any{"error": map[string]string{"code": "fileexists-no-change", "info": "The upload is an exact duplicate of the current version."}})
 		default:
 			send(map[string]any{"upload": map[string]any{"result": "Success", "filename": strings.ReplaceAll(req.Filename, " ", "_"),
-				"imageinfo": map[string]any{"url": "https://fake.test/images/" + strings.ReplaceAll(req.Filename, " ", "_")}}})
+				"imageinfo": map[string]any{"url": "//fake.test/images/" + strings.ReplaceAll(req.Filename, " ", "_") + "?utm_source=fake&utm_content=original"}}})
 		}
 	case p("action") == "move" || p("action") == "delete":
 		w.writes = append(w.writes, r.Form)
@@ -2408,7 +2412,7 @@ func TestFileUpload(t *testing.T) {
 	out, stderr, code := e.run("", "file", "upload", "--wiki", e.api, photo, "-s", "New photo", "--text", "{{Information}}")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "✓ Uploaded File:photo.jpg on "+e.host+"\n", stderr)
-	assert.Equal(t, "https://fake.test/images/photo.jpg\n", out)
+	assert.Equal(t, "http://fake.test/images/photo.jpg\n", out, "protocol-relative URL resolved, utm_ dropped")
 	u := e.wiki.uploads[len(e.wiki.uploads)-1]
 	assert.Equal(t, uploadRequest{Filename: "photo.jpg", Comment: "New photo", Text: "{{Information}}", Token: "tok+\\", Field: "file", Size: 100, Content: "content of photo"}, u)
 
@@ -2431,7 +2435,7 @@ func TestFileUpload(t *testing.T) {
 	assert.Contains(t, stderr, "Not uploaded "+dup+": the wiki warned about the upload: duplicate: Other.jpg, Third.jpg")
 	assert.Contains(t, stderr, "--ignore-warnings")
 	assert.Contains(t, stderr, "✓ Uploaded File:photo.jpg")
-	assert.Equal(t, "https://fake.test/images/photo.jpg\n", out)
+	assert.Equal(t, "http://fake.test/images/photo.jpg\n", out)
 	assert.Len(t, e.wiki.uploads, 3)
 
 	_, stderr, code = e.run("", "file", "upload", "--wiki", e.api, exists, "--ignore-warnings")
@@ -2467,11 +2471,22 @@ func TestFileUpload(t *testing.T) {
 	final := e.wiki.uploads[3]
 	assert.Equal(t, uploadRequest{Filename: "big.bin", FileKey: "fk.1", Comment: "Big", Token: "tok+\\"}, final)
 
+	// A part that fails ends the progress line before the error.
+	broken := write("broken.bin", 6<<20)
+	e.stdoutTTY = true
+	_, stderr, code = e.run("", "file", "upload", "--wiki", e.api, broken)
+	e.stdoutTTY = false
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "\rbroken.bin: 83%\nupload "+broken+": upload part at byte 5242880: MediaWiki API error stashfailed")
+
 	for _, args := range [][]string{
 		{},
 		{photo, exists, "--name", "X.jpg"},
 		{photo, "--name", " "},
 		{photo, "--text", "a", "--text-file", desc},
+		{photo, "--text-file", ""},
+		{photo, "--name", "File:"},
+		{photo, "--name", "파일: _"},
 		{dir},
 	} {
 		_, _, code = e.run("", append([]string{"file", "upload", "--wiki", e.api}, args...)...)

@@ -221,6 +221,16 @@ func AddTargetFlags(cmd *cobra.Command, wiki *string) {
 	AddWikiFlag(cmd, wiki, "The `wiki`: a site name, a host such as mediawiki.org, an interwiki prefix such as wikipedia, or a URL of the wiki or its api.php")
 }
 
+// LoginError returns the not-logged-in error when the wiki refused a write
+// with assert=user because the login expired, else nil.
+func LoginError(err error, t Target) error {
+	var ae *api.APIError
+	if errors.As(err, &ae) && ae.Code == "assertuserfailed" {
+		return NotLoggedIn(t.Name)
+	}
+	return nil
+}
+
 // FlagError is a usage error; it exits with status 2.
 type FlagError struct{ Err error }
 
