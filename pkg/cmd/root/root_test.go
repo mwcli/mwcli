@@ -167,7 +167,7 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		var revs []any
 		for id := start; id > start-n && id > 100; id-- {
 			revs = append(revs, map[string]any{"revid": id, "parentid": id - 1, "timestamp": fmt.Sprintf("2026-11-%02dT08:41:11Z", id-90),
-				"user": "Jmnote", "comment": fmt.Sprintf("edit\n%d %s", id, strings.Repeat("가", 70)), "size": id * 10, "minor": id%2 == 0, "tags": []string{}})
+				"user": "Jmnote", "comment": fmt.Sprintf(" edit\r\n%d  %s\t", id, strings.Repeat("가", 70)), "size": id * 10, "minor": id%2 == 0, "tags": []string{}})
 		}
 		resp := map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": p("titles"), "revisions": revs}}}}
 		if next := start - n; next > 100 {
@@ -1021,7 +1021,8 @@ func TestPageHistory(t *testing.T) {
 	require.Equal(t, 0, code, stderr)
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
 	require.Len(t, lines, 5)
-	assert.Equal(t, "105\t2026-11-15T08:41:11Z\tJmnote\t1050\t\tedit 105 "+strings.Repeat("가", 70), lines[0])
+	// Only line breaks and tabs become spaces; other spacing stays.
+	assert.Equal(t, "105\t2026-11-15T08:41:11Z\tJmnote\t1050\t\t edit 105  "+strings.Repeat("가", 70)+" ", lines[0])
 	assert.True(t, strings.HasPrefix(lines[1], "104\t2026-11-14T08:41:11Z\tJmnote\t1040\tm\t"))
 	assert.Len(t, e.wiki.lists, 3)
 

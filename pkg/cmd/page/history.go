@@ -70,7 +70,7 @@ func newCmdHistory(f *cmdutil.Factory) *cobra.Command {
 			}
 			if !ios.IsStdoutTTY() {
 				for _, r := range revs {
-					fmt.Fprintf(ios.Out, "%d\t%s\t%s\t%d\t%s\t%s\n", r.RevID, r.Timestamp, r.User, r.Size, minorMark(r), oneLine(r.Comment))
+					fmt.Fprintf(ios.Out, "%d\t%s\t%s\t%d\t%s\t%s\n", r.RevID, r.Timestamp, r.User, r.Size, minorMark(r), tsvField(r.Comment))
 				}
 				return nil
 			}
@@ -103,6 +103,13 @@ func shortTime(ts string) string {
 	return t.UTC().Format("2006-01-02 15:04")
 }
 
+// oneLine folds all white space into single spaces, for a terminal.
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
+
+// tsvReplacer turns each line break or tab, which would split a line or a
+// column, into one space and leaves the rest of the text as it is.
+var tsvReplacer = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ")
+
+func tsvField(s string) string { return tsvReplacer.Replace(s) }

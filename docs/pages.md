@@ -32,7 +32,7 @@ mw page list --embeds 'Template:Infobox' --namespace 0 --json title --jq '.[].ti
 
 ## Page history
 
-`mw page history TITLE` lists the revisions of a page, newest first: revision ID, time in UTC, user, size in bytes, `m` for a minor edit, and the edit summary. On a terminal the columns line up, counting Korean, Japanese and Chinese characters as two cells, and long summaries are shortened; in a pipe the columns are separated by tabs, with the full time in ISO 8601 and the full summary on one line.
+`mw page history TITLE` lists the revisions of a page, newest first: revision ID, time in UTC, user, size in bytes, `m` for a minor edit, and the edit summary. On a terminal the columns line up, counting Korean, Japanese and Chinese characters as two cells, and long summaries are shortened; in a pipe the columns are separated by tabs, with the full time in ISO 8601 and the full summary, its line breaks and tabs turned into spaces and other spacing kept.
 
 `-L`, `--limit` sets the most revisions (30 by default), fetched across as many requests as needed. `--json` takes `revid`, `parentid`, `timestamp`, `user`, `comment`, `size`, `minor` and `tags` and prints an array; `--jq` filters it. A user or summary hidden by an administrator is empty.
 
