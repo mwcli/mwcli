@@ -27,3 +27,19 @@ mw page list --prefix 'File:Logo' | mw file download - --skip-existing
 Each file is saved under its name without the `File:` prefix, with characters a file name cannot hold (`/ \ : * ? " < > |`, control characters, `%`, a leading dot, a final dot or space, and the first letter of a Windows reserved name) written as `%XX`. Each downloaded file is checked against the SHA-1 reported by the wiki before it is placed in the destination directory.
 
 An existing file stops the command unless `--clobber` overwrites it or `--skip-existing` keeps it. Files that do not exist, unreadable files, and invalid file names are reported on standard error, and the command exits with status 1 after downloading the rest.
+
+## Uploading files
+
+`mw file upload PATH...` uploads files, each under its own name; `--name` gives another name to a single file, with or without `File:` or the wiki's own name for the namespace. A file larger than 5 MiB is sent in 5 MiB parts to the upload stash, then published, so a large file does not run into the wiki's limit on one request.
+
+```sh
+mw file upload photo.jpg --text '{{Information|description=A photo}}' -s 'New photo'
+mw file upload scan.png --name 'Report 2026 page 1.png' --text-file desc.wiki
+mw file upload logo.svg --ignore-warnings -s 'New version'
+```
+
+`-s`, `--summary` is the upload summary, shown in the file history and the upload log. `--text` or `--text-file` (`-` for standard input) is the wikitext of the description page of a new file, such as its source and license; a new version of an existing file keeps its page. On success mw prints the file's URL to standard output.
+
+When the wiki warns, for example that a file of that name exists, that another file has the same content, or that the name was deleted, the file is not published and mw shows the warnings; `--ignore-warnings` uploads it anyway, which is how a new version of an existing file is uploaded. A file identical to the latest version is refused by the wiki in any case. With several files, the others are still uploaded and the command exits with status 1.
+
+Uploading needs a login with the upload right, such as the `uploadfile` grant of a token (`uploadeditmovefile` to replace files).

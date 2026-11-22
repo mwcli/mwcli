@@ -41,6 +41,8 @@ type fakeWiki struct {
 	created   map[string]bool
 	// siteinfos counts general siteinfo requests, which discovery makes.
 	siteinfos int
+	// uploads are the action=upload requests.
+	uploads []uploadRequest
 	// rests are the requests to rest.php.
 	rests []restRequest
 	// writes are the forms of move and delete requests.
@@ -57,6 +59,14 @@ type fakeWiki struct {
 	logouts int
 }
 
+// uploadRequest is an action=upload request to the fake wiki; Content is the
+// start of the file or chunk.
+type uploadRequest struct {
+	Filename, Offset, FileSize, FileKey, Comment, Text, Token, Field, Content string
+	Stash, Ignore                                                             bool
+	Size                                                                      int
+}
+
 // restRequest is a request to the fake wiki's rest.php.
 type restRequest struct {
 	Method, Path, Body, Type string
@@ -66,6 +76,9 @@ type restRequest struct {
 
 func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
+		_ = r.ParseMultipartForm(32 << 20)
+	}
 	p := func(k string) string { return r.Form.Get(k) }
 	authed := r.Header.Get("Authorization") == "Bearer "+goodToken || (w.extraToken != "" && r.Header.Get("Authorization") == "Bearer "+w.extraToken)
 	// The api package checks OAuth 1.0a signatures; here the keys are enough.
@@ -535,6 +548,42 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"revisions": []any{map[string]any{"slots": map[string]any{"main": map[string]string{"content": "Hello"}}}}}}}})
+	case p("action") == "upload":
+		req := uploadRequest{Filename: p("filename"), Stash: p("stash") != "", Offset: p("offset"), FileSize: p("filesize"), FileKey: p("filekey"),
+			Ignore: p("ignorewarnings") != "", Comment: p("comment"), Text: p("text"), Token: p("token")}
+		for _, field := range []string{"file", "chunk"} {
+			if fh, _, err := r.FormFile(field); err == nil {
+				b, _ := io.ReadAll(fh)
+				req.Field, req.Size, req.Content = field, len(b), string(b[:min(len(b), 16)])
+			}
+		}
+		w.uploads = append(w.uploads, req)
+		if p("assert") != "user" || !authed {
+			send(map[string]any{"error": map[string]string{"code": "assertuserfailed", "info": "not logged in"}})
+			return
+		}
+		if req.Stash {
+			var off, size int
+			fmt.Sscan(req.Offset, &off)
+			fmt.Sscan(req.FileSize, &size)
+			result := "Continue"
+			if off+req.Size >= size {
+				result = "Success"
+			}
+			send(map[string]any{"upload": map[string]any{"result": result, "filekey": "fk.1", "offset": off + req.Size}})
+			return
+		}
+		switch {
+		case req.Filename == "Exists.jpg" && !req.Ignore:
+			send(map[string]any{"upload": map[string]any{"result": "Warning", "warnings": map[string]any{"exists": "Exists.jpg"}, "filekey": "w.1"}})
+		case req.Filename == "Dup.jpg" && !req.Ignore:
+			send(map[string]any{"upload": map[string]any{"result": "Warning", "warnings": map[string]any{"duplicate": []string{"Other.jpg", "Third.jpg"}}}})
+		case req.Filename == "Same.jpg":
+			send(map[string]any{"error": map[string]string{"code": "fileexists-no-change", "info": "The upload is an exact duplicate of the current version."}})
+		default:
+			send(map[string]any{"upload": map[string]any{"result": "Success", "filename": strings.ReplaceAll(req.Filename, " ", "_"),
+				"imageinfo": map[string]any{"url": "https://fake.test/images/" + strings.ReplaceAll(req.Filename, " ", "_")}}})
+		}
 	case p("action") == "move" || p("action") == "delete":
 		w.writes = append(w.writes, r.Form)
 		if p("assert") != "user" || !authed {
@@ -2336,4 +2385,98 @@ func TestFileDownload(t *testing.T) {
 		_, _, code = e.run("", append([]string{"file", "download", "--wiki", e.api, "-D", dir}, args...)...)
 		assert.Equal(t, 2, code, args)
 	}
+}
+
+func TestFileUpload(t *testing.T) {
+	e := newEnv(t)
+	dir := t.TempDir()
+	write := func(name string, size int) string {
+		p := filepath.Join(dir, name)
+		b := make([]byte, size)
+		copy(b, "content of "+name)
+		require.NoError(t, os.WriteFile(p, b, 0o644))
+		return p
+	}
+	photo := write("photo.jpg", 100)
+
+	_, stderr, code := e.run("", "file", "upload", "--wiki", e.api, photo)
+	assert.Equal(t, 4, code)
+	assert.Contains(t, stderr, "not logged in")
+	assert.Empty(t, e.wiki.uploads)
+
+	e.login()
+	out, stderr, code := e.run("", "file", "upload", "--wiki", e.api, photo, "-s", "New photo", "--text", "{{Information}}")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "✓ Uploaded File:photo.jpg on "+e.host+"\n", stderr)
+	assert.Equal(t, "https://fake.test/images/photo.jpg\n", out)
+	u := e.wiki.uploads[len(e.wiki.uploads)-1]
+	assert.Equal(t, uploadRequest{Filename: "photo.jpg", Comment: "New photo", Text: "{{Information}}", Token: "tok+\\", Field: "file", Size: 100, Content: "content of photo"}, u)
+
+	desc := filepath.Join(dir, "desc.wiki")
+	require.NoError(t, os.WriteFile(desc, []byte("== Summary =="), 0o644))
+	for _, name := range []string{"Report 1.png", "File:Report 1.png", "파일:Report 1.png"} {
+		_, stderr, code = e.run("", "file", "upload", "--wiki", e.api, photo, "--name", name, "--text-file", desc)
+		require.Equal(t, 0, code, stderr)
+		u = e.wiki.uploads[len(e.wiki.uploads)-1]
+		assert.Equal(t, "Report 1.png", u.Filename, name)
+		assert.Equal(t, "== Summary ==", u.Text)
+	}
+
+	// Warnings stop that file but not the others.
+	exists, dup := write("Exists.jpg", 10), write("Dup.jpg", 10)
+	e.wiki.uploads = nil
+	out, stderr, code = e.run("", "file", "upload", "--wiki", e.api, exists, dup, photo)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "Not uploaded "+exists+": the wiki warned about the upload: exists: Exists.jpg")
+	assert.Contains(t, stderr, "Not uploaded "+dup+": the wiki warned about the upload: duplicate: Other.jpg, Third.jpg")
+	assert.Contains(t, stderr, "--ignore-warnings")
+	assert.Contains(t, stderr, "✓ Uploaded File:photo.jpg")
+	assert.Equal(t, "https://fake.test/images/photo.jpg\n", out)
+	assert.Len(t, e.wiki.uploads, 3)
+
+	_, stderr, code = e.run("", "file", "upload", "--wiki", e.api, exists, "--ignore-warnings")
+	require.Equal(t, 0, code, stderr)
+	assert.True(t, e.wiki.uploads[len(e.wiki.uploads)-1].Ignore)
+
+	same := write("Same.jpg", 10)
+	_, stderr, code = e.run("", "file", "upload", "--wiki", e.api, same)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "the file is the same as the latest version")
+
+	// A file over 5 MiB goes in parts to the stash, then is published.
+	big := write("big.bin", 11<<20)
+	e.wiki.uploads = nil
+	_, stderr, code = e.run("", "file", "upload", "--wiki", e.api, big, "-s", "Big")
+	require.Equal(t, 0, code, stderr)
+	require.Len(t, e.wiki.uploads, 4)
+	for i, want := range []struct {
+		offset string
+		size   int
+	}{{"0", 5 << 20}, {"5242880", 5 << 20}, {"10485760", 1 << 20}} {
+		u := e.wiki.uploads[i]
+		assert.True(t, u.Stash, i)
+		assert.Equal(t, "chunk", u.Field, i)
+		assert.Equal(t, want.offset, u.Offset, i)
+		assert.Equal(t, want.size, u.Size, i)
+		assert.Equal(t, "11534336", u.FileSize, i)
+		assert.Empty(t, u.Comment, i)
+	}
+	assert.Equal(t, "content of big.b", e.wiki.uploads[0].Content)
+	assert.Empty(t, e.wiki.uploads[0].FileKey)
+	assert.Equal(t, "fk.1", e.wiki.uploads[1].FileKey)
+	final := e.wiki.uploads[3]
+	assert.Equal(t, uploadRequest{Filename: "big.bin", FileKey: "fk.1", Comment: "Big", Token: "tok+\\"}, final)
+
+	for _, args := range [][]string{
+		{},
+		{photo, exists, "--name", "X.jpg"},
+		{photo, "--name", " "},
+		{photo, "--text", "a", "--text-file", desc},
+		{dir},
+	} {
+		_, _, code = e.run("", append([]string{"file", "upload", "--wiki", e.api}, args...)...)
+		assert.Equal(t, 2, code, args)
+	}
+	_, _, code = e.run("", "file", "upload", "--wiki", e.api, filepath.Join(dir, "nope.jpg"))
+	assert.Equal(t, 1, code)
 }
