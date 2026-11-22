@@ -8,87 +8,62 @@
 mw auth login --wiki mediawiki.org
 mw auth status
 mw page view 'Main Page'
+mw page view 'Main Page' --json pageid,url,revision
 mw page edit 'Sandbox' --summary 'Fix typo' --file page.wiki
 mw api action=query meta=userinfo uiprop=rights
 ```
 
-mwcli works with any MediaWiki wiki, Wikimedia wikis included. [a Wikimedia CLI](https://gitlab.wikimedia.org/repos/releng/cli), a separate tool for Wikimedia sites and services, also installs a command named `mw`; if you use both, run that one as `wm`, a name it supports.
+mwcli works with any MediaWiki wiki, Wikimedia wikis included, on macOS, Windows and Linux.
+
+## Documentation
+
+- [Choosing a wiki](docs/wikis.md): `--wiki`, interwiki prefixes, API discovery
+- [Authentication](docs/auth.md): OAuth 2 tokens, passwords, replacing a token, `MW_TOKEN`
+- [Pages](docs/pages.md): `mw page view` with `--json`, `--jq` and `--web`, `mw page edit`
+- [API requests](docs/api.md): `mw api`
+- [Commands](docs/command.md): the command tree, environment variables and exit status
+
+Every command also prints its own help with `mw <command> --help`.
+
+## Contributing
+
+See [AGENTS.md](AGENTS.md) for how changes are designed and [Releasing](docs/releasing.md) for how versions are published.
 
 ## Installation
 
-```sh
-winget install mwcli.mwcli                       # Windows
-go install github.com/mwcli/mwcli/cmd/mw@latest  # with Go
-```
-
-Archives for Linux, macOS and Windows are on the [releases](https://github.com/mwcli/mwcli/releases) page.
-
-Or build from source with `make` (the binary is `bin/mw`) and install it with `make install` (`prefix=/usr/local` by default). Building requires Go 1.27 or newer. `mw --version` shows the version; releases are listed at <https://github.com/mwcli/mwcli/releases>.
-
-## Choosing a wiki
-
-Commands that talk to a wiki take `--wiki WIKI`: a host name such as `mediawiki.org` or an interwiki prefix such as `wikipedia`. Without it, the wiki is chosen in this order:
-
-1. `MW_WIKI`
-2. the host of the last `mw auth login`
-3. `en.wikipedia.org`
-
-mw finds the host's `api.php` itself: it tries `https://HOST/w/api.php`, then `https://HOST/api.php`, then the `EditURI` link of the main page, follows redirects (so `mediawiki.org` reaches `www.mediawiki.org`) and checks that the answer comes from MediaWiki. Like the kubectl discovery cache, the result and the site information are kept in `discovery/HOST/siteinfo.json` in the cache directory (`$XDG_CACHE_HOME/mw`, else `%LocalAppData%\mw` on Windows, else `~/.cache/mw`) for 24 hours, and dropped when the API answers 404. Deleting the directory is always safe.
-
-Accounts are stored under the host of the API, so `mediawiki.org` and `www.mediawiki.org` are one wiki.
-
-`--wiki` and `MW_WIKI` take the interwiki prefixes of MediaWiki's default [interwiki list](https://github.com/wikimedia/mediawiki/blob/master/maintenance/interwiki.list) that point to MediaWiki wikis, such as `wikipedia` (en.wikipedia.org), `commons`, `wikidata`, `mw` (www.mediawiki.org) and `metawikimedia`; `mw help interwiki` lists all 21. A name with a dot is always a host name.
+### Windows
 
 ```sh
-mw page view --wiki commons 'Main Page'
+winget install mwcli.mwcli
 ```
 
-`--api URL` names the endpoint directly; `mw auth login --api URL` stores it in `hosts.yml` for that host, and then no discovery is done for it.
+### macOS and Linux
 
-## Authentication
-
-`mw auth login` prefers an owner-only OAuth 2 access token. Create one on the wiki at `Special:OAuthConsumerRegistration/propose/oauth2` ("This consumer is for use only by …") with the grants the tool needs, such as basic and editpage. Owner-only tokens do not expire. To replace one that may have leaked, open `Special:OAuthConsumerRegistration/list` on the wiki where the consumer was registered, choose the consumer, tick "Reset the secret key to a new value" and submit: the wiki shows a new token and the old one stops working. On a wiki farm that is the central wiki, such as Meta-Wiki (`meta.wikimedia.org`) for Wikimedia projects like Commons. To log in again to the wiki you use with mw, run `mw auth login --wiki <host> --with-token` (or `--api <url>`); when a script or CI passes the token in `MW_TOKEN`, update that variable or secret instead. To stop using a consumer entirely, disable it on the same page. `--with-token` reads the token from standard input. `--username` logs in with a password through the `clientlogin` flow instead, read from `MW_PASSWORD` or a no-echo prompt; extra steps such as two-factor authentication are not supported.
-
-Credentials are stored per host and account in `hosts.yml` in the configuration directory, with owner-only permissions. Treat this file as a credential. The directory is `MW_CONFIG_DIR`, else `$XDG_CONFIG_HOME/mw`, else `%AppData%\mw` on Windows, else `~/.config/mw`.
-
-- `mw auth status` checks every stored account and shows its API, auth method, masked token, which of edit, create, move, delete and protect it may do, and its rights. `-t` shows the whole token.
-  - The token shows only its last 4 characters; one of 8 characters or fewer is masked entirely.
-  - MediaWiki's OAuth 2 tokens are JWTs. When the token carries the claims, its client (first 8 characters of `aud`), issue date (`iat`) and OAuth grants (`scopes`) are shown too. They are decoded for display only, not verified.
-- `mw auth switch` changes the active account of a host; `mw auth logout` removes one; `mw auth token` prints a token in plain text, so keep it out of shared logs and terminals.
-- `MW_TOKEN` uses that access token instead of stored credentials, for scripts and CI.
-
-To check one page, including protection and blocks, ask the wiki with `mw api`. `"actions":{"edit":true}` means the edit would succeed; add `intestactionsdetail=full` to get the reasons when it would not:
+Download an archive from the [releases](https://github.com/mwcli/mwcli/releases) page, or install with Go:
 
 ```sh
-mw api action=query prop=info intestactions=edit titles=Sandbox
+go install github.com/mwcli/mwcli/cmd/mw@latest
 ```
 
-## Pages
+### Build from source
 
-`mw page view TITLE` prints the wikitext of the latest revision. `--web` (`-w`) opens the page in the browser instead (`MW_BROWSER`, else `BROWSER`, else the system opener). The browser setting is a program path, spaces allowed, or a command line with arguments where a path with spaces is quoted.
+Building requires Go 1.27 or newer. `make` builds `bin/mw`, and `make install` installs it (`prefix=/usr/local` by default). `mw --version` shows the version.
 
-`--json FIELDS` prints the named fields as JSON; `--json` alone lists them. Field names follow the MediaWiki API: `title`, `pageid`, `ns`, `url`, `contentmodel`, `length`, `touched`, `redirect`, `protection` (type, level, expiry), `categories` (every title, hidden ones included), `revision` (revid, parentid, timestamp, user, comment, size) and `content` (the wikitext, fetched only when asked for). `--jq` (`-q`) filters the JSON with a jq expression; strings print without quotes.
+### Verification of binaries
+
+Each release has a `checksums.txt` with the SHA-256 of its archives. After downloading an archive into the same directory:
 
 ```sh
-mw page view 'Main Page' --json pageid,url,revision
-mw page view 'Main Page' --json categories --jq '.categories[]'
+sha256sum --check --ignore-missing checksums.txt
 ```
 
-`mw page edit TITLE` replaces the wikitext from `--text` or `--file` (`-` for standard input).
+## Similar projects
 
-## API requests
+- [a Wikimedia CLI](https://gitlab.wikimedia.org/repos/releng/cli) (`wm`, formerly `mw`): Wikimedia services and a MediaWiki development environment. It was called MediaWiki CLI before; if you use both, run it as `wm`.
+- [MediaWiki CLI](https://mwcli.toolforge.org/) by Sam Wilson (`mwcli`, PHP): uploads, downloads and page exports. A separate project with the same short name.
+- [Pywikibot](https://www.mediawiki.org/wiki/Manual:Pywikibot) (`pwb`, Python): a bot framework with many maintenance scripts.
+- [mwclient](https://github.com/mwclient/mwclient) (Python): a MediaWiki API library.
+- [wikibase-cli](https://codeberg.org/maxlath/wikibase-cli) (`wb`, JavaScript): Wikidata and other Wikibase instances.
+- [mwcli on PyPI](https://pypi.org/project/mwcli/) (Python): helpers for building MediaWiki command-line utilities, from mediawiki-utilities.
 
-`mw api` sends `key=value` arguments (or `-f key=value`) to `api.php` and prints the response, indented on a terminal. `-F key=@file` reads a value from a file (`@-` for standard input). `format=json` and `formatversion=2` are added unless given. With `-X POST` and no `token`, a CSRF token is fetched and added.
-
-## Exit status
-
-- 0: success
-- 1: the command failed, or the API reported an error
-- 2: wrong usage
-- 4: a login is required
-
-See [docs/command.md](docs/command.md) for the command tree.
-
-## Releasing
-
-`VERSION` holds the version of the next release. A pull request that changes it is a release pull request: once merged to `main`, the Release workflow tags `vX.Y.Z` from `VERSION` and GoReleaser publishes the GitHub release with binaries for Linux, macOS and Windows. A prerelease such as `0.3.0-rc.1` is published as a GitHub prerelease and never marked latest (and `go install …@latest` skips it); a final version is marked latest only when it is the highest published one. The release is uploaded as a draft and published last; if the run fails after tagging, re-running it (or running the workflow by hand on `main`; other branches are ignored) resumes from the tag. CI checks that `VERSION` is a semantic version greater than the latest tag by SemVer precedence. Nobody pushes tags by hand.
+mwcli is a single Go binary, `mw`, for reading and editing any MediaWiki wiki.
