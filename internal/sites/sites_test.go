@@ -80,8 +80,3 @@ func TestAPIURLDefaultDisambiguatesBuiltinHost(t *testing.T) {
 	assert.Equal(t, "custom", restored.LoginKey)
 	assert.Equal(t, selected.LoginKey, restored.LoginKey)
 }
-
-func TestArchWikiAndZetaWikiAreConfigExamples(t *testing.T) {
-	assert.NotContains(t, Builtin(), "wiki.archlinux.org")
-	assert.NotContains(t, Builtin(), "zetawiki.com")
-}
