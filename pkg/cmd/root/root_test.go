@@ -563,7 +563,8 @@ func TestBuiltinSites(t *testing.T) {
 	}
 	out, _, _ := e.run("", "site", "list", "--builtin")
 	assert.Contains(t, out, "commons.wikimedia.org     https://commons.wikimedia.org/w/api.php  (commons)")
-	assert.Equal(t, len(sites.Builtin()), strings.Count(out, "\n"))
+	assert.Equal(t, len(sites.Builtin())+len(sites.BuiltinPatterns()), strings.Count(out, "\n"))
+	assert.Contains(t, out, "*.wikipedia.org           https://{host}/w/api.php\n")
 }
 
 func TestStatusJWTToken(t *testing.T) {
