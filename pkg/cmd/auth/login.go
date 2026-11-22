@@ -220,7 +220,7 @@ func tokenLogin(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.A
 		return nil, "", cmdutil.FlagErrorf("no access token given")
 	}
 	account := &config.Account{Auth: config.AuthOAuth2, OAuthToken: token}
-	c, err := api.New(t.API, account)
+	c, err := cmdutil.NewClient(t.API, account)
 	if err != nil {
 		return nil, "", err
 	}
@@ -267,7 +267,7 @@ func oauth1Login(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.
 		}
 	}
 	account := &config.Account{Auth: config.AuthOAuth1, ConsumerKey: keys[0], ConsumerSecret: keys[1], AccessToken: keys[2], AccessSecret: keys[3]}
-	c, err := api.New(t.API, account)
+	c, err := cmdutil.NewClient(t.API, account)
 	if err != nil {
 		return nil, "", err
 	}
@@ -324,7 +324,7 @@ func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string, bot bo
 	if username == "" || password == "" {
 		return nil, "", cmdutil.FlagErrorf("username and password are required")
 	}
-	c, err := api.New(t.API, nil)
+	c, err := cmdutil.NewClient(t.API, nil)
 	if err != nil {
 		return nil, "", err
 	}

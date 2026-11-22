@@ -131,7 +131,7 @@ func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
 }
 
 func printEntry(w io.Writer, ios *iostreams.IOStreams, e entry, showToken bool) bool {
-	c, err := api.New(e.api, e.account)
+	c, err := cmdutil.NewClient(e.api, e.account)
 	var u *api.UserInfo
 	if err == nil {
 		u, err = c.User()

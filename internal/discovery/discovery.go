@@ -65,7 +65,7 @@ func Find(target string) (*config.Site, error) {
 }
 
 func probe(apiURL string) (*config.Site, error) {
-	c, err := api.New(apiURL, nil)
+	c, err := api.New(apiURL, api.WithUserAgent(build.UserAgent()))
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func editURI(page string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "mw/"+build.Version+" (https://github.com/mwcli/mwcli)")
+	req.Header.Set("User-Agent", build.UserAgent())
 	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
 	if err != nil {
 		return "", err
