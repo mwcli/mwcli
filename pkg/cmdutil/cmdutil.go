@@ -9,6 +9,7 @@ import (
 
 	"github.com/mwcli/mwcli/api"
 	"github.com/mwcli/mwcli/internal/apicache"
+	"github.com/mwcli/mwcli/internal/build"
 	"github.com/mwcli/mwcli/internal/config"
 	"github.com/mwcli/mwcli/internal/discovery"
 	"github.com/mwcli/mwcli/internal/sites"
@@ -198,7 +199,7 @@ func Credentials(cfg *config.Config, t Target) (AuthSource, bool) {
 // Client returns an API client for t, authenticated when credentials exist.
 func Client(cfg *config.Config, t Target) (*api.Client, bool, error) {
 	src, ok := Credentials(cfg, t)
-	c, err := api.New(t.API, src.Account)
+	c, err := NewClient(t.API, src.Account)
 	return c, ok, err
 }
 
@@ -274,4 +275,29 @@ func loginKey(t Target) string {
 		return t.LoginKey
 	}
 	return t.Name
+}
+
+// NewClient returns an API client for apiURL with mw's User-Agent,
+// authenticated with account when it is not nil.
+func NewClient(apiURL string, account *config.Account) (*api.Client, error) {
+	return api.New(apiURL, ClientOptions(account)...)
+}
+
+// ClientOptions turns a stored account into the options of an API client.
+func ClientOptions(account *config.Account) []api.Option {
+	opts := []api.Option{api.WithUserAgent(build.UserAgent())}
+	if account == nil {
+		return opts
+	}
+	switch account.Auth {
+	case config.AuthOAuth2:
+		opts = append(opts, api.WithOAuth2Token(account.OAuthToken))
+	case config.AuthOAuth1:
+		opts = append(opts, api.WithOAuth1(api.OAuth1{ConsumerKey: account.ConsumerKey, ConsumerSecret: account.ConsumerSecret, AccessToken: account.AccessToken, AccessSecret: account.AccessSecret}))
+	case config.AuthBotPassword:
+		opts = append(opts, api.WithBotPassword(account.BotName, account.BotPassword))
+	default:
+		opts = append(opts, api.WithCookies(account.Cookies))
+	}
+	return opts
 }

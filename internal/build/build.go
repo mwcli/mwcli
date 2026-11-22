@@ -36,3 +36,6 @@ func init() {
 		}
 	}
 }
+
+// UserAgent is the User-Agent of mw's requests.
+func UserAgent() string { return "mw/" + Version + " (https://github.com/mwcli/mwcli)" }

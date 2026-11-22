@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/mwcli/mwcli/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,7 +26,7 @@ func TestPostIsNotRedirected(t *testing.T) {
 			http.Redirect(w, r, target.URL+"/w/api.php?"+r.URL.RawQuery, status)
 		}))
 		api := source.URL + "/w/api.php"
-		c, err := New(api, &config.Account{Auth: config.AuthBotPassword, BotName: "Alice@bot", BotPassword: "secret"})
+		c, err := New(api, WithBotPassword("Alice@bot", "secret"))
 		require.NoError(t, err)
 		_, err = c.CurrentUser()
 		assert.ErrorContains(t, err, "refusing to follow a redirect of a POST request", status)
@@ -47,10 +46,47 @@ func TestGetIsRedirected(t *testing.T) {
 		http.Redirect(w, r, target.URL+"/w/api.php?"+r.URL.RawQuery, http.StatusMovedPermanently)
 	}))
 	defer source.Close()
-	c, err := New(source.URL+"/w/api.php", nil)
+	c, err := New(source.URL + "/w/api.php")
 	require.NoError(t, err)
 	u, err := c.CurrentUser()
 	require.NoError(t, err)
 	assert.True(t, u.Anon)
 	assert.Equal(t, target.URL+"/w/api.php", c.Resolved)
+}
+
+// A client names itself: the library's User-Agent by default, the caller's
+// with WithUserAgent.
+func TestUserAgent(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Header.Get("User-Agent"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"query":{"userinfo":{"id":0,"name":"1.2.3.4","anon":true}}}`))
+	}))
+	defer srv.Close()
+	for _, opts := range [][]Option{nil, {WithUserAgent("mytool/1.0 (me@example.org)")}} {
+		c, err := New(srv.URL+"/w/api.php", opts...)
+		require.NoError(t, err)
+		_, err = c.CurrentUser()
+		require.NoError(t, err)
+	}
+	assert.Equal(t, []string{DefaultUserAgent, "mytool/1.0 (me@example.org)"}, got)
+}
+
+// WithCookies sends the session cookies of a password login.
+func TestWithCookies(t *testing.T) {
+	var cookie string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ck, err := r.Cookie("session"); err == nil {
+			cookie = ck.Value
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"query":{"userinfo":{"id":7,"name":"Alice"}}}`))
+	}))
+	defer srv.Close()
+	c, err := New(srv.URL+"/w/api.php", WithCookies(map[string]string{"session": "abc"}))
+	require.NoError(t, err)
+	_, err = c.User()
+	require.NoError(t, err)
+	assert.Equal(t, "abc", cookie)
 }

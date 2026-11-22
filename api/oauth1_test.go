@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mwcli/mwcli/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -90,8 +89,8 @@ func TestOAuth1SignsGetAndPost(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	account := &config.Account{Auth: config.AuthOAuth1, ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
-	c, err := New(srv.URL+"/w/api.php", account)
+	account := OAuth1{ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
+	c, err := New(srv.URL+"/w/api.php", WithOAuth1(account))
 	require.NoError(t, err)
 	res, err := c.Edit("A b/c", "Text with spaces, + and ~ and 한글", EditOptions{Summary: "summary!"})
 	require.NoError(t, err)
@@ -99,7 +98,7 @@ func TestOAuth1SignsGetAndPost(t *testing.T) {
 	assert.Equal(t, 1, edits)
 
 	account.AccessSecret = "wrong"
-	c, err = New(srv.URL+"/w/api.php", account)
+	c, err = New(srv.URL+"/w/api.php", WithOAuth1(account))
 	require.NoError(t, err)
 	_, err = c.Edit("A", "x", EditOptions{})
 	assert.ErrorContains(t, err, "mwoauth-invalid-authorization")
@@ -132,14 +131,14 @@ func TestOAuth1Redirect(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	account := &config.Account{Auth: config.AuthOAuth1, ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
-	c, err := New(srv.URL+"/old/api.php", account)
+	account := OAuth1{ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
+	c, err := New(srv.URL+"/old/api.php", WithOAuth1(account))
 	require.NoError(t, err)
 	u, err := c.User()
 	require.NoError(t, err)
 	assert.Equal(t, "Alice", u.Name)
 
-	c, err = New(srv.URL+"/away/api.php", account)
+	c, err = New(srv.URL+"/away/api.php", WithOAuth1(account))
 	require.NoError(t, err)
 	_, err = c.CurrentUser()
 	require.NoError(t, err)
@@ -167,8 +166,8 @@ func TestOAuth1PostWithQuery(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	account := &config.Account{Auth: config.AuthOAuth1, ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
-	c, err := New(srv.URL+"/w/api.php?wiki=a&title=Q", account)
+	account := OAuth1{ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
+	c, err := New(srv.URL+"/w/api.php?wiki=a&title=Q", WithOAuth1(account))
 	require.NoError(t, err)
 	_, err = c.Edit("A", "x", EditOptions{})
 	require.NoError(t, err)

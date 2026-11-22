@@ -12,15 +12,18 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/mwcli/mwcli/internal/build"
-	"github.com/mwcli/mwcli/internal/config"
 )
+
+// DefaultUserAgent is the User-Agent of a client made without WithUserAgent.
+// Wikimedia wikis ask each tool to name itself and a way to reach its author.
+const DefaultUserAgent = "mwcli-api (https://github.com/mwcli/mwcli)"
 
 // Client talks to one wiki's api.php.
 type Client struct {
 	API   string
 	Token string
+	// UserAgent is sent with every request.
+	UserAgent string
 	// Resolved is the api.php URL the last request ended at after redirects.
 	Resolved string
 	http     *http.Client
@@ -33,32 +36,59 @@ type Client struct {
 	oauth1 *OAuth1
 }
 
-// New returns a client for api, authenticated with account when it is not nil.
-func New(api string, account *config.Account) (*Client, error) {
-	u, err := url.Parse(api)
+// An Option configures a client made by New.
+type Option func(*Client)
+
+// WithOAuth2Token authenticates with an OAuth 2 access token, sent as a Bearer
+// token.
+func WithOAuth2Token(token string) Option {
+	return func(c *Client) { c.Token = token }
+}
+
+// WithOAuth1 authenticates by signing every request with the keys of an OAuth
+// 1.0a consumer.
+func WithOAuth1(keys OAuth1) Option {
+	return func(c *Client) { c.oauth1 = &keys }
+}
+
+// WithBotPassword logs in with a bot password from Special:BotPasswords before
+// the first request. name is the login name, such as Alice@mybot.
+func WithBotPassword(name, password string) Option {
+	return func(c *Client) { c.botName, c.botPassword = name, password }
+}
+
+// WithCookies sends session cookies, such as those Cookies returned after a
+// password login.
+func WithCookies(cookies map[string]string) Option {
+	return func(c *Client) {
+		var list []*http.Cookie
+		for name, value := range cookies {
+			list = append(list, &http.Cookie{Name: name, Value: value})
+		}
+		c.http.Jar.SetCookies(c.url, list)
+	}
+}
+
+// WithUserAgent sets the User-Agent of every request.
+func WithUserAgent(ua string) Option {
+	return func(c *Client) { c.UserAgent = ua }
+}
+
+// New returns a client for the api.php at apiURL, configured by opts. Without
+// an authentication option, the wiki sees the requests as anonymous.
+func New(apiURL string, opts ...Option) (*Client, error) {
+	u, err := url.Parse(apiURL)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return nil, fmt.Errorf("invalid API URL %q", api)
+		return nil, fmt.Errorf("invalid API URL %q", apiURL)
 	}
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, err
 	}
-	c := &Client{API: api, url: u}
+	c := &Client{API: apiURL, url: u, UserAgent: DefaultUserAgent}
 	c.http = &http.Client{Jar: jar, Timeout: 45 * time.Second, CheckRedirect: c.checkRedirect}
-	if account != nil {
-		if account.Auth == config.AuthOAuth2 {
-			c.Token = account.OAuthToken
-		} else if account.Auth == config.AuthOAuth1 {
-			c.oauth1 = &OAuth1{ConsumerKey: account.ConsumerKey, ConsumerSecret: account.ConsumerSecret, AccessToken: account.AccessToken, AccessSecret: account.AccessSecret}
-		} else if account.Auth == config.AuthBotPassword {
-			c.botName, c.botPassword = account.BotName, account.BotPassword
-		} else {
-			var cookies []*http.Cookie
-			for name, value := range account.Cookies {
-				cookies = append(cookies, &http.Cookie{Name: name, Value: value})
-			}
-			jar.SetCookies(u, cookies)
-		}
+	for _, opt := range opts {
+		opt(c)
 	}
 	return c, nil
 }
@@ -153,7 +183,7 @@ func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "mw/"+build.Version+" (https://github.com/mwcli/mwcli)")
+	req.Header.Set("User-Agent", c.UserAgent)
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
