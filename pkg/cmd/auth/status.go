@@ -148,6 +148,8 @@ func printEntry(w io.Writer, ios *iostreams.IOStreams, e entry, showToken bool) 
 			fmt.Fprintln(w, "  - The session has expired.")
 		case e.account.Auth == config.AuthBotPassword && strings.Contains(err.Error(), "bot password login failed"):
 			fmt.Fprintln(w, "  - The bot password was not accepted; it may have been deleted or reset.")
+		case e.account.Auth == config.AuthOAuth1 && (errors.Is(err, api.ErrNotLoggedIn) || isInvalidToken(err)):
+			fmt.Fprintln(w, "  - The OAuth 1.0a keys are invalid; the consumer may have been disabled or its secret reset.")
 		case errors.Is(err, api.ErrNotLoggedIn), isInvalidToken(err):
 			fmt.Fprintln(w, "  - The token is invalid.")
 		default:
@@ -168,6 +170,9 @@ func printEntry(w io.Writer, ios *iostreams.IOStreams, e entry, showToken bool) 
 		if len(claims.Scopes) > 0 {
 			fmt.Fprintf(w, "  - Grants: %s\n", strings.Join(claims.Scopes, ", "))
 		}
+	} else if e.account.Auth == config.AuthOAuth1 {
+		fmt.Fprintf(w, "  - Auth: OAuth 1.0a consumer %s\n", e.account.ConsumerKey)
+		fmt.Fprintf(w, "  - Token: %s\n", displayToken(e.account.AccessToken, showToken))
 	} else if e.account.Auth == config.AuthBotPassword {
 		fmt.Fprintf(w, "  - Auth: bot password %s\n", e.account.BotName)
 		fmt.Fprintf(w, "  - Password: %s\n", displayToken(e.account.BotPassword, showToken))

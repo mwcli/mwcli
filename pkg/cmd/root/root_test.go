@@ -35,6 +35,15 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	p := func(k string) string { return r.Form.Get(k) }
 	authed := r.Header.Get("Authorization") == "Bearer "+goodToken || (w.extraToken != "" && r.Header.Get("Authorization") == "Bearer "+w.extraToken)
+	// The api package checks OAuth 1.0a signatures; here the keys are enough.
+	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "OAuth ") {
+		if !strings.Contains(h, `oauth_consumer_key="ck"`) || !strings.Contains(h, `oauth_token="at"`) || !strings.Contains(h, "oauth_signature=") {
+			rw.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(rw).Encode(map[string]any{"error": map[string]string{"code": "mwoauth-invalid-authorization-invalid-user", "info": "Invalid consumer"}})
+			return
+		}
+		authed = true
+	}
 	if ck, err := r.Cookie("fakesession"); err == nil && ck.Value == "bot" {
 		authed = true
 	}
@@ -767,4 +776,48 @@ func TestSiteRemoveClearsAPIDefault(t *testing.T) {
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
 	assert.Empty(t, cfg.Context)
+}
+
+func TestOAuth1Login(t *testing.T) {
+	e := newEnv(t)
+	_, stderr, code := e.run("ck cs at", "auth", "login", "--api", e.api, "--oauth1", "--with-token")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "standard input has 3 values")
+
+	_, stderr, code = e.run("bad cs at as", "auth", "login", "--api", e.api, "--oauth1", "--with-token")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "mwoauth-invalid-authorization")
+
+	_, stderr, code = e.run("ck\ncs\nat\nas\n", "auth", "login", "--api", e.api, "--oauth1", "--with-token")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "Logged in to "+e.host+" as Jmnote")
+	cfg, err := config.LoadDir(e.dir)
+	require.NoError(t, err)
+	a := cfg.Logins[e.host].Users["Jmnote"]
+	require.NotNil(t, a)
+	assert.Equal(t, config.Account{Auth: config.AuthOAuth1, ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}, *a)
+
+	out, stderr, code := e.run("", "auth", "status")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, out, "- Auth: OAuth 1.0a consumer ck")
+	assert.Contains(t, out, "- Token: ********")
+	assert.NotContains(t, out, "cs")
+
+	_, stderr, code = e.run("New", "page", "edit", "Sandbox", "-F", "-")
+	require.Equal(t, 0, code, stderr)
+	require.Len(t, e.wiki.edits, 1)
+
+	_, stderr, code = e.run("", "auth", "token")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "uses OAuth 1.0a keys")
+
+	_, stderr, code = e.run("", "auth", "login", "--api", e.api, "--oauth1", "--username", "Jmnote")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "only one of --oauth1 and --username")
+
+	cfg.Logins[e.host].Users["Jmnote"].ConsumerKey = "disabled"
+	require.NoError(t, cfg.Save())
+	out, _, code = e.run("", "auth", "status")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, out, "The OAuth 1.0a keys are invalid")
 }

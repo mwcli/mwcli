@@ -1,14 +1,15 @@
 # Authentication
 
-mwcli recommends an OAuth 2 owner-only token where the wiki has the OAuth extension, and a bot password where it does not. Both limit mw to the grants you choose.
+mwcli recommends an OAuth 2 owner-only token where the wiki has the OAuth extension, and a bot password where it does not. Both limit mw to the grants you choose. An OAuth 1.0a owner-only consumer also works, for wikis or tools that offer only OAuth 1.0a.
 
 | Method | Works on | Access | Revoke |
 | --- | --- | --- | --- |
 | OAuth 2 owner-only token | wikis with the OAuth extension, such as all Wikimedia wikis | the grants you chose | reset or disable the consumer |
+| OAuth 1.0a owner-only consumer | wikis with the OAuth extension | the grants you chose | reset or disable the consumer |
 | Bot password | most wikis (on by default) | the grants you chose | delete it at `Special:BotPasswords` |
 | Account password | any wiki | all rights of your account | log out, or change the password |
 
-> Treat tokens and bot passwords like passwords. mw keeps them in `config.yml`. For account-password logins, mw saves only the session cookies.
+> Treat tokens, consumer secrets and bot passwords like passwords. mw keeps them in `config.yml`. For account-password logins, mw saves only the session cookies.
 
 Run `mw auth login` without flags to choose interactively.
 
@@ -30,6 +31,14 @@ mw stores credentials in plaintext per farm and account in `config.yml` in the c
 
 **Revoke**: disable the consumer on the same page.
 
+## OAuth 1.0a owner-only consumer
+
+**Create**: on the wiki, open `Special:OAuthConsumerRegistration/propose/oauth1a`, tick "This consumer is for use only by …" and choose the grants. On a wiki farm, register on the central wiki, as for OAuth 2. The wiki shows four values once: the consumer token, consumer secret, access token and access secret.
+
+**Log in**: `mw auth login --wiki <site> --oauth1` asks for the four values, the secrets without echo. With `--with-token`, mw reads them from standard input instead, in that order and separated by spaces or new lines. mw stores the four values and signs every request with them (HMAC-SHA1), so nothing expires.
+
+**Replace and revoke**: as for OAuth 2, at `Special:OAuthConsumerRegistration/list` on the wiki where the consumer was registered.
+
 ## Bot password
 
 **Create**: on the wiki, open `Special:BotPasswords`, give the bot password a name such as `mybot` and choose the grants. The wiki shows the login name, such as `Alice@mybot`, and the password once.
@@ -46,7 +55,7 @@ mw stores credentials in plaintext per farm and account in `config.yml` in the c
 
 ## Checking what a login can do
 
-- `mw auth status` checks every stored account and shows its API, auth method, masked token or bot password, which of edit, create, move, delete and protect it may do, and its rights. `-t` shows the whole token or password.
+- `mw auth status` checks every stored account and shows its API, auth method, masked token or bot password (for OAuth 1.0a, the consumer token and the masked access token), which of edit, create, move, delete and protect it may do, and its rights. `-t` shows the whole token or password.
   - A token or password shows only its last 4 characters; one of 8 characters or fewer is masked entirely.
   - MediaWiki's OAuth 2 tokens are JWTs. When the token carries the claims, its client (first 8 characters of `aud`), issue date (`iat`) and OAuth grants (`scopes`) are shown too. They are decoded for display only, not verified.
 - `mw auth switch` changes the active account of a site; `mw auth logout` removes one; `mw auth token` prints an OAuth 2 token.

@@ -41,6 +41,8 @@ func newCmdToken(f *cmdutil.Factory) *cobra.Command {
 			}
 			switch a.Auth {
 			case config.AuthOAuth2:
+			case config.AuthOAuth1:
+				return fmt.Errorf("%s account %s uses OAuth 1.0a keys, not an OAuth 2 token", site, user)
 			case config.AuthBotPassword:
 				return fmt.Errorf("%s account %s uses a bot password, not a token", site, user)
 			default:

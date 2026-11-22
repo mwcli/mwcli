@@ -3,7 +3,7 @@
 ```text
 mw
 ├── auth
-│   ├── login   [--wiki WIKI] [--api URL] [--with-token | -u USER [--bot-password]]
+│   ├── login   [--wiki WIKI] [--api URL] [--with-token | --oauth1 [--with-token] | -u USER [--bot-password]]
 │   ├── logout  [--wiki WIKI] [-u USER]
 │   ├── status  [--wiki WIKI] [-a] [-t]
 │   ├── switch  [--wiki WIKI] [-u USER]

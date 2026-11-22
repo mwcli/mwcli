@@ -44,10 +44,11 @@ See [Choosing a wiki](wikis.md) for more ways to add a site.
 Choose one of these on the wiki, in this order of preference. [Authentication](auth.md) compares them.
 
 1. **OAuth 2 owner-only token**, if the wiki has the OAuth extension (all Wikimedia wikis do): open `Special:OAuthConsumerRegistration/propose/oauth2` on the wiki, or on the central wiki of a wiki farm, which for Wikimedia projects such as Wikipedia and Commons is Meta-Wiki (`https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose/oauth2`). Tick "This consumer is for use only by …", choose the grants (basic and editpage are enough to edit pages) and submit. Copy the access token the wiki shows.
-2. **Bot password**, if the wiki has no OAuth: open `Special:BotPasswords`, enter a name such as `mybot`, choose the grants and create it. Note the login name, such as `Alice@mybot`, and the password.
-3. **Your account password**, only when neither is available.
+2. **OAuth 1.0a owner-only consumer**, if the wiki's OAuth extension offers only OAuth 1.0a, or you already have one: open `Special:OAuthConsumerRegistration/propose/oauth1a`, tick "This consumer is for use only by …", choose the grants and submit. Note the four values the wiki shows: consumer token, consumer secret, access token and access secret.
+3. **Bot password**, if the wiki has no OAuth: open `Special:BotPasswords`, enter a name such as `mybot`, choose the grants and create it. Note the login name, such as `Alice@mybot`, and the password.
+4. **Your account password**, only when none of these is available.
 
-The wiki shows a token or bot password only once. Keep it to yourself: do not paste it into chats or issues.
+The wiki shows a token, consumer secret or bot password only once. Keep it to yourself: do not paste it into chats or issues.
 
 ## 4. Log in
 
@@ -60,8 +61,9 @@ mw asks how to log in:
 ```text
 ? How would you like to authenticate mw?
   1. Paste an OAuth 2 access token
-  2. Bot password (from Special:BotPasswords)
-  3. Username and password
+  2. OAuth 1.0a consumer keys
+  3. Bot password (from Special:BotPasswords)
+  4. Username and password
 Choose [1]:
 ```
 

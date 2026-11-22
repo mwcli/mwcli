@@ -28,6 +28,8 @@ type Client struct {
 	botName, botPassword string
 	botState             int // 0 not tried, 1 logging in, 2 done
 	botErr               error
+	// oauth1 signs every request to the API host with OAuth 1.0a.
+	oauth1 *OAuth1
 }
 
 // New returns a client for api, authenticated with account when it is not nil.
@@ -40,10 +42,13 @@ func New(api string, account *config.Account) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Client{API: api, url: u, http: &http.Client{Jar: jar, Timeout: 45 * time.Second, CheckRedirect: checkRedirect}}
+	c := &Client{API: api, url: u}
+	c.http = &http.Client{Jar: jar, Timeout: 45 * time.Second, CheckRedirect: c.checkRedirect}
 	if account != nil {
 		if account.Auth == config.AuthOAuth2 {
 			c.Token = account.OAuthToken
+		} else if account.Auth == config.AuthOAuth1 {
+			c.oauth1 = &OAuth1{ConsumerKey: account.ConsumerKey, ConsumerSecret: account.ConsumerSecret, AccessToken: account.AccessToken, AccessSecret: account.AccessSecret}
 		} else if account.Auth == config.AuthBotPassword {
 			c.botName, c.botPassword = account.BotName, account.BotPassword
 		} else {
@@ -59,13 +64,22 @@ func New(api string, account *config.Account) (*Client, error) {
 
 // checkRedirect follows redirects of GET requests, which discovery relies on,
 // but never of a POST: a 307 or 308 would send its body, with a password, a
-// bot password or an edit, to another address.
-func checkRedirect(req *http.Request, via []*http.Request) error {
+// bot password or an edit, to another address. An OAuth 1.0a signature holds
+// for one URL, so a GET to the same host is signed again and one to another
+// host is sent without it.
+func (c *Client) checkRedirect(req *http.Request, via []*http.Request) error {
 	if via[0].Method != http.MethodGet && via[0].Method != http.MethodHead {
 		return fmt.Errorf("refusing to follow a redirect of a %s request to %s; check the API URL", via[0].Method, req.URL.Redacted())
 	}
 	if len(via) >= 10 {
 		return errors.New("stopped after 10 redirects")
+	}
+	if c.oauth1 != nil {
+		if strings.EqualFold(req.URL.Host, c.url.Host) {
+			c.oauth1.sign(req, nil)
+		} else {
+			req.Header.Del("Authorization")
+		}
 	}
 	return nil
 }
@@ -115,8 +129,14 @@ func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
 	var req *http.Request
 	var err error
 	if method == http.MethodGet {
+		// Keep the query of the API URL, such as one that picks the wiki, as a
+		// POST to c.API does.
 		u := *c.url
-		u.RawQuery = params.Encode()
+		q := u.Query()
+		for k, vs := range params {
+			q[k] = append(q[k], vs...)
+		}
+		u.RawQuery = q.Encode()
 		req, err = http.NewRequest(method, u.String(), nil)
 	} else {
 		req, err = http.NewRequest(method, c.API, strings.NewReader(params.Encode()))
@@ -130,6 +150,13 @@ func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
 	req.Header.Set("User-Agent", "mw/"+build.Version+" (https://github.com/mwcli/mwcli)")
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	if c.oauth1 != nil {
+		var form url.Values
+		if method != http.MethodGet {
+			form = params
+		}
+		c.oauth1.sign(req, form)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
