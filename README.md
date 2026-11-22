@@ -1,8 +1,8 @@
 # mwcli
 
-**Unofficial but universal MediaWiki CLI. Like `gh`, but for MediaWiki.**
+**A MediaWiki CLI for editors: log in, read and edit pages on any wiki.**
 
-`mw` is MediaWiki on the command line. It logs in to any MediaWiki wiki, reads and edits pages and makes Action API requests.
+`mw` works with any MediaWiki wiki, Wikipedia included. Log in once with an OAuth token or a password, then view and edit pages from the command line; one binary, nothing else to install. For anything else, `mw api` makes Action API requests.
 
 ```sh
 mw auth login --wiki mediawiki.org
@@ -13,7 +13,7 @@ mw page edit 'Sandbox' --summary 'Fix typo' --file page.wiki
 mw api action=query meta=userinfo uiprop=rights
 ```
 
-mwcli works with any MediaWiki wiki, Wikimedia wikis included, on macOS, Windows and Linux.
+It runs on macOS, Windows and Linux.
 
 ## Documentation
 
@@ -79,7 +79,6 @@ Command-line tools:
 
 | Project | Command | Language | Works with |
 | --- | --- | --- | --- |
-| mwcli (this project) | `mw` | Go | any MediaWiki wiki: pages, accounts, the Action API |
 | [a Wikimedia CLI](https://gitlab.wikimedia.org/repos/releng/cli) | `wm`, formerly `mw` | Go | Wikimedia services and a MediaWiki development environment |
 | [MediaWiki CLI](https://mwcli.toolforge.org/) by Sam Wilson | `mwcli` | PHP | any MediaWiki wiki: uploads, downloads, page exports |
 | [wikibase-cli](https://codeberg.org/maxlath/wikibase-cli) | `wb` | JavaScript | Wikidata and other Wikibase instances |
