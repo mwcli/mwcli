@@ -12,6 +12,7 @@ import (
 
 	"github.com/mwcli/mwcli/api"
 	"github.com/mwcli/mwcli/internal/config"
+	"github.com/mwcli/mwcli/internal/sites"
 	"github.com/mwcli/mwcli/pkg/cmdutil"
 	"github.com/mwcli/mwcli/pkg/iostreams"
 	"github.com/spf13/cobra"
@@ -72,27 +73,29 @@ func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
 		if err != nil {
 			return err
 		}
-		add(entry{host: t.Host, api: t.API, account: src.Account, active: true, source: cmdutil.TokenEnv})
+		add(entry{host: t.Name, api: t.API, account: src.Account, active: true, source: cmdutil.TokenEnv})
 		envToken = true
 	}
-	for _, host := range cfg.HostNames() {
-		h := cfg.Hosts[host]
-		for _, user := range h.UserNames() {
-			active := user == h.User
-			if envToken && byHost[host] != nil {
+	for _, site := range cfg.LoginNames() {
+		l := cfg.Logins[site]
+		for _, user := range l.UserNames() {
+			active := user == l.User
+			if envToken && byHost[site] != nil {
 				active = false
 			}
-			apiURL, _ := f.APIFor(cfg, host)
-			add(entry{host: host, api: apiURL, user: user, account: h.Users[user], active: active, source: cfg.HostsPath()})
+			add(entry{host: site, api: siteAPI(cfg, site), user: user, account: l.Users[user], active: active, source: cfg.Path()})
 		}
 	}
-	opts.wiki = f.HostKey(cfg, opts.wiki)
 	if opts.wiki != "" {
-		if _, ok := byHost[opts.wiki]; !ok {
-			fmt.Fprintf(ios.ErrOut, "You are not logged into any accounts on %s\n", opts.wiki)
+		r, err := sites.Lookup(cfg, opts.wiki)
+		if err != nil {
+			return cmdutil.FlagErrorf("%v", err)
+		}
+		if _, ok := byHost[r.Name]; !ok {
+			fmt.Fprintf(ios.ErrOut, "You are not logged into any accounts on %s\n", r.Name)
 			return cmdutil.ErrSilent
 		}
-		hosts = []string{opts.wiki}
+		hosts = []string{r.Name}
 	}
 	if len(hosts) == 0 {
 		fmt.Fprintln(ios.ErrOut, "You are not logged into any wikis. To log in, run: mw auth login")

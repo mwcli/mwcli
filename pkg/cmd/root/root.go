@@ -2,15 +2,12 @@
 package root
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/MakeNowJust/heredoc"
 	"github.com/mwcli/mwcli/internal/build"
-	"github.com/mwcli/mwcli/internal/interwiki"
 	apiCmd "github.com/mwcli/mwcli/pkg/cmd/api"
 	authCmd "github.com/mwcli/mwcli/pkg/cmd/auth"
 	pageCmd "github.com/mwcli/mwcli/pkg/cmd/page"
+	siteCmd "github.com/mwcli/mwcli/pkg/cmd/site"
 	versionCmd "github.com/mwcli/mwcli/pkg/cmd/version"
 	"github.com/mwcli/mwcli/pkg/cmdutil"
 	"github.com/spf13/cobra"
@@ -40,27 +37,11 @@ func NewCmdRoot(f *cmdutil.Factory) *cobra.Command {
 	})
 	cmd.AddCommand(authCmd.NewCmdAuth(f))
 	cmd.AddCommand(pageCmd.NewCmdPage(f))
+	cmd.AddCommand(siteCmd.NewCmdSite(f))
 	cmd.AddCommand(apiCmd.NewCmdApi(f))
 	cmd.AddCommand(versionCmd.NewCmdVersion(f))
-	cmd.AddCommand(interwikiHelp())
 	wrapArgs(cmd)
 	return cmd
-}
-
-// interwikiHelp is the `mw help interwiki` topic.
-func interwikiHelp() *cobra.Command {
-	var b strings.Builder
-	b.WriteString("--wiki and MW_WIKI accept these interwiki prefixes from MediaWiki's\n")
-	b.WriteString("default interwiki list, limited to MediaWiki wikis:\n\n")
-	for _, p := range interwiki.All() {
-		fmt.Fprintf(&b, "  %-14s %s\n", p.Name, p.API)
-	}
-	b.WriteString("\nA name with a dot is always a host name.\n")
-	return &cobra.Command{
-		Use:   "interwiki",
-		Short: "Interwiki prefixes accepted as host names",
-		Long:  b.String(),
-	}
 }
 
 // wrapArgs makes argument count errors usage errors, like flag errors.

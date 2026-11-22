@@ -20,17 +20,17 @@ func TestDir(t *testing.T) {
 
 func TestLoginLogoutSwitchSave(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", dir)
 	c, err := LoadDir(dir)
 	require.NoError(t, err)
-	assert.Empty(t, c.Hosts)
+	assert.Empty(t, c.Logins)
 
-	c.Login("wiki.example.com", DefaultAPI("wiki.example.com"), "Alice", &Account{Auth: AuthOAuth2, OAuthToken: "t1"})
-	c.Login("wiki.example.com", "", "Bob", &Account{Auth: AuthSession, Cookies: map[string]string{"s": "v"}})
-	c.Login("wiki.example.org", "https://wiki.example.org/api.php", "Carol", &Account{Auth: AuthOAuth2, OAuthToken: "t2"})
+	c.Sites.Wikis["zeta"] = &Site{API: "https://wiki.example.org/api.php", Aliases: []string{"z"}}
+	c.Login("zeta", "Alice", &Account{Auth: AuthOAuth2, OAuthToken: "t1"})
+	c.Login("zeta", "Bob", &Account{Auth: AuthSession, Cookies: map[string]string{"s": "v"}})
+	c.Login("wiki.example.com", "Carol", &Account{Auth: AuthBotPassword, BotName: "Carol@b", BotPassword: "p"})
 	require.NoError(t, c.Save())
 
-	info, err := os.Stat(c.HostsPath())
+	info, err := os.Stat(c.Path())
 	require.NoError(t, err)
 	if runtime.GOOS != "windows" { // Windows has no Unix permission bits
 		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
@@ -38,35 +38,45 @@ func TestLoginLogoutSwitchSave(t *testing.T) {
 
 	c, err = LoadDir(dir)
 	require.NoError(t, err)
-	assert.Equal(t, "wiki.example.org", c.DefaultHost)
-	assert.Equal(t, []string{"wiki.example.com", "wiki.example.org"}, c.HostNames())
-	assert.Equal(t, "https://wiki.example.org/api.php", c.API("wiki.example.org"))
-	assert.Equal(t, "https://wiki.example.com/w/api.php", c.API("wiki.example.com"))
-	assert.Empty(t, c.Hosts["wiki.example.com"].API)
-
-	user, a, ok := c.ActiveAccount("wiki.example.com")
+	assert.Equal(t, "zeta", c.Sites.Default, "the first login sets the default; later ones keep it")
+	assert.Equal(t, []string{"wiki.example.com", "zeta"}, c.LoginNames())
+	assert.Equal(t, []string{"zeta"}, c.SiteNames())
+	assert.Equal(t, []string{"z"}, c.Sites.Wikis["zeta"].Aliases)
+	user, a, ok := c.ActiveAccount("zeta")
 	require.True(t, ok)
 	assert.Equal(t, "Bob", user)
-	assert.Equal(t, "v", a.Cookies["s"])
-	assert.Equal(t, []string{"Bob", "Alice"}, c.Hosts["wiki.example.com"].UserNames())
+	assert.Equal(t, map[string]string{"s": "v"}, a.Cookies)
+	assert.Equal(t, []string{"Bob", "Alice"}, c.Logins["zeta"].UserNames())
 
-	require.NoError(t, c.Switch("wiki.example.com", "Alice"))
-	user, _, _ = c.ActiveAccount("wiki.example.com")
-	assert.Equal(t, "Alice", user)
-	assert.Error(t, c.Switch("wiki.example.com", "Nobody"))
+	require.NoError(t, c.Switch("zeta", "Alice"))
+	_, a, _ = c.ActiveAccount("zeta")
+	assert.Equal(t, "t1", a.OAuthToken)
+	assert.Error(t, c.Switch("zeta", "Nobody"))
 
-	next, err := c.Logout("wiki.example.com", "Alice")
+	next, err := c.Logout("zeta", "Alice")
 	require.NoError(t, err)
 	assert.Equal(t, "Bob", next)
-	_, err = c.Logout("wiki.example.com", "Bob")
+	next, err = c.Logout("zeta", "Bob")
 	require.NoError(t, err)
-	assert.NotContains(t, c.Hosts, "wiki.example.com")
+	assert.Empty(t, next)
+	assert.NotContains(t, c.Logins, "zeta")
+	_, err = c.Logout("zeta", "Bob")
+	assert.Error(t, err)
+}
 
-	_, err = c.Logout("wiki.example.org", "Carol")
+func TestEmptyConfigSavesEmptyFile(t *testing.T) {
+	c, err := LoadDir(t.TempDir())
 	require.NoError(t, err)
-	assert.Empty(t, c.DefaultHost)
 	require.NoError(t, c.Save())
-	b, err := os.ReadFile(c.HostsPath())
+	b, err := os.ReadFile(c.Path())
 	require.NoError(t, err)
 	assert.Empty(t, b)
+}
+
+func TestValidSiteName(t *testing.T) {
+	assert.True(t, ValidSiteName("zeta"))
+	assert.True(t, ValidSiteName("wiki.example.org"))
+	assert.False(t, ValidSiteName(""))
+	assert.False(t, ValidSiteName("farm/x"))
+	assert.False(t, ValidSiteName("a b"))
 }

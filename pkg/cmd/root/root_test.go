@@ -8,13 +8,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/mwcli/mwcli/internal/config"
 	"github.com/mwcli/mwcli/internal/discovery"
+	"github.com/mwcli/mwcli/internal/sites"
 	"github.com/mwcli/mwcli/pkg/cmdutil"
 	"github.com/mwcli/mwcli/pkg/iostreams"
 	"github.com/stretchr/testify/assert"
@@ -148,13 +147,12 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 }
 
 type env struct {
-	t     *testing.T
-	dir   string
-	api   string
-	host  string
-	base  string
-	cache *discovery.Cache
-	wiki  *fakeWiki
+	t    *testing.T
+	dir  string
+	api  string
+	host string
+	base string
+	wiki *fakeWiki
 	// browsed is the last URL --web opened.
 	browsed string
 }
@@ -169,23 +167,32 @@ func newEnv(t *testing.T) *env {
 	t.Setenv("MW_TOKEN", "")
 	t.Setenv("MW_WIKI", "")
 	host, _ := config.HostOf(srv.URL)
-	cache := &discovery.Cache{Dir: dir + "/cache", Base: func(string) string { return srv.URL }, Now: time.Now}
-	return &env{t: t, dir: dir + "/mw", api: srv.URL + "/w/api.php", host: host, base: srv.URL, cache: cache, wiki: w}
+	return &env{t: t, dir: dir + "/mw", api: srv.URL + "/w/api.php", host: host, base: srv.URL, wiki: w}
 }
 
 func (e *env) run(stdin string, args ...string) (string, string, int) {
 	ios, in, out, errOut := iostreams.Test()
 	in.WriteString(stdin)
-	f := &cmdutil.Factory{IOStreams: ios, Config: func() (*config.Config, error) { return config.LoadDir(e.dir) }, Discovery: e.cache,
-		Browse: func(u string) error { e.browsed = u; return nil }}
+	f := &cmdutil.Factory{IOStreams: ios, Config: func() (*config.Config, error) { return config.LoadDir(e.dir) },
+		Browse: func(u string) error { e.browsed = u; return nil }, Find: discovery.Find}
 	cmd := NewCmdRoot(f)
 	cmd.SetArgs(args)
 	_, err := cmd.ExecuteC()
-	f.Forget(err)
+	err = f.Hint(err)
 	if err != nil {
 		errOut.WriteString(err.Error())
 	}
 	return out.String(), errOut.String(), cmdutil.ExitCode(err)
+}
+
+// store saves an account for the test wiki, added as a site named by its host.
+func (e *env) store(user string, a *config.Account) *config.Config {
+	cfg, err := config.LoadDir(e.dir)
+	require.NoError(e.t, err)
+	cfg.Sites.Wikis[e.host] = &config.Site{API: e.api}
+	cfg.Login(e.host, user, a)
+	require.NoError(e.t, cfg.Save())
+	return cfg
 }
 
 func (e *env) login() {
@@ -206,8 +213,10 @@ func TestLoginStatusTokenLogout(t *testing.T) {
 	e.login()
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
-	assert.Equal(t, e.host, cfg.DefaultHost)
-	assert.Equal(t, e.api, cfg.API(e.host))
+	assert.Equal(t, e.host, cfg.Sites.Default)
+	require.Contains(t, cfg.Sites.Wikis, e.host, "the first login adds the site")
+	assert.Equal(t, e.api, cfg.Sites.Wikis[e.host].API)
+	assert.Equal(t, "//fake.test", cfg.Sites.Wikis[e.host].Server)
 
 	out, stderr, code := e.run("", "auth", "status")
 	require.Equal(t, 0, code, stderr)
@@ -234,9 +243,7 @@ func TestLoginStatusTokenLogout(t *testing.T) {
 
 func TestStatusInvalidToken(t *testing.T) {
 	e := newEnv(t)
-	cfg, _ := config.LoadDir(e.dir)
-	cfg.Login(e.host, e.api, "Jmnote", &config.Account{Auth: config.AuthOAuth2, OAuthToken: "revoked"})
-	require.NoError(t, cfg.Save())
+	e.store("Jmnote", &config.Account{Auth: config.AuthOAuth2, OAuthToken: "revoked"})
 	out, _, code := e.run("", "auth", "status")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, out, "X Failed to log in to "+e.host+" account Jmnote")
@@ -251,9 +258,7 @@ func TestEnvToken(t *testing.T) {
 	assert.Contains(t, stderr, "MW_TOKEN")
 
 	t.Setenv("MW_WIKI", e.host)
-	cfg, _ := config.LoadDir(e.dir)
-	cfg.Login(e.host, e.api, "Old", &config.Account{Auth: config.AuthOAuth2, OAuthToken: "revoked"})
-	require.NoError(t, cfg.Save())
+	e.store("Old", &config.Account{Auth: config.AuthOAuth2, OAuthToken: "revoked"})
 	out, _, _ := e.run("", "auth", "status", "--active")
 	assert.Contains(t, out, "account Jmnote (MW_TOKEN)")
 	assert.NotContains(t, out, "Old")
@@ -318,68 +323,92 @@ func TestVersion(t *testing.T) {
 	assert.True(t, bytes.Contains([]byte(out), []byte("https://github.com/mwcli/mwcli/releases/")))
 }
 
-func TestDiscovery(t *testing.T) {
+func TestSite(t *testing.T) {
 	e := newEnv(t)
-	out, stderr, code := e.run("", "page", "view", "Sandbox", "--wiki", "other.test")
+	_, stderr, code := e.run("", "site", "add", "other", e.base, "--alias", "o")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "Added site other ("+e.base+"/w/api.php)")
+	out, stderr, code := e.run("", "page", "view", "Sandbox", "--wiki", "o")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "Hello", out)
-	s, ok := e.cache.Lookup("other.test")
-	require.True(t, ok)
-	assert.Equal(t, e.base+"/w/api.php", s.API)
 
-	_, stderr, code = e.run(goodToken, "auth", "login", "--wiki", "other.test", "--with-token")
+	_, stderr, code = e.run(goodToken, "auth", "login", "--wiki", "other", "--with-token")
 	require.Equal(t, 0, code, stderr)
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
-	require.Contains(t, cfg.Hosts, e.host, "stored under the host of the discovered API")
-	assert.NotContains(t, cfg.Hosts, "other.test")
-	assert.Empty(t, cfg.Hosts[e.host].API, "discovered API stays in the cache")
-	out, _, code = e.run("", "auth", "token", "--wiki", "other.test")
+	require.Contains(t, cfg.Logins, "other", "logins are stored under the site name")
+	assert.Equal(t, "other", cfg.Sites.Default)
+	out, _, code = e.run("", "auth", "token", "--wiki", "o")
 	assert.Equal(t, 0, code)
 	assert.Equal(t, goodToken+"\n", out)
-	out, _, _ = e.run("", "auth", "status")
-	assert.Contains(t, out, "- API: "+e.base+"/w/api.php")
 
-	e.cache.Invalidate("gone.test")
-	require.NoError(t, os.MkdirAll(e.cache.Dir+"/discovery/gone.test", 0o755))
-	require.NoError(t, os.WriteFile(e.cache.Dir+"/discovery/gone.test/siteinfo.json",
-		[]byte(`{"api":"`+e.base+`/gone/api.php","checked":"`+time.Now().UTC().Format(time.RFC3339)+`"}`), 0o644))
-	_, ok = e.cache.Lookup("gone.test")
-	require.True(t, ok)
-	_, _, code = e.run("", "page", "view", "Sandbox", "--wiki", "gone.test")
-	assert.Equal(t, 1, code)
-	_, ok = e.cache.Lookup("gone.test")
-	assert.False(t, ok, "a 404 drops the cached API")
-	out, _, code = e.run("", "page", "view", "Sandbox", "--wiki", "gone.test")
-	assert.Equal(t, 0, code)
-	assert.Equal(t, "Hello", out)
+	// Logging in elsewhere keeps the default; only `mw site default` changes it.
+	_, stderr, code = e.run("", "site", "add", "second", e.api)
+	require.Equal(t, 0, code, stderr)
+	_, stderr, code = e.run(goodToken, "auth", "login", "--wiki", "second", "--with-token")
+	require.Equal(t, 0, code, stderr)
+	out, _, _ = e.run("", "site", "default")
+	assert.Equal(t, "other\n", out)
+	_, stderr, code = e.run("", "site", "default", "second")
+	require.Equal(t, 0, code, stderr)
+	out, _, _ = e.run("", "site", "default")
+	assert.Equal(t, "second\n", out)
+
+	out, _, _ = e.run("", "site", "list")
+	assert.Contains(t, out, "  other   "+e.base+"/w/api.php  (o)\n")
+	assert.Contains(t, out, "* second  "+e.base+"/w/api.php\n")
+
+	_, stderr, code = e.run("", "site", "remove", "other")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "Logged out of other")
+	cfg, _ = config.LoadDir(e.dir)
+	assert.NotContains(t, cfg.Sites.Wikis, "other")
+	assert.NotContains(t, cfg.Logins, "other")
+
+	_, stderr, code = e.run("", "site", "add", "bad/name", e.base)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "invalid site name")
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", "nosuchsite")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "unknown site \"nosuchsite\"")
 }
 
-func TestInterwikiPrefix(t *testing.T) {
+// An API that was not added gets a hint when it does not answer like MediaWiki.
+func TestUnregisteredHint(t *testing.T) {
 	e := newEnv(t)
+	_, stderr, code := e.run("", "page", "view", "Sandbox", "--api", e.base+"/gone/api.php")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "add it with `mw site add")
+}
+
+func TestBuiltinSites(t *testing.T) {
+	e := newEnv(t)
+	for alias, name := range map[string]string{
+		"mw": "www.mediawiki.org", "mediawiki.org": "www.mediawiki.org", "commons": "commons.wikimedia.org",
+		"wikipedia": "en.wikipedia.org", "arch": "wiki.archlinux.org", "zeta": "zetawiki.com",
+	} {
+		_, stderr, code := e.run("", "site", "default", alias)
+		require.Equal(t, 0, code, alias+": "+stderr)
+		assert.Contains(t, stderr, "Default site is now "+name, alias)
+	}
 	cfg, _ := config.LoadDir(e.dir)
-	cfg.Login("www.mediawiki.org", "", "Alice", &config.Account{Auth: config.AuthOAuth2, OAuthToken: "mw-token"})
+	cfg.Login("www.mediawiki.org", "Alice", &config.Account{Auth: config.AuthOAuth2, OAuthToken: "mw-token"})
 	require.NoError(t, cfg.Save())
-	for _, h := range []string{"mw", "mediawikiwiki", "www.mediawiki.org"} {
+	for _, h := range []string{"mw", "mediawikiwiki", "www.mediawiki.org", "mediawiki.org"} {
 		out, stderr, code := e.run("", "auth", "token", "--wiki", h)
 		require.Equal(t, 0, code, h+": "+stderr)
 		assert.Equal(t, "mw-token\n", out, h)
 	}
-	_, stderr, code := e.run("", "auth", "logout", "--wiki", "mw")
-	require.Equal(t, 0, code, stderr)
-	assert.Contains(t, stderr, "Logged out of www.mediawiki.org account Alice")
-
-	out, _, _ := e.run("", "help", "interwiki")
-	assert.Contains(t, out, "commons        https://commons.wikimedia.org/w/api.php")
+	out, _, _ := e.run("", "site", "list", "--builtin")
+	assert.Contains(t, out, "commons.wikimedia.org     https://commons.wikimedia.org/w/api.php  (commons)")
+	assert.Equal(t, len(sites.Builtin()), strings.Count(out, "\n"))
 }
 
 func TestStatusJWTToken(t *testing.T) {
 	e := newEnv(t)
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"aud":"bedd22b2b0af19db","iat":1795047176.6,"exp":33351955976,"scopes":["basic","editpage"]}`))
 	jwt := "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9." + payload + ".c2lnbmF0dXJlWXZ6"
-	cfg, _ := config.LoadDir(e.dir)
-	cfg.Login(e.host, e.api, "Jmnote", &config.Account{Auth: config.AuthOAuth2, OAuthToken: jwt})
-	require.NoError(t, cfg.Save())
+	e.store("Jmnote", &config.Account{Auth: config.AuthOAuth2, OAuthToken: jwt})
 	e.wiki.extraToken = jwt
 
 	out, stderr, code := e.run("", "auth", "status")
@@ -517,12 +546,11 @@ func TestBotPassword(t *testing.T) {
 	assert.Contains(t, stderr, "Logged in to "+e.host+" as Jmnote")
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
-	a := cfg.Hosts[e.host].Users["Jmnote"]
+	a := cfg.Logins[e.host].Users["Jmnote"]
 	require.NotNil(t, a)
 	assert.Equal(t, config.AuthBotPassword, a.Auth)
 	assert.Equal(t, "Jmnote@mw", a.BotName)
 	assert.Equal(t, "botpw", a.BotPassword)
-	assert.Equal(t, e.api, a.BotAPI)
 	assert.Empty(t, a.Cookies)
 
 	// Each run logs in again: the stored session would expire.
@@ -553,7 +581,7 @@ func TestBotPassword(t *testing.T) {
 	assert.Equal(t, before, e.wiki.botLogins)
 	require.Len(t, e.wiki.edits, 1)
 
-	cfg.Hosts[e.host].Users["Jmnote"].BotPassword = "deleted"
+	cfg.Logins[e.host].Users["Jmnote"].BotPassword = "deleted"
 	require.NoError(t, cfg.Save())
 	out, _, code = e.run("", "auth", "status")
 	assert.Equal(t, 1, code)
@@ -567,8 +595,8 @@ func TestBotPasswordFlag(t *testing.T) {
 	require.Equal(t, 0, code, stderr)
 	cfg, err := config.LoadDir(e.dir)
 	require.NoError(t, err)
-	assert.Equal(t, config.AuthBotPassword, cfg.Hosts[e.host].Users["Jmnote"].Auth)
-	assert.Equal(t, "Jmnote#mw", cfg.Hosts[e.host].Users["Jmnote"].BotName)
+	assert.Equal(t, config.AuthBotPassword, cfg.Logins[e.host].Users["Jmnote"].Auth)
+	assert.Equal(t, "Jmnote#mw", cfg.Logins[e.host].Users["Jmnote"].BotName)
 
 	_, stderr, code = e.run("", "auth", "login", "--api", e.api, "--bot-password")
 	assert.Equal(t, 2, code)

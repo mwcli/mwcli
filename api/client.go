@@ -45,9 +45,7 @@ func New(api string, account *config.Account) (*Client, error) {
 		if account.Auth == config.AuthOAuth2 {
 			c.Token = account.OAuthToken
 		} else if account.Auth == config.AuthBotPassword {
-			if account.UsableAt(api) {
-				c.botName, c.botPassword = account.BotName, account.BotPassword
-			}
+			c.botName, c.botPassword = account.BotName, account.BotPassword
 		} else {
 			var cookies []*http.Cookie
 			for name, value := range account.Cookies {

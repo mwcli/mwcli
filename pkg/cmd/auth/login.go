@@ -10,6 +10,7 @@ import (
 	"github.com/MakeNowJust/heredoc"
 	"github.com/mwcli/mwcli/api"
 	"github.com/mwcli/mwcli/internal/config"
+	"github.com/mwcli/mwcli/internal/sites"
 	"github.com/mwcli/mwcli/pkg/cmdutil"
 	"github.com/mwcli/mwcli/pkg/iostreams"
 	"github.com/spf13/cobra"
@@ -45,10 +46,11 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 			--with-token reads the token from standard input. --username logs in with a
 			password, read from MW_PASSWORD or a prompt; a name such as Alice@mybot, or
 			any name with --bot-password, is a bot password, which mw stores and uses to
-			log in again on each run, only at the api.php it was created for. An
+			log in again on each run, only at the site it was created for. An
 			account password is never stored, only its session. Without either, mw asks.
 
-			The host becomes the default for later commands.
+			A wiki that was not added with 'mw site add' is found and added. The first
+			login also makes its site the default; 'mw site default' changes it later.
 		`),
 		Example: heredoc.Doc(`
 			# interactive
@@ -92,7 +94,7 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 		return err
 	}
 	if opts.wiki == "" && opts.apiURL == "" && io.CanPrompt() {
-		h, err := io.Prompt(fmt.Sprintf("? Wiki host name [%s]: ", t.Host))
+		h, err := io.Prompt(fmt.Sprintf("? Wiki (site name or host) [%s]: ", t.Name))
 		if err != nil {
 			return err
 		}
@@ -101,6 +103,23 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 				return err
 			}
 		}
+	}
+	if t.Kind == sites.Unregistered {
+		// A first login to a wiki that was not added finds and adds it.
+		target := opts.apiURL
+		if target == "" {
+			target = t.Name
+		}
+		if !config.ValidSiteName(t.Name) {
+			return fmt.Errorf("a site with this host already points to another API; add this one with `mw site add NAME %s` and log in with --wiki NAME", target)
+		}
+		site, err := f.Find(target)
+		if err != nil {
+			return err
+		}
+		cfg.Sites.Wikis[t.Name] = site
+		t = cmdutil.Target{Name: t.Name, API: site.API, Site: site, Kind: sites.Added}
+		fmt.Fprintf(io.ErrOut, "%s Added site %s (%s)\n", io.SuccessIcon(), t.Name, site.API)
 	}
 
 	useToken := opts.withToken
@@ -141,11 +160,11 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	if err != nil {
 		return err
 	}
-	cfg.Login(t.Host, opts.apiURL, user, account)
+	cfg.Login(t.Name, user, account)
 	if err := cfg.Save(); err != nil {
 		return err
 	}
-	fmt.Fprintf(io.ErrOut, "%s Logged in to %s as %s\n", io.SuccessIcon(), t.Host, io.Bold(user))
+	fmt.Fprintf(io.ErrOut, "%s Logged in to %s as %s\n", io.SuccessIcon(), t.Name, io.Bold(user))
 	return nil
 }
 
@@ -175,7 +194,7 @@ func tokenLogin(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.A
 	}
 	u, err := c.User()
 	if errors.Is(err, api.ErrNotLoggedIn) {
-		return nil, "", fmt.Errorf("the token was not accepted by %s", t.Host)
+		return nil, "", fmt.Errorf("the token was not accepted by %s", t.Name)
 	}
 	if err != nil {
 		return nil, "", fmt.Errorf("check token: %w", err)
@@ -215,7 +234,7 @@ func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string, bot bo
 		if err != nil {
 			return nil, "", fmt.Errorf("check login: %w", err)
 		}
-		return &config.Account{Auth: config.AuthBotPassword, BotName: username, BotPassword: password, BotAPI: t.API}, u.Name, nil
+		return &config.Account{Auth: config.AuthBotPassword, BotName: username, BotPassword: password}, u.Name, nil
 	}
 	if err := c.Login(username, password); err != nil {
 		return nil, "", err

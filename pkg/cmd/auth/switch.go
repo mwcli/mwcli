@@ -21,11 +21,11 @@ func newCmdSwitch(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			host, err := storedHost(f, cfg, wiki)
+			host, err := storedSite(cfg, wiki)
 			if err != nil {
 				return err
 			}
-			h := cfg.Hosts[host]
+			h := cfg.Logins[host]
 			if user == "" {
 				names := h.UserNames()
 				switch {

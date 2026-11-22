@@ -139,17 +139,17 @@ func newCmdEdit(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			if !ok {
-				return cmdutil.NotLoggedIn(t.Host)
+				return cmdutil.NotLoggedIn(t.Name)
 			}
 			title, err := c.Edit(args[0], text, summary)
 			var ae *api.APIError
 			if errors.As(err, &ae) && ae.Code == "assertuserfailed" {
-				return cmdutil.NotLoggedIn(t.Host)
+				return cmdutil.NotLoggedIn(t.Name)
 			}
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(f.IOStreams.ErrOut, "%s Updated %s on %s\n", f.IOStreams.SuccessIcon(), title, t.Host)
+			fmt.Fprintf(f.IOStreams.ErrOut, "%s Updated %s on %s\n", f.IOStreams.SuccessIcon(), title, t.Name)
 			return nil
 		},
 	}

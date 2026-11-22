@@ -27,7 +27,7 @@ func TestPostIsNotRedirected(t *testing.T) {
 			http.Redirect(w, r, target.URL+"/w/api.php?"+r.URL.RawQuery, status)
 		}))
 		api := source.URL + "/w/api.php"
-		c, err := New(api, &config.Account{Auth: config.AuthBotPassword, BotName: "Alice@bot", BotPassword: "secret", BotAPI: api})
+		c, err := New(api, &config.Account{Auth: config.AuthBotPassword, BotName: "Alice@bot", BotPassword: "secret"})
 		require.NoError(t, err)
 		_, err = c.CurrentUser()
 		assert.ErrorContains(t, err, "refusing to follow a redirect of a POST request", status)
