@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"iter"
 	"net/http"
 	"net/url"
 	"os"
@@ -152,26 +153,32 @@ func run(ctx context.Context, f *cmdutil.Factory, opts *options) error {
 		}
 		params.Set("token", tok)
 	}
-	// Each request is the original one with the continue values of the last
-	// response: values a later response drops must not be sent again.
-	base := url.Values{}
-	for k, v := range params {
-		base[k] = v
+	// One response, or with --paginate each one that follows continue.
+	var responses iter.Seq2[[]byte, error] = func(yield func([]byte, error) bool) {
+		body, err := c.Raw(ctx, method, params)
+		if err == nil && isJSON {
+			err = mwapi.CheckError(body)
+		}
+		yield(body, err)
+	}
+	if opts.paginate {
+		responses = c.Paginate(ctx, method, params)
 	}
 	var slurped []json.RawMessage
-	for {
-		body, err := c.Raw(ctx, method, params)
+	for body, err := range responses {
 		if err != nil {
+			// An API error is printed as the wiki sent it, then reported.
+			if body != nil {
+				if werr := writeBody(ios.Out, body, isJSON && ios.IsStdoutTTY()); werr != nil {
+					return werr
+				}
+			}
 			return err
 		}
-		var apiErr error
-		if isJSON {
-			apiErr = mwapi.CheckError(body)
-		}
 		switch {
-		case opts.slurp && apiErr == nil:
+		case opts.slurp:
 			slurped = append(slurped, json.RawMessage(bytes.TrimSpace(body)))
-		case opts.jq != "" && apiErr == nil:
+		case opts.jq != "":
 			v, err := cmdutil.DecodeJSON(body)
 			if err != nil {
 				return fmt.Errorf("decode API response: %w", err)
@@ -183,26 +190,6 @@ func run(ctx context.Context, f *cmdutil.Factory, opts *options) error {
 			if err := writeBody(ios.Out, body, isJSON && ios.IsStdoutTTY()); err != nil {
 				return err
 			}
-		}
-		if apiErr != nil {
-			return apiErr
-		}
-		if !opts.paginate {
-			return nil
-		}
-		next, err := continueValues(body)
-		if err != nil {
-			return err
-		}
-		if next == nil {
-			break
-		}
-		params = url.Values{}
-		for k, v := range base {
-			params[k] = v
-		}
-		for k, v := range next {
-			params.Set(k, v)
 		}
 	}
 	if opts.slurp {
@@ -231,28 +218,4 @@ func writeBody(w io.Writer, body []byte, indent bool) error {
 		return err
 	}
 	return nil
-}
-
-// continueValues returns the parameters of the next request from the continue
-// object of a response, or nil when the result is complete. Values are strings
-// or, like sroffset, numbers.
-func continueValues(body []byte) (map[string]string, error) {
-	var resp struct {
-		Continue map[string]json.RawMessage `json:"continue"`
-	}
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("decode API response: %w", err)
-	}
-	if len(resp.Continue) == 0 {
-		return nil, nil
-	}
-	next := map[string]string{}
-	for k, raw := range resp.Continue {
-		var s string
-		if json.Unmarshal(raw, &s) != nil {
-			s = string(raw)
-		}
-		next[k] = s
-	}
-	return next, nil
 }
