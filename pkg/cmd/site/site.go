@@ -157,13 +157,20 @@ func newCmdRemove(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			name := args[0]
-			if _, ok := cfg.Sites.Wikis[name]; !ok {
+			removedSite, ok := cfg.Sites.Wikis[name]
+			if !ok {
 				return fmt.Errorf("no site named %s was added", name)
+			}
+			defaultPointsToRemoved := cfg.Sites.Default == name || cfg.Sites.Default == removedSite.API
+			if cfg.Sites.Default != "" && !defaultPointsToRemoved {
+				if current, err := sites.Lookup(cfg, cfg.Sites.Default); err == nil {
+					defaultPointsToRemoved = current.Name == name
+				}
 			}
 			delete(cfg.Sites.Wikis, name)
 			_, hadLogin := cfg.Logins[name]
 			delete(cfg.Logins, name)
-			if cfg.Sites.Default == name {
+			if defaultPointsToRemoved {
 				cfg.Sites.Default = ""
 			}
 			if err := cfg.Save(); err != nil {

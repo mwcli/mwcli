@@ -689,3 +689,14 @@ func TestAPILoginWithoutAliasPersistsResolvableDefault(t *testing.T) {
 	_, stderr, code = e.run("", "page", "view", "Main Page")
 	require.Equal(t, 0, code, stderr)
 }
+
+func TestSiteRemoveClearsAPIDefault(t *testing.T) {
+	e := newEnv(t)
+	cfg := &config.Config{Dir: e.dir, Sites: config.Sites{Default: e.api, Wikis: map[string]*config.Site{"docs": {API: e.api}}}}
+	require.NoError(t, cfg.Save())
+	_, stderr, code := e.run("", "site", "remove", "docs")
+	require.Equal(t, 0, code, stderr)
+	cfg, err := config.LoadDir(e.dir)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Sites.Default)
+}
