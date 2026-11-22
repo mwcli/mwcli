@@ -67,3 +67,16 @@ func TestFarmAliasKeepsSelectedAPIIdentity(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "https://wiki.example.org/two/api.php", restored.Site.API)
 }
+
+func TestAPIURLDefaultDisambiguatesBuiltinHost(t *testing.T) {
+	api := "https://commons.wikimedia.org/other/api.php"
+	cfg := &config.Config{Sites: config.Sites{Wikis: map[string]*config.Site{}}, Farms: map[string][]config.FarmSite{"custom": {{Host: "commons.wikimedia.org", API: api}}}}
+	selected, err := ForAPI(cfg, api)
+	require.NoError(t, err)
+	cfg.Sites.Default = api
+	restored, err := Lookup(cfg, cfg.Sites.Default)
+	require.NoError(t, err)
+	assert.Equal(t, api, restored.Site.API)
+	assert.Equal(t, "custom", restored.LoginKey)
+	assert.Equal(t, selected.LoginKey, restored.LoginKey)
+}
