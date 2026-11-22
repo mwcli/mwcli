@@ -72,7 +72,12 @@ func newCmdAdd(f *cmdutil.Factory) *cobra.Command {
 			}
 			s.Aliases = aliases
 			sort.Strings(s.Aliases)
-			_, replaced := cfg.Sites.Wikis[name]
+			previous, replaced := cfg.Sites.Wikis[name]
+			if replaced && previous.API != s.API {
+				if _, scopedByFarm := loginKeyForAPI(cfg, previous.API); !scopedByFarm {
+					delete(cfg.Logins, name)
+				}
+			}
 			cfg.Sites.Wikis[name] = s
 			if err := cfg.Save(); err != nil {
 				return err
@@ -218,4 +223,19 @@ func sortedNames(m map[string]*config.Site) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func loginKeyForAPI(cfg *config.Config, api string) (string, bool) {
+	for farm, wikis := range cfg.Farms {
+		for _, wiki := range wikis {
+			endpoint := wiki.API
+			if endpoint == "" {
+				endpoint = config.DefaultAPI(wiki.Host)
+			}
+			if endpoint == api {
+				return farm, true
+			}
+		}
+	}
+	return "", false
 }

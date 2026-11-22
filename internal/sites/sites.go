@@ -45,7 +45,11 @@ var builtinFarm = func() map[string]string {
 	m := map[string]string{}
 	for farm, wikis := range f.Farms {
 		for _, wiki := range wikis {
-			m[strings.ToLower(wiki.Host)] = farm
+			api := wiki.API
+			if api == "" {
+				api = config.DefaultAPI(wiki.Host)
+			}
+			m[api] = farm
 		}
 	}
 	return m
@@ -76,19 +80,21 @@ type Resolved struct {
 
 func resolved(cfg *config.Config, name string, site *config.Site, kind Kind) Resolved {
 	key := name
-	if host, err := config.HostOf(site.API); err == nil {
-		if cfg != nil {
-			for farm, wikis := range cfg.Farms {
-				for _, wiki := range wikis {
-					if strings.EqualFold(host, wiki.Host) {
-						key = farm
-					}
+	if cfg != nil {
+		for farm, wikis := range cfg.Farms {
+			for _, wiki := range wikis {
+				api := wiki.API
+				if api == "" {
+					api = config.DefaultAPI(wiki.Host)
+				}
+				if api == site.API {
+					key = farm
 				}
 			}
 		}
-		if farm := builtinFarm[strings.ToLower(host)]; farm != "" {
-			key = farm
-		}
+	}
+	if farm := builtinFarm[site.API]; farm != "" {
+		key = farm
 	}
 	return Resolved{Name: name, LoginKey: key, Site: site, Kind: kind}
 }
@@ -102,12 +108,15 @@ func Lookup(cfg *config.Config, name string) (Resolved, error) {
 		return resolved(cfg, name, s, Added), nil
 	}
 	if r, ok := byAlias(cfg.Sites.Wikis, name, Added); ok {
-		return r, nil
+		return resolved(cfg, r.Name, r.Site, r.Kind), nil
 	}
 	if s, ok := builtin[strings.ToLower(name)]; ok {
 		return resolved(cfg, strings.ToLower(name), s, BuiltIn), nil
 	}
 	if r, ok := byAlias(builtin, name, BuiltIn); ok {
+		return resolved(cfg, r.Name, r.Site, r.Kind), nil
+	}
+	if r, ok := byFarm(cfg, name); ok {
 		return r, nil
 	}
 	if !strings.Contains(name, ".") {
@@ -115,10 +124,10 @@ func Lookup(cfg *config.Config, name string) (Resolved, error) {
 	}
 	host := strings.ToLower(name)
 	if r, ok := byHost(cfg.Sites.Wikis, host, Added); ok {
-		return r, nil
+		return resolved(cfg, r.Name, r.Site, r.Kind), nil
 	}
 	if r, ok := byHost(builtin, host, BuiltIn); ok {
-		return r, nil
+		return resolved(cfg, r.Name, r.Site, r.Kind), nil
 	}
 	return resolved(cfg, host, &config.Site{API: config.DefaultAPI(host)}, Unregistered), nil
 }
@@ -185,4 +194,23 @@ func sortedNames(m map[string]*config.Site) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func byFarm(cfg *config.Config, name string) (Resolved, bool) {
+	for farm, wikis := range cfg.Farms {
+		for _, wiki := range wikis {
+			matched := strings.EqualFold(name, wiki.Host)
+			for _, alias := range wiki.Aliases {
+				matched = matched || strings.EqualFold(name, alias)
+			}
+			if matched {
+				api := wiki.API
+				if api == "" {
+					api = config.DefaultAPI(wiki.Host)
+				}
+				return Resolved{Name: strings.ToLower(wiki.Host), LoginKey: farm, Site: &config.Site{API: api, Aliases: wiki.Aliases}, Kind: Added}, true
+			}
+		}
+	}
+	return Resolved{}, false
 }

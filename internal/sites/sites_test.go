@@ -1,0 +1,37 @@
+package sites
+
+import (
+	"testing"
+
+	"github.com/mwcli/mwcli/internal/config"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestFarmLookupAndAPIIsolation(t *testing.T) {
+	cfg := &config.Config{
+		Sites: config.Sites{Wikis: map[string]*config.Site{}},
+		Farms: map[string][]config.FarmSite{
+			"docs": {{Host: "wiki.example.org", Aliases: []string{"handbook"}, API: "https://wiki.example.org/docs/api.php"}},
+		},
+	}
+	r, err := Lookup(cfg, "handbook")
+	require.NoError(t, err)
+	assert.Equal(t, "docs", r.LoginKey)
+	assert.Equal(t, "https://wiki.example.org/docs/api.php", r.Site.API)
+
+	r, err = ForAPI(cfg, "https://wiki.example.org/other/api.php")
+	require.NoError(t, err)
+	assert.Equal(t, "wiki.example.org", r.LoginKey)
+}
+
+func TestBuiltinFarmLoginKeyRequiresExactAPI(t *testing.T) {
+	cfg := &config.Config{Sites: config.Sites{Wikis: map[string]*config.Site{}}}
+	r, err := Lookup(cfg, "commons")
+	require.NoError(t, err)
+	assert.Equal(t, "wikimedia", r.LoginKey)
+
+	r, err = ForAPI(cfg, "https://commons.wikimedia.org/other/api.php")
+	require.NoError(t, err)
+	assert.NotEqual(t, "wikimedia", r.LoginKey)
+}

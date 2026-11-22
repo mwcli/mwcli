@@ -91,10 +91,16 @@ func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
 		if err != nil {
 			return cmdutil.FlagErrorf("%v", err)
 		}
-		if _, ok := byHost[r.Name]; !ok {
+		entries, ok := byHost[r.LoginKey]
+		if !ok {
 			fmt.Fprintf(ios.ErrOut, "You are not logged into any accounts on %s\n", r.Name)
 			return cmdutil.ErrSilent
 		}
+		for i := range entries {
+			entries[i].host = r.Name
+			entries[i].api = r.Site.API
+		}
+		byHost[r.Name] = entries
 		hosts = []string{r.Name}
 	}
 	if len(hosts) == 0 {

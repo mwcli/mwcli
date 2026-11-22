@@ -24,6 +24,7 @@ It runs on macOS, Windows and Linux.
 - [Pages](docs/pages.md): `mw page view` with `--json`, `--jq` and `--web`, `mw page list`, `mw page edit`
 - [API requests](docs/api.md): `mw api`
 - [Commands](docs/command.md): the command tree, environment variables and exit status
+- [Example configuration](config.example.yaml): farms, aliases and login structure
 
 Every command also prints its own help with `mw <command> --help`.
 

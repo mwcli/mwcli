@@ -1,0 +1,15 @@
+# Copy and edit this file as config.yml in the mw configuration directory.
+sites:
+  default: handbook
+farms:
+  docs:
+    - host: wiki.example.org
+      aliases: [handbook]
+      # api: https://wiki.example.org/docs/api.php
+logins:
+  docs:
+    user: ExampleUser
+    users:
+      ExampleUser:
+        auth: oauth2
+        # Credentials are stored in the OS keyring.

@@ -67,5 +67,11 @@ func siteAPI(cfg *config.Config, name string) string {
 	if r, err := sites.Lookup(cfg, name); err == nil {
 		return r.Site.API
 	}
+	if wikis := cfg.Farms[name]; len(wikis) > 0 {
+		if wikis[0].API != "" {
+			return wikis[0].API
+		}
+		return config.DefaultAPI(wikis[0].Host)
+	}
 	return ""
 }
