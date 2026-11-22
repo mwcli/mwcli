@@ -126,6 +126,7 @@ func loginRun(ctx context.Context, f *cmdutil.Factory, opts *loginOptions) error
 			opts.wiki = h
 		}
 	}
+	added := ""
 	if t.Kind == sites.Unregistered {
 		// A first login to a wiki that was not added finds and adds it.
 		if sites.IsFarmName(cfg, t.Name) {
@@ -141,7 +142,8 @@ func loginRun(ctx context.Context, f *cmdutil.Factory, opts *loginOptions) error
 		}
 		cfg.Farms[t.Name] = []config.FarmSite{{Host: hostFromAPI(site.API), API: site.API, Aliases: site.Aliases, Server: site.Server, Script: site.Script, ArticlePath: site.ArticlePath}}
 		t = cmdutil.Target{Name: t.Name, LoginKey: t.Name, API: site.API, Site: site, Kind: sites.Added}
-		fmt.Fprintf(io.ErrOut, "%s Added site %s (%s)\n", io.SuccessIcon(), t.Name, site.API)
+		// The site is saved with the login, so it is reported only then.
+		added = fmt.Sprintf("%s Added site %s (%s)\n", io.SuccessIcon(), t.Name, site.API)
 	}
 
 	useToken := opts.withToken
@@ -198,6 +200,7 @@ func loginRun(ctx context.Context, f *cmdutil.Factory, opts *loginOptions) error
 	if err := cfg.Save(); err != nil {
 		return err
 	}
+	fmt.Fprint(io.ErrOut, added)
 	fmt.Fprintf(io.ErrOut, "%s Logged in to %s as %s\n", io.SuccessIcon(), t.Name, io.Bold(user))
 	return nil
 }

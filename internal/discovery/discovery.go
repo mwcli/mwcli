@@ -35,8 +35,11 @@ func Find(ctx context.Context, target string) (*config.Site, error) {
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return nil, fmt.Errorf("invalid wiki URL %q", target)
 	}
-	// The query stays: it can pick the wiki, as in index.php?wiki=a.
+	// The query stays: it can pick the wiki, as in index.php?wiki=a. A URL
+	// copied from a browser may hold it unescaped, such as ?title=대문, which
+	// some servers refuse.
 	u.Fragment = ""
+	u.RawQuery = escapeQuery(u.RawQuery)
 	if strings.HasSuffix(u.Path, "/api.php") {
 		return probe(ctx, u.String())
 	}
@@ -120,4 +123,23 @@ func editURI(ctx context.Context, page string) (string, error) {
 	q.Del("action")
 	u.RawQuery, u.Fragment = q.Encode(), ""
 	return u.String(), nil
+}
+
+// escapeQuery percent-encodes the bytes of a query that may not appear in a
+// URL as they are, such as non-ASCII letters and spaces, and leaves the rest,
+// and so the order and form of its parameters, unchanged.
+func escapeQuery(q string) string {
+	const hex = "0123456789ABCDEF"
+	var b strings.Builder
+	for i := 0; i < len(q); i++ {
+		c := q[i]
+		if c <= ' ' || c >= 0x7f || c == '"' || c == '<' || c == '>' || c == '`' {
+			b.WriteByte('%')
+			b.WriteByte(hex[c>>4])
+			b.WriteByte(hex[c&15])
+			continue
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
