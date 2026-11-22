@@ -3,6 +3,7 @@ package auth
 import (
 	"fmt"
 
+	"github.com/mwcli/mwcli/internal/config"
 	"github.com/mwcli/mwcli/pkg/cmdutil"
 	"github.com/spf13/cobra"
 )
@@ -13,7 +14,8 @@ func newCmdLogout(f *cmdutil.Factory) *cobra.Command {
 		Use:   "logout",
 		Short: "Log out of a wiki account",
 		Long: "Remove a stored account. Without --user, the active account of the host is removed.\n" +
-			"This does not revoke an OAuth token; reset or disable its consumer at\n" +
+			"An account password's session is ended on the wiki too. This does not revoke an\n" +
+			"OAuth token or a bot password; reset or disable an OAuth consumer at\n" +
 			"Special:OAuthConsumerRegistration/list on the wiki where it was registered.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -28,6 +30,17 @@ func newCmdLogout(f *cmdutil.Factory) *cobra.Command {
 			}
 			if user == "" {
 				user = cfg.Logins[host].User
+			}
+			if a := cfg.Logins[host].Users[user]; a != nil && a.Auth == config.AuthSession {
+				// End the session on the wiki, as the browser's log out does;
+				// the account is forgotten either way.
+				c, err := cmdutil.NewClient(siteAPI(cfg, host), a)
+				if err == nil {
+					err = c.Logout()
+				}
+				if err != nil {
+					fmt.Fprintf(io.ErrOut, "%s Could not end the session on %s: %v\n", io.WarningIcon(), host, err)
+				}
 			}
 			next, err := cfg.Logout(host, user)
 			if err != nil {
