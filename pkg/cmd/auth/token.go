@@ -13,8 +13,9 @@ func newCmdToken(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "token",
 		Short: "Print the access token of an account",
-		Long:  "Print the OAuth 2 access token mw uses for a host, MW_TOKEN when it is set.",
-		Args:  cobra.NoArgs,
+		Long: "Print the OAuth 2 access token mw uses for a host, MW_TOKEN when it is set.\n" +
+			"The token is printed in plain text; keep it out of shared logs and terminals.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := f.Config()
 			if err != nil {

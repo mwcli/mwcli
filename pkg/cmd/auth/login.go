@@ -31,8 +31,9 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 			Log in to a wiki with an OAuth 2 access token or a username and password.
 
 			An owner-only OAuth 2 access token is preferred. Create one on the wiki at
-			Special:OAuthConsumerRegistration/propose/oauth2 with the grants you need,
-			and revoke it at Special:OAuthManageMyGrants.
+			Special:OAuthConsumerRegistration/propose/oauth2 with the grants you need.
+			To replace a token, reset the consumer's secret key at
+			Special:OAuthConsumerRegistration/list; the old token stops working.
 
 			--with-token reads the token from standard input. --username logs in with a
 			password, read from MW_PASSWORD or a prompt. Without either, mw asks.
