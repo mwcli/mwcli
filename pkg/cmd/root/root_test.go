@@ -313,6 +313,9 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				flags = append(flags, k)
 			}
 		}
+		if p("baserevid") != "" {
+			flags = append(flags, "baserevid="+p("baserevid"))
+		}
 		w.editFlags = strings.Join(flags, " ")
 		title := p("title")
 		// Pages under New/ and Missing do not exist until created.
@@ -320,6 +323,11 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		switch {
 		case p("nocreate") != "" && !exists:
 			send(map[string]any{"error": map[string]string{"code": "missingtitle", "info": "The page you specified doesn't exist."}})
+			return
+		case p("baserevid") != "" && p("baserevid") != "202" && p("text") != "merges":
+			// Sandbox's latest revision is 202; an edit from an older one
+			// conflicts unless the wiki can merge it.
+			send(map[string]any{"error": map[string]string{"code": "editconflict", "info": "Edit conflict."}})
 			return
 		case p("createonly") != "" && exists:
 			send(map[string]any{"error": map[string]string{"code": "articleexists", "info": "The article you tried to create has been created already."}})
@@ -1492,4 +1500,34 @@ func TestLogoutEndsSession(t *testing.T) {
 	_, stderr, code = e.run("", "auth", "logout", "--wiki", e.api)
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, 1, e.wiki.logouts)
+}
+
+// --baserevid makes an edit made from an older revision fail with an edit
+// conflict, unless the wiki merges it, rather than undo the edits since.
+func TestPageEditBaserevid(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	_, stderr, code := e.run("", "page", "edit", "Sandbox", "--wiki", e.api, "--text", "Mine", "--baserevid", "202")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "nocreate baserevid=202", e.wiki.editFlags)
+
+	_, stderr, code = e.run("", "page", "edit", "Sandbox", "--wiki", e.api, "--text", "Mine", "--baserevid", "201")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "edit conflict: Sandbox changed since revision 201 on "+e.host+"; view the latest text with `mw page view`")
+	_, stderr, code = e.run("", "page", "edit", "Sandbox", "--wiki", e.api, "--text", "merges", "--baserevid", "201")
+	require.Equal(t, 0, code, stderr)
+
+	// A dry run says when the page changed since the base revision.
+	_, stderr, code = e.run("", "page", "edit", "Sandbox", "--wiki", e.api, "--text", "Mine", "--baserevid", "201", "--dry-run")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "Sandbox changed since revision 201 (now 202)")
+	_, stderr, _ = e.run("", "page", "edit", "Sandbox", "--wiki", e.api, "--text", "Mine", "--baserevid", "202", "--dry-run")
+	assert.NotContains(t, stderr, "changed since")
+
+	_, stderr, code = e.run("", "page", "edit", "Sandbox", "--wiki", e.api, "--text", "x", "--baserevid", "0")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--baserevid must be a revision ID greater than 0")
+	_, stderr, code = e.run("", "page", "create", "New/Three", "--wiki", e.api, "--text", "x", "--baserevid", "202")
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, stderr, "unknown flag: --baserevid")
 }

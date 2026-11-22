@@ -586,6 +586,10 @@ const (
 // ErrPageExists means the page to create exists already.
 var ErrPageExists = errors.New("page already exists")
 
+// ErrEditConflict means the page changed since the base revision in a way the
+// wiki could not merge with the edit.
+var ErrEditConflict = errors.New("edit conflict")
+
 // EditOptions are the options of Edit besides the title and text.
 type EditOptions struct {
 	Summary string
@@ -593,6 +597,10 @@ type EditOptions struct {
 	// Minor marks the edit minor; Bot marks it a bot edit, which hides it from
 	// recent changes when the account has the bot right.
 	Minor, Bot bool
+	// BaseRevID is the revision the text was made from (baserevid). When
+	// others edited the page since, the wiki merges their changes as the
+	// browser editor does, or the edit fails with ErrEditConflict.
+	BaseRevID int
 }
 
 // EditResult is the outcome of an edit.
@@ -624,6 +632,9 @@ func (c *Client) Edit(ctx context.Context, title, text string, opts EditOptions)
 	if opts.Bot {
 		form.Set("bot", "1")
 	}
+	if opts.BaseRevID > 0 {
+		form.Set("baserevid", strconv.Itoa(opts.BaseRevID))
+	}
 	var result struct {
 		Edit struct {
 			Result   string `json:"result"`
@@ -640,6 +651,8 @@ func (c *Client) Edit(ctx context.Context, title, text string, opts EditOptions)
 			return nil, fmt.Errorf("%w: %s", ErrMissingPage, title)
 		case "articleexists":
 			return nil, fmt.Errorf("%w: %s", ErrPageExists, title)
+		case "editconflict":
+			return nil, fmt.Errorf("%w: %s changed since revision %d", ErrEditConflict, title, opts.BaseRevID)
 		}
 	}
 	if err != nil {
