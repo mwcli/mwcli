@@ -27,7 +27,7 @@ mw
 ├── user
 │   └── contribs [--wiki WIKI] [-n ID] [-L N] [-w] [--json FIELDS [-q EXPR]] USER
 ├── browse      [--wiki WIKI] [-n] [TITLE]
-├── api         [--wiki WIKI] [-X METHOD] [-f key=value] [-F key=@file] [--paginate [--slurp]] [-q EXPR] [key=value ...]
+├── api         [--wiki WIKI] [-X METHOD] [-f key=value] [-F key=@file] [--paginate [--slurp]] [--input FILE] [-q EXPR] [/PATH] [key=value ...]
 ├── completion  SHELL
 └── version
 ```

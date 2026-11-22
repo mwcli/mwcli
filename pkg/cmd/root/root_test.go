@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -38,6 +39,8 @@ type fakeWiki struct {
 	created   map[string]bool
 	// siteinfos counts general siteinfo requests, which discovery makes.
 	siteinfos int
+	// rests are the requests to rest.php.
+	rests []restRequest
 	// writes are the forms of move and delete requests.
 	writes []url.Values
 	// batches are the numbers of titles of each request for many pages.
@@ -50,6 +53,13 @@ type fakeWiki struct {
 	// action=logout requests.
 	domains []string
 	logouts int
+}
+
+// restRequest is a request to the fake wiki's rest.php.
+type restRequest struct {
+	Method, Path, Body, Type string
+	Query                    url.Values
+	Authed                   bool
 }
 
 func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
@@ -93,6 +103,25 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		// A page of the wiki points to its API, as MediaWiki's pages do.
 		rw.Header().Set("Content-Type", "text/html")
 		fmt.Fprintf(rw, `<html><head><link rel="EditURI" type="application/rsd+xml" href="http://%s/w/api.php?action=rsd"/></head></html>`, r.Host)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/w/rest.php/") {
+		b, _ := io.ReadAll(r.Body)
+		w.rests = append(w.rests, restRequest{Method: r.Method, Path: r.URL.EscapedPath(), Query: r.URL.Query(), Body: string(b), Type: r.Header.Get("Content-Type"), Authed: authed})
+		rw.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/w/rest.php/v1/page/Sandbox/bare", "/w/rest.php/v1/page/A%2FB/bare":
+			fmt.Fprintf(rw, `{"id":7,"title":"Sandbox","latest":{"id":303}}`)
+		case "/w/rest.php/v1/page":
+			rw.WriteHeader(http.StatusCreated)
+			fmt.Fprintf(rw, `{"id":8,"echo":%s}`, b)
+		case "/w/rest.php/v1/text":
+			rw.Header().Set("Content-Type", "text/plain")
+			fmt.Fprint(rw, "plain")
+		default:
+			rw.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(rw, `{"errorKey":"rest-nonexistent-title","httpCode":404}`)
+		}
 		return
 	}
 	if r.URL.Path == "/gone/api.php" {
@@ -1962,4 +1991,64 @@ func TestPageDelete(t *testing.T) {
 	_, stderr, code = e.run("", "page", "delete", "--wiki", e.api, "Missing", "--yes")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "page does not exist: Missing on "+e.host)
+}
+
+func TestAPIREST(t *testing.T) {
+	e := newEnv(t)
+	out, stderr, code := e.run("", "api", "--wiki", e.api, "/v1/page/Sandbox/bare", "--jq", ".latest.id")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "303\n", out)
+	r := e.wiki.rests[0]
+	assert.Equal(t, "GET", r.Method)
+	assert.Empty(t, r.Body)
+
+	_, stderr, code = e.run("", "api", "--wiki", e.api, "/v1/page/A%2FB/bare?redirect=no", "limit=5")
+	require.Equal(t, 0, code, stderr)
+	r = e.wiki.rests[1]
+	assert.Equal(t, "/w/rest.php/v1/page/A%2FB/bare", r.Path)
+	assert.Equal(t, "no", r.Query.Get("redirect"))
+	assert.Equal(t, "5", r.Query.Get("limit"))
+
+	out, stderr, code = e.run("", "api", "--wiki", e.api, "/v1/page/Missing/bare")
+	assert.Equal(t, 1, code)
+	assert.JSONEq(t, `{"errorKey":"rest-nonexistent-title","httpCode":404}`, out)
+	assert.Contains(t, stderr, "MediaWiki returned 404 Not Found")
+
+	out, _, code = e.run("", "api", "--wiki", e.api, "/v1/text")
+	require.Equal(t, 0, code)
+	assert.Equal(t, "plain\n", out)
+	_, stderr, code = e.run("", "api", "--wiki", e.api, "/v1/text", "--jq", ".")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "not JSON")
+
+	// Fields make a JSON body; without OAuth a CSRF token is added.
+	out, stderr, code = e.run("", "api", "--wiki", e.api, "-X", "POST", "/v1/page", "title=New", "-f", "source=Hi", "-F", "n=3", "-F", "ok=true", "-F", "none=null")
+	require.Equal(t, 0, code, stderr)
+	r = e.wiki.rests[len(e.wiki.rests)-1]
+	assert.Equal(t, "application/json", r.Type)
+	assert.JSONEq(t, `{"title":"New","source":"Hi","n":3,"ok":true,"none":null,"token":"tok+\\"}`, r.Body)
+	assert.Contains(t, out, `"id":8`)
+
+	e.login()
+	_, stderr, code = e.run("{\"source\":\"x\"}", "api", "--wiki", e.api, "-X", "POST", "/v1/page", "--input", "-", "q=1")
+	require.Equal(t, 0, code, stderr)
+	r = e.wiki.rests[len(e.wiki.rests)-1]
+	assert.True(t, r.Authed)
+	assert.Equal(t, `{"source":"x"}`, r.Body, "the input is sent as it is, with no token for OAuth")
+	assert.Equal(t, "1", r.Query.Get("q"))
+
+	_, stderr, code = e.run("", "api", "--wiki", e.api, "-X", "POST", "/v1/page", "title=A")
+	require.Equal(t, 0, code, stderr)
+	assert.NotContains(t, e.wiki.rests[len(e.wiki.rests)-1].Body, "token")
+
+	for _, args := range [][]string{
+		{"/v1/page", "--paginate"},
+		{"/v1/page", "--slurp"},
+		{"action=query", "--input", "x.json"},
+		{"-X", "POST", "/v1/page", "a=1", "a=2"},
+		{"/v1/page", "nokey"},
+	} {
+		_, _, code = e.run("", append([]string{"api", "--wiki", e.api}, args...)...)
+		assert.Equal(t, 2, code, args)
+	}
 }
