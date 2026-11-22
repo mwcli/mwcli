@@ -624,3 +624,15 @@ func TestSiteAddRejectsFarmName(t *testing.T) {
 	require.Equal(t, 2, code)
 	assert.Contains(t, stderr, "conflicts with a farm name")
 }
+
+func TestStatusUsesFarmAPIWhenSiteAliasConflicts(t *testing.T) {
+	e := newEnv(t)
+	cfg := &config.Config{Dir: e.dir, Sites: config.Sites{Wikis: map[string]*config.Site{"other": {API: "https://other.example.org/api.php", Aliases: []string{"wikimedia"}}}},
+		Farms: map[string][]config.FarmSite{"wikimedia": {{Host: e.host, API: e.api}}}, Logins: map[string]*config.Login{}}
+	cfg.Login("wikimedia", "Jmnote", &config.Account{Auth: config.AuthOAuth2, OAuthToken: goodToken})
+	require.NoError(t, cfg.Save())
+	out, stderr, code := e.run("", "auth", "status")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, out, "API: "+e.api)
+	assert.NotContains(t, out, "API: https://other.example.org/api.php")
+}

@@ -19,10 +19,13 @@ func TestFarmLookupAndAPIIsolation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "docs", r.LoginKey)
 	assert.Equal(t, "https://wiki.example.org/docs/api.php", r.Site.API)
+	r, err = ForAPI(cfg, "https://wiki.example.org/docs/api.php")
+	require.NoError(t, err)
+	assert.Equal(t, "docs", r.LoginKey)
 
 	r, err = ForAPI(cfg, "https://wiki.example.org/other/api.php")
 	require.NoError(t, err)
-	assert.Equal(t, "wiki.example.org", r.LoginKey)
+	assert.Equal(t, "api:https://wiki.example.org/other/api.php", r.LoginKey)
 }
 
 func TestBuiltinFarmLoginKeyRequiresExactAPI(t *testing.T) {
@@ -33,7 +36,7 @@ func TestBuiltinFarmLoginKeyRequiresExactAPI(t *testing.T) {
 
 	r, err = ForAPI(cfg, "https://commons.wikimedia.org/other/api.php")
 	require.NoError(t, err)
-	assert.NotEqual(t, "wikimedia", r.LoginKey)
+	assert.Equal(t, "api:https://commons.wikimedia.org/other/api.php", r.LoginKey)
 }
 
 func TestFarmNamesAreReserved(t *testing.T) {
@@ -41,4 +44,11 @@ func TestFarmNamesAreReserved(t *testing.T) {
 	assert.True(t, IsFarmName(cfg, "wikimedia"))
 	assert.True(t, IsFarmName(cfg, "custom"))
 	assert.False(t, IsFarmName(cfg, "standalone"))
+}
+
+func TestUnregisteredHostCannotSelectSameNamedFarm(t *testing.T) {
+	cfg := &config.Config{Sites: config.Sites{Wikis: map[string]*config.Site{}}, Farms: map[string][]config.FarmSite{"unrelated.example.org": {{Host: "wiki.example.org"}}}}
+	r, err := Lookup(cfg, "unrelated.example.org")
+	require.NoError(t, err)
+	assert.Equal(t, "api:https://unrelated.example.org/w/api.php", r.LoginKey)
 }

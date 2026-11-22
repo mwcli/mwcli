@@ -55,6 +55,27 @@ var builtinFarm = func() map[string]string {
 	return m
 }()
 
+var builtinFarmAPI = func() map[string]string {
+	var f struct {
+		Farms map[string][]config.FarmSite `yaml:"farms"`
+	}
+	if err := yaml.Unmarshal(builtinYAML, &f); err != nil {
+		panic("builtin.yml: " + err.Error())
+	}
+	m := map[string]string{}
+	for farm, wikis := range f.Farms {
+		if len(wikis) == 0 {
+			continue
+		}
+		api := wikis[0].API
+		if api == "" {
+			api = config.DefaultAPI(wikis[0].Host)
+		}
+		m[farm] = api
+	}
+	return m
+}()
+
 // Builtin returns the built-in sites by name.
 func Builtin() map[string]*config.Site { return builtin }
 
@@ -69,6 +90,25 @@ func IsFarmName(cfg *config.Config, name string) bool {
 		}
 	}
 	return false
+}
+
+// FarmAPI returns a registered validation API for a farm login key.
+func FarmAPI(cfg *config.Config, name string) string {
+	for farm, wikis := range cfg.Farms {
+		if strings.EqualFold(farm, name) && len(wikis) > 0 {
+			api := wikis[0].API
+			if api == "" {
+				return config.DefaultAPI(wikis[0].Host)
+			}
+			return api
+		}
+	}
+	for farm, api := range builtinFarmAPI {
+		if strings.EqualFold(farm, name) {
+			return api
+		}
+	}
+	return ""
 }
 
 var builtinFarmName = func() map[string]struct{} {
@@ -107,6 +147,10 @@ type Resolved struct {
 
 func resolved(cfg *config.Config, name string, site *config.Site, kind Kind) Resolved {
 	key := name
+	if kind == Unregistered {
+		key = "api:" + site.API
+		return Resolved{Name: name, LoginKey: key, Site: site, Kind: kind}
+	}
 	if cfg != nil {
 		for farm, wikis := range cfg.Farms {
 			for _, wiki := range wikis {
@@ -169,6 +213,17 @@ func ForAPI(cfg *config.Config, api string) (Resolved, error) {
 	if err != nil {
 		return Resolved{}, err
 	}
+	for _, farm := range sortedFarmNames(cfg.Farms) {
+		for _, wiki := range cfg.Farms[farm] {
+			endpoint := wiki.API
+			if endpoint == "" {
+				endpoint = config.DefaultAPI(wiki.Host)
+			}
+			if endpoint == api {
+				return Resolved{Name: strings.ToLower(wiki.Host), LoginKey: farm, Site: &config.Site{API: endpoint, Aliases: wiki.Aliases}, Kind: Added}, nil
+			}
+		}
+	}
 	for _, src := range []struct {
 		m    map[string]*config.Site
 		kind Kind
@@ -186,6 +241,15 @@ func ForAPI(cfg *config.Config, api string) (Resolved, error) {
 		name = api
 	}
 	return resolved(cfg, name, &config.Site{API: api}, Unregistered), nil
+}
+
+func sortedFarmNames(farms map[string][]config.FarmSite) []string {
+	names := make([]string, 0, len(farms))
+	for name := range farms {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func byAlias(m map[string]*config.Site, name string, kind Kind) (Resolved, bool) {
