@@ -955,3 +955,33 @@ func TestApiPaginateResetsContinue(t *testing.T) {
 	assert.Equal(t, "2", got[2].Get("b"))
 	assert.Equal(t, "x", got[2].Get("list"))
 }
+
+// A continue value replaces a start value of the same name in the API URL, and
+// --jq keeps integers beyond 2^53 exact.
+func TestApiPaginateURLQueryAndBigNumbers(t *testing.T) {
+	var got []url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.URL.Query())
+		w.Header().Set("Content-Type", "application/json")
+		if len(got) == 1 {
+			_, _ = w.Write([]byte(`{"query":{"id":9007199254740993,"big":123456789012345678901234567890,"f":1.5},"continue":{"sroffset":10,"continue":"-||"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"query":{"id":9007199254740995}}`))
+	}))
+	defer srv.Close()
+	e := newEnv(t)
+	out, stderr, code := e.run("", "api", "--api", srv.URL+"/w/api.php?sroffset=5&wiki=a", "action=query", "list=search", "--paginate", "-q", ".query.id")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "9007199254740993\n9007199254740995\n", out)
+	require.Len(t, got, 2)
+	assert.Equal(t, []string{"5"}, got[0]["sroffset"])
+	assert.Equal(t, []string{"10"}, got[1]["sroffset"])
+	assert.Equal(t, "a", got[1].Get("wiki"))
+
+	got = nil
+	out, stderr, code = e.run("", "api", "--api", srv.URL+"/w/api.php", "action=query", "-q", ".query | [.big, .f]")
+	require.Equal(t, 0, code, stderr)
+	assert.JSONEq(t, `[123456789012345678901234567890, 1.5]`, out)
+	assert.Contains(t, out, "123456789012345678901234567890")
+}

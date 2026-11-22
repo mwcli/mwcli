@@ -4,9 +4,9 @@
 
 ## Following continue
 
-A query that has more results than one response holds returns a `continue` object. `--paginate` sends the request again with those values, as MediaWiki asks (the original parameters plus the last `continue` values), until a response has none, and prints each response. `--slurp` prints all the responses as one JSON array instead.
+A query that has more results than one response holds returns a `continue` object. `--paginate` sends the request again with those values, as MediaWiki asks (the original parameters plus the last `continue` values, which replace values of the same name, also in the query of an `--api` URL), until a response has none, and prints each response. `--slurp` prints all the responses as one JSON array instead.
 
-`--jq EXPR` (`-q`) filters each response with a jq expression; strings print as plain lines. It cannot be combined with `--slurp`. `--paginate` and `--jq` need `format=json`. When a response reports an error, mw prints it and stops with exit status 1.
+`--jq EXPR` (`-q`) filters each response with a jq expression; strings print as plain lines, and integers stay exact however large. It cannot be combined with `--slurp`. `--paginate` and `--jq` need `format=json`. When a response reports an error, mw prints it and stops with exit status 1.
 
 ```sh
 # every member of a category, one title per line

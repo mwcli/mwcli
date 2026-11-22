@@ -128,18 +128,23 @@ func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
 	}
 	var req *http.Request
 	var err error
+	// Keep the query of the API URL, such as one that picks the wiki, but let a
+	// parameter of the request replace a value of the same name there, such as
+	// a continue value replacing a start offset.
+	u := *c.url
+	q := u.Query()
+	for k := range params {
+		q.Del(k)
+	}
 	if method == http.MethodGet {
-		// Keep the query of the API URL, such as one that picks the wiki, as a
-		// POST to c.API does.
-		u := *c.url
-		q := u.Query()
 		for k, vs := range params {
-			q[k] = append(q[k], vs...)
+			q[k] = vs
 		}
 		u.RawQuery = q.Encode()
 		req, err = http.NewRequest(method, u.String(), nil)
 	} else {
-		req, err = http.NewRequest(method, c.API, strings.NewReader(params.Encode()))
+		u.RawQuery = q.Encode()
+		req, err = http.NewRequest(method, u.String(), strings.NewReader(params.Encode()))
 		if req != nil {
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}

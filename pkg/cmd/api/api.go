@@ -172,8 +172,8 @@ func run(f *cmdutil.Factory, opts *options) error {
 		case opts.slurp && apiErr == nil:
 			slurped = append(slurped, json.RawMessage(bytes.TrimSpace(body)))
 		case opts.jq != "" && apiErr == nil:
-			var v any
-			if err := json.Unmarshal(body, &v); err != nil {
+			v, err := cmdutil.DecodeJSON(body)
+			if err != nil {
 				return fmt.Errorf("decode API response: %w", err)
 			}
 			if err := cmdutil.WriteJQ(ios.Out, opts.jq, v, ios.IsStdoutTTY()); err != nil {
