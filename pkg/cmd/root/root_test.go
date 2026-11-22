@@ -37,9 +37,19 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	authed := r.Header.Get("Authorization") == "Bearer "+goodToken || (w.extraToken != "" && r.Header.Get("Authorization") == "Bearer "+w.extraToken)
 	// The api package checks OAuth 1.0a signatures; here the keys are enough.
 	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "OAuth ") {
-		if !strings.Contains(h, `oauth_consumer_key="ck"`) || !strings.Contains(h, `oauth_token="at"`) || !strings.Contains(h, "oauth_signature=") {
+		// Reasons as the OAuth extension gives them.
+		reason := ""
+		switch {
+		case !strings.Contains(h, `oauth_consumer_key="ck"`):
+			reason = "Invalid consumer"
+		case !strings.Contains(h, `oauth_token="at"`):
+			reason = "No approved grant was found for that authorization token."
+		case !strings.Contains(h, "oauth_signature="):
+			reason = "Invalid signature"
+		}
+		if reason != "" {
 			rw.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(rw).Encode(map[string]any{"error": map[string]string{"code": "mwoauth-invalid-authorization-invalid-user", "info": "Invalid consumer"}})
+			_ = json.NewEncoder(rw).Encode(map[string]any{"error": map[string]string{"code": "mwoauth-invalid-authorization", "info": "The authorization headers in your request are not valid: " + reason}})
 			return
 		}
 		authed = true
@@ -787,6 +797,11 @@ func TestOAuth1Login(t *testing.T) {
 	_, stderr, code = e.run("bad cs at as", "auth", "login", "--api", e.api, "--oauth1", "--with-token")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "mwoauth-invalid-authorization")
+	assert.Contains(t, stderr, "The wiki does not know the consumer token")
+
+	_, stderr, code = e.run("ck cs bad as", "auth", "login", "--api", e.api, "--oauth1", "--with-token")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "The wiki does not know the access token")
 
 	_, stderr, code = e.run("ck\ncs\nat\nas\n", "auth", "login", "--api", e.api, "--oauth1", "--with-token")
 	require.Equal(t, 0, code, stderr)

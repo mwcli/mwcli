@@ -279,9 +279,32 @@ func oauth1Login(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.
 		return nil, "", fmt.Errorf("the OAuth 1.0a keys were not accepted by %s", t.Name)
 	}
 	if err != nil {
+		if hint := oauth1Hint(err); hint != "" {
+			return nil, "", fmt.Errorf("check keys: %w\n%s", err, hint)
+		}
 		return nil, "", fmt.Errorf("check keys: %w", err)
 	}
 	return account, u.Name, nil
+}
+
+// oauth1Hint says, for a reason the OAuth extension gives about the keys,
+// what the wiki found and which value to check. mw leaves the keys to the wiki
+// to judge. Other reasons, such as a nonce already used, get no hint.
+func oauth1Hint(err error) string {
+	var ae *api.APIError
+	if !errors.As(err, &ae) || ae.Code != "mwoauth-invalid-authorization" {
+		return ""
+	}
+	const order = "Give the consumer token, consumer secret, access token and access secret in this order, each copied in full."
+	switch {
+	case strings.Contains(ae.Info, "Invalid consumer"):
+		return "The wiki does not know the consumer token; check that it was copied in full and is the first value. " + order
+	case strings.Contains(ae.Info, "Invalid signature"):
+		return "The wiki could not verify the signature. Check the consumer secret and the access secret. " + order
+	case strings.Contains(ae.Info, "No approved grant"), strings.Contains(ae.Info, "Invalid access token"):
+		return "The wiki does not know the access token; check that it was copied in full and is the third value. " + order
+	}
+	return ""
 }
 
 func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string, bot bool) (*config.Account, string, error) {
