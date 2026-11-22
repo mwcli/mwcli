@@ -2538,6 +2538,15 @@ func TestFileUploadSmallerParts(t *testing.T) {
 	final := e.wiki.uploads[len(e.wiki.uploads)-1]
 	assert.Equal(t, "fk.1", final.FileKey)
 
+	// The next file of the same command starts at the smaller size.
+	q := filepath.Join(dir, "scan2.png")
+	require.NoError(t, os.WriteFile(q, make([]byte, 3<<20), 0o644))
+	e.wiki.uploads, e.wiki.tooLarge = nil, 0
+	_, stderr, code = e.run("", "file", "upload", "--wiki", e.api, p, q)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, 2, e.wiki.tooLarge, "only the first file meets the limit")
+	assert.Equal(t, 1, strings.Count(stderr, "parts of 768 KiB"))
+
 	// Below the smallest part, the error says so in one line.
 	e.wiki.maxBody = 10 << 10
 	_, stderr, code = e.run("", "file", "upload", "--wiki", e.api, p)

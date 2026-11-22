@@ -302,17 +302,26 @@ func (c *Client) send(ctx context.Context, method string, params url.Values) ([]
 	final.RawQuery, final.Fragment = fq.Encode(), ""
 	c.Resolved = final.String()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		e := &HTTPError{StatusCode: resp.StatusCode, Status: resp.Status}
-		if strings.Contains(resp.Header.Get("Content-Type"), "html") {
-			e.Body = "HTML error page (the site may be blocking this client or network)"
-		} else {
-			b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-			e.Body = strings.TrimSpace(string(b))
-		}
-		return nil, resp.Header, e
+		return nil, resp.Header, newHTTPError(resp)
 	}
 	b, err := io.ReadAll(resp.Body)
 	return b, resp.Header, err
+}
+
+// newHTTPError describes a response whose status is not 2xx. An HTML error
+// page, as a proxy or firewall sends, is named in one line rather than shown.
+func newHTTPError(resp *http.Response) *HTTPError {
+	e := &HTTPError{StatusCode: resp.StatusCode, Status: resp.Status}
+	switch {
+	case !strings.Contains(resp.Header.Get("Content-Type"), "html"):
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		e.Body = strings.TrimSpace(string(b))
+	case resp.StatusCode == http.StatusRequestEntityTooLarge:
+		e.Body = "HTML error page (a server in front of the wiki limits the size of a request)"
+	default:
+		e.Body = "HTML error page (the site may be blocking this client or network)"
+	}
+	return e
 }
 
 // CheckError returns the first API error reported in body, if any.

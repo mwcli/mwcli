@@ -120,12 +120,14 @@ func newCmdUpload(f *cmdutil.Factory) *cobra.Command {
 				}
 			}
 			failed := false
+			// chunk keeps the smaller parts a server asked for, for the next files.
+			var chunk int64
 			for _, u := range uploads {
 				fh, err := os.Open(u.path)
 				if err != nil {
 					return err
 				}
-				opts := api.UploadOptions{Comment: summary, Text: text, IgnoreWarnings: ignoreWarnings}
+				opts := api.UploadOptions{Comment: summary, Text: text, IgnoreWarnings: ignoreWarnings, ChunkSize: chunk}
 				// open is true while a progress line waits for its line break.
 				open := false
 				if ios.IsStdoutTTY() && u.size > api.DefaultChunkSize {
@@ -137,12 +139,13 @@ func newCmdUpload(f *cmdutil.Factory) *cobra.Command {
 						}
 					}
 				}
-				opts.Smaller = func(chunk int64) {
+				opts.Smaller = func(smaller int64) {
+					chunk = smaller
 					if open {
 						fmt.Fprintln(ios.ErrOut)
 						open = false
 					}
-					fmt.Fprintf(ios.ErrOut, "The server refused a request that large; sending %s in parts of %s\n", u.name, sizeText(chunk))
+					fmt.Fprintf(ios.ErrOut, "The server refused a request that large; sending %s in parts of %s\n", u.name, sizeText(smaller))
 				}
 				res, err := c.Upload(ctx, u.name, fh, u.size, opts)
 				fh.Close()

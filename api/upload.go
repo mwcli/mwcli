@@ -303,17 +303,7 @@ func (c *Client) multipart(ctx context.Context, params url.Values, field, filena
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		e := &HTTPError{StatusCode: resp.StatusCode, Status: resp.Status}
-		if strings.Contains(resp.Header.Get("Content-Type"), "html") {
-			e.Body = "HTML error page (the site may be blocking this client or network)"
-			if resp.StatusCode == http.StatusRequestEntityTooLarge {
-				e.Body = "HTML error page (a server in front of the wiki limits the size of a request)"
-			}
-		} else {
-			b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-			e.Body = strings.TrimSpace(string(b))
-		}
-		return nil, e
+		return nil, newHTTPError(resp)
 	}
 	return io.ReadAll(resp.Body)
 }
