@@ -30,7 +30,7 @@ var viewFields = []string{
 }
 
 func newCmdView(f *cmdutil.Factory) *cobra.Command {
-	var wiki, apiURL string
+	var wiki string
 	var web bool
 	var jsonFlags *cmdutil.JSONFlags
 	cmd := &cobra.Command{
@@ -61,7 +61,7 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := f.Resolve(cfg, wiki, apiURL)
+			t, err := f.Resolve(cfg, wiki)
 			if err != nil {
 				return err
 			}
@@ -91,7 +91,7 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
-	cmdutil.AddTargetFlags(cmd, &wiki, &apiURL)
+	cmdutil.AddTargetFlags(cmd, &wiki)
 	cmd.Flags().BoolVarP(&web, "web", "w", false, "Open the page in the browser")
 	jsonFlags = cmdutil.AddJSONFlags(cmd, viewFields)
 	return cmd
@@ -99,12 +99,12 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 
 // editFlags are the flags `mw page edit` and `mw page create` share.
 type editFlags struct {
-	wiki, apiURL, summary, text, file string
-	minor, bot                        bool
+	wiki, summary, text, file string
+	minor, bot                bool
 }
 
 func (o *editFlags) add(cmd *cobra.Command) {
-	cmdutil.AddTargetFlags(cmd, &o.wiki, &o.apiURL)
+	cmdutil.AddTargetFlags(cmd, &o.wiki)
 	cmd.Flags().StringVarP(&o.summary, "summary", "s", "", "Edit summary")
 	cmd.Flags().StringVar(&o.text, "text", "", "New wikitext")
 	cmd.Flags().StringVarP(&o.file, "file", "F", "", "Read the new wikitext from `file` (use \"-\" to read from standard input)")
@@ -181,7 +181,7 @@ func saveRun(f *cmdutil.Factory, cmd *cobra.Command, o *editFlags, title string,
 	if err != nil {
 		return err
 	}
-	t, err := f.Resolve(cfg, o.wiki, o.apiURL)
+	t, err := f.Resolve(cfg, o.wiki)
 	if err != nil {
 		return err
 	}

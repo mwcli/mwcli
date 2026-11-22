@@ -1,5 +1,6 @@
-// Package discovery finds the api.php of a wiki when a site is added. It runs
-// once, from `mw site add` or a first login; mw keeps the result in config.yml.
+// Package discovery finds the api.php of a wiki: when a site is added, at a
+// first login, and for a host or page URL that was not added, whose result
+// the API cache keeps.
 package discovery
 
 import (

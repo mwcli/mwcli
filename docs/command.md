@@ -3,38 +3,39 @@
 ```text
 mw
 ├── auth
-│   ├── login   [--wiki WIKI] [--api URL] [--with-token | --oauth1 [--with-token] | -u USER [--bot-password]]
+│   ├── login   [--wiki WIKI] [--with-token | --oauth1 [--with-token] | -u USER [--bot-password]]
 │   ├── logout  [--wiki WIKI] [-u USER]
 │   ├── status  [--wiki WIKI] [-a] [-t]
 │   ├── switch  [--wiki WIKI] [-u USER]
 │   └── token   [--wiki WIKI] [-u USER]
 ├── site
 │   ├── add     [NAME] WIKI [--alias ALIAS] [--farm FARM]
-│   ├── list    [--builtin]
+│   ├── list    [--builtin | --cached]
 │   ├── remove  NAME
 │   └── default [NAME]
 ├── page
-│   ├── view    [--wiki WIKI] [--api URL] [-w] [--json FIELDS [-q EXPR]] TITLE
-│   ├── list    [--wiki WIKI] [--api URL] [--prefix TEXT | --category NAME | -S QUERY | --links-to TITLE | --embeds TITLE] [-n ID] [-L N] [--json FIELDS [-q EXPR]]
-│   ├── history [--wiki WIKI] [--api URL] [-L N] [--json FIELDS [-q EXPR]] TITLE
-│   ├── diff    [--wiki WIKI] [--api URL] [-w] [--color WHEN] REV|TITLE [REV|TITLE]
-│   ├── create  [--wiki WIKI] [--api URL] [-s SUMMARY] [--minor] [--bot] (--text WIKITEXT | -F FILE) TITLE
-│   └── edit    [--wiki WIKI] [--api URL] [-s SUMMARY] [--minor] [--bot] (--text WIKITEXT | -F FILE) TITLE
-├── api         [--wiki WIKI] [--api URL] [-X METHOD] [-f key=value] [-F key=@file] [--paginate [--slurp]] [-q EXPR] [key=value ...]
+│   ├── view    [--wiki WIKI] [-w] [--json FIELDS [-q EXPR]] TITLE
+│   ├── list    [--wiki WIKI] [--prefix TEXT | --category NAME | -S QUERY | --links-to TITLE | --embeds TITLE] [-n ID] [-L N] [--json FIELDS [-q EXPR]]
+│   ├── history [--wiki WIKI] [-L N] [--json FIELDS [-q EXPR]] TITLE
+│   ├── diff    [--wiki WIKI] [-w] [--color WHEN] REV|TITLE [REV|TITLE]
+│   ├── create  [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] (--text WIKITEXT | -F FILE) TITLE
+│   └── edit    [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] (--text WIKITEXT | -F FILE) TITLE
+├── api         [--wiki WIKI] [-X METHOD] [-f key=value] [-F key=@file] [--paginate [--slurp]] [-q EXPR] [key=value ...]
 ├── completion  SHELL
 └── version
 ```
 
-`--wiki WIKI` accepts a site name, an alias or a host. `--api URL` names an exact Action API endpoint. See [Choosing a wiki](wikis.md) for the target selection order. Every command prints its own help with `-h, --help`.
+`--wiki WIKI` accepts a site name, an alias, a host, or the URL of a page of the wiki or of its `api.php`. See [Choosing a wiki](wikis.md) for the target selection order. Every command prints its own help with `-h, --help`.
 
 ## Environment
 
 | Variable | Use |
 | --- | --- |
-| `MW_WIKI` | Wiki override for requests that omit `--wiki` and `--api` |
+| `MW_WIKI` | Wiki for commands without `--wiki`; accepts the same values |
 | `MW_TOKEN` | OAuth 2 access token used instead of stored credentials |
 | `MW_PASSWORD` | Password or bot password for `mw auth login --username` without a prompt |
 | `MW_CONFIG_DIR` | Configuration directory (default `~/.config/mw`) |
+| `MW_CACHE_DIR` | Cache directory for the APIs of wikis that were not added (default `~/.cache/mw`) |
 | `MW_BROWSER` | Browser command for `--web`, before `BROWSER` |
 
 ## config.yml

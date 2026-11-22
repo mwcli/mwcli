@@ -14,7 +14,7 @@ import (
 var listFields = []string{"title", "pageid", "ns"}
 
 func newCmdList(f *cmdutil.Factory) *cobra.Command {
-	var wiki, apiURL, prefix, category, search, linksTo, embeds string
+	var wiki, prefix, category, search, linksTo, embeds string
 	var namespace, limit int
 	var jsonFlags *cmdutil.JSONFlags
 	cmd := &cobra.Command{
@@ -71,7 +71,7 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := f.Resolve(cfg, wiki, apiURL)
+			t, err := f.Resolve(cfg, wiki)
 			if err != nil {
 				return err
 			}
@@ -101,7 +101,7 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
-	cmdutil.AddTargetFlags(cmd, &wiki, &apiURL)
+	cmdutil.AddTargetFlags(cmd, &wiki)
 	cmd.Flags().StringVar(&prefix, "prefix", "", "List pages whose titles start with `text`")
 	cmd.Flags().StringVar(&category, "category", "", "List the members of a `category`, with or without its namespace prefix")
 	cmd.Flags().StringVarP(&search, "search", "S", "", "List the results of a full-text search for `query`")

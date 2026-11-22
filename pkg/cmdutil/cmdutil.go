@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/mwcli/mwcli/api"
+	"github.com/mwcli/mwcli/internal/apicache"
 	"github.com/mwcli/mwcli/internal/config"
 	"github.com/mwcli/mwcli/internal/discovery"
 	"github.com/mwcli/mwcli/internal/sites"
@@ -21,10 +22,14 @@ type Factory struct {
 	Config    func() (*config.Config, error)
 	// Browse opens a URL for --web.
 	Browse func(url string) error
-	// Find discovers a site for `mw site add` and a first login.
+	// Find discovers a site: for `mw site add`, a first login, and a host or
+	// page URL that was not added, whose result the cache keeps.
 	Find func(target string) (*config.Site, error)
+	// Cache returns the API cache; nil loads it from its directory.
+	Cache func() *apicache.Cache
 
-	last *Target
+	last  *Target
+	cache *apicache.Cache
 }
 
 // New returns the factory for the running process.
@@ -56,6 +61,8 @@ type Target struct {
 	API      string
 	Site     *config.Site
 	Kind     sites.Kind
+	// Cached is the cache key when the API came from the cache.
+	Cached string
 }
 
 // PageURL returns the URL of an index.php page of the target.
@@ -76,50 +83,97 @@ func SiteName(cfg *config.Config, wiki string) string {
 	return config.DefaultSite
 }
 
-// Resolve picks the site: --api, else --wiki, MW_WIKI, the default site and
-// finally en.wikipedia.org, each a site name, an alias or a host.
-func (f *Factory) Resolve(cfg *config.Config, wiki, apiURL string) (Target, error) {
-	if apiURL != "" {
-		r, err := sites.ForAPI(cfg, apiURL)
+// Resolve picks the site of --wiki, MW_WIKI, the default site or finally
+// en.wikipedia.org: a site name or alias, a host, the URL of a page of the
+// wiki, or the URL of its api.php. The api.php of a host or page that was not
+// added is found once and kept in the cache.
+func (f *Factory) Resolve(cfg *config.Config, wiki string) (Target, error) {
+	name := strings.TrimSpace(SiteName(cfg, wiki))
+	if !IsURL(name) || IsAPIURL(name) {
+		r, err := sites.Lookup(cfg, name)
 		if err != nil {
 			return Target{}, FlagErrorf("%v", err)
 		}
-		if wiki != "" {
-			w, err := sites.Lookup(cfg, wiki)
-			if err != nil {
-				return Target{}, FlagErrorf("%v", err)
-			}
-			if w.Site.API != r.Site.API {
-				return Target{}, FlagErrorf("--api %s is not the API of --wiki %s", apiURL, wiki)
-			}
+		if r.Kind != sites.Unregistered || IsAPIURL(name) {
+			return f.target(r, ""), nil
 		}
-		return f.target(r), nil
 	}
-	r, err := sites.Lookup(cfg, SiteName(cfg, wiki))
+	cache := f.APICache()
+	if e, key, ok := cache.Get(name); ok {
+		return f.found(cfg, e.Site(), key)
+	}
+	site, err := f.Find(name)
+	if err != nil {
+		return Target{}, fmt.Errorf("could not find the API of %s: %w\ngive the URL of its api.php with --wiki, or add it with `mw site add NAME URL`", name, err)
+	}
+	if err := cache.Put(name, site); err != nil {
+		fmt.Fprintf(f.IOStreams.ErrOut, "warning: could not save %s: %v\n", cache.Path(), err)
+	}
+	return f.found(cfg, site, "")
+}
+
+// found resolves a site discovery found or the cache had.
+func (f *Factory) found(cfg *config.Config, site *config.Site, cached string) (Target, error) {
+	r, err := sites.ForAPI(cfg, site.API)
 	if err != nil {
 		return Target{}, FlagErrorf("%v", err)
 	}
-	return f.target(r), nil
+	if r.Kind == sites.Unregistered {
+		r.Site = site
+	}
+	return f.target(r, cached), nil
 }
 
-func (f *Factory) target(r sites.Resolved) Target {
-	t := Target{Name: r.Name, LoginKey: r.LoginKey, API: r.Site.API, Site: r.Site, Kind: r.Kind}
+// APICache returns the cache of APIs found for wikis that were not added.
+func (f *Factory) APICache() *apicache.Cache {
+	if f.cache == nil {
+		if f.Cache != nil {
+			f.cache = f.Cache()
+		} else {
+			f.cache = apicache.Load()
+		}
+	}
+	return f.cache
+}
+
+// IsURL reports whether s is a URL rather than a name or host.
+func IsURL(s string) bool { return strings.Contains(s, "://") }
+
+// IsAPIURL reports whether s is the URL of an api.php.
+func IsAPIURL(s string) bool {
+	if !IsURL(s) {
+		return false
+	}
+	if i := strings.IndexAny(s, "?#"); i >= 0 {
+		s = s[:i]
+	}
+	return strings.HasSuffix(s, "/api.php")
+}
+
+func (f *Factory) target(r sites.Resolved, cached string) Target {
+	t := Target{Name: r.Name, LoginKey: r.LoginKey, API: r.Site.API, Site: r.Site, Kind: r.Kind, Cached: cached}
 	f.last = &t
 	return t
 }
 
 // Hint adds advice to an error of the command when it talked to a site that
-// was not added: its API may not be at /w/api.php.
+// was not added. An API from the cache that no longer answers as MediaWiki is
+// forgotten, so that the next run looks for it again.
 func (f *Factory) Hint(err error) error {
 	if err == nil || f.last == nil || f.last.Kind != sites.Unregistered {
 		return err
 	}
 	t := *f.last
 	var he *api.HTTPError
-	if errors.As(err, &he) || strings.Contains(err.Error(), "decode API response") {
-		return fmt.Errorf("%w\nmw tried %s; if %s is a MediaWiki wiki elsewhere, add it with `mw site add %s`", err, t.API, t.Name, t.Name)
+	if !errors.As(err, &he) && !strings.Contains(err.Error(), "decode API response") {
+		return err
 	}
-	return err
+	if t.Cached != "" {
+		if forgot, derr := f.APICache().Delete(t.Cached); derr == nil && forgot {
+			return fmt.Errorf("%w\nmw had found the API of %s at %s and has now forgotten it; run the command again to look for it anew", err, t.Cached, t.API)
+		}
+	}
+	return fmt.Errorf("%w\nmw tried %s; check the URL, or add the wiki with `mw site add NAME URL`", err, t.API)
 }
 
 // AuthSource says where the credentials of a client came from.
@@ -153,10 +207,9 @@ func AddWikiFlag(cmd *cobra.Command, wiki *string, usage string) {
 	cmd.Flags().StringVar(wiki, "wiki", "", usage)
 }
 
-// AddTargetFlags adds --wiki and --api to cmd.
-func AddTargetFlags(cmd *cobra.Command, wiki, apiURL *string) {
-	AddWikiFlag(cmd, wiki, "The wiki: a host name such as mediawiki.org or an interwiki prefix such as wikipedia")
-	cmd.Flags().StringVar(apiURL, "api", "", "The api.php URL, when it is not https://HOST/w/api.php")
+// AddTargetFlags adds --wiki to a command that talks to a wiki.
+func AddTargetFlags(cmd *cobra.Command, wiki *string) {
+	AddWikiFlag(cmd, wiki, "The wiki: a site name, a host such as mediawiki.org, an interwiki prefix such as wikipedia, or a URL of the wiki or its api.php")
 }
 
 // FlagError is a usage error; it exits with status 2.

@@ -152,18 +152,33 @@ func newCmdAdd(f *cmdutil.Factory) *cobra.Command {
 }
 
 func newCmdList(f *cmdutil.Factory) *cobra.Command {
-	var builtin bool
+	var builtin, cached bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List added wikis",
-		Long:  "List the added sites, the default one marked with *. --builtin lists the built-in sites instead.",
-		Args:  cobra.NoArgs,
+		Long: heredoc.Doc(`
+			List the added sites, the default one marked with *. --builtin lists the
+			built-in sites instead. --cached lists the wikis given by host or URL whose
+			API mw found and keeps in its cache, with when it found each.
+		`),
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ios := f.IOStreams
+			if builtin && cached {
+				return cmdutil.FlagErrorf("specify only one of --builtin and --cached")
+			}
+			if cached {
+				return listCached(f)
+			}
 			cfg, err := f.Config()
 			if err != nil {
 				return err
 			}
+			defer func() {
+				if n := len(f.APICache().Entries); n > 0 && !builtin && ios.IsStdoutTTY() {
+					fmt.Fprintf(ios.ErrOut, "mw also keeps the API of %d wiki(s) not added; list them with: mw site list --cached\n", n)
+				}
+			}()
 			entries := listedSites(cfg, builtin)
 			if len(entries) == 0 {
 				if ios.IsStdoutTTY() {
@@ -203,7 +218,25 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&builtin, "builtin", false, "List the built-in sites")
+	cmd.Flags().BoolVar(&cached, "cached", false, "List the wikis whose API mw found and keeps in its cache")
 	return cmd
+}
+
+func listCached(f *cmdutil.Factory) error {
+	ios := f.IOStreams
+	c := f.APICache()
+	if len(c.Entries) == 0 {
+		if ios.IsStdoutTTY() {
+			fmt.Fprintln(ios.ErrOut, "No APIs cached")
+		}
+		return nil
+	}
+	rows := [][]string{}
+	for _, k := range c.Keys() {
+		e := c.Entries[k]
+		rows = append(rows, []string{k, e.API, e.Found.Format("2006-01-02")})
+	}
+	return cmdutil.WriteTable(ios.Out, rows)
 }
 
 func withoutName(names []string, name string) []string {
@@ -224,6 +257,7 @@ func newCmdRemove(f *cmdutil.Factory) *cobra.Command {
 			Remove an added wiki by its listed name, an alias, its host or its exact API URL.
 			When one host has multiple API endpoints, use an alias or the exact API URL.
 			Farm logins are removed only when the last wiki in that farm is removed.
+			A name listed by --cached forgets that cached API instead.
 		`),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -238,6 +272,12 @@ func newCmdRemove(f *cmdutil.Factory) *cobra.Command {
 				return cmdutil.FlagErrorf("%v", err)
 			}
 			if farm == "" {
+				if forgot, err := f.APICache().Delete(name); err != nil {
+					return err
+				} else if forgot {
+					fmt.Fprintf(ios.ErrOut, "%s Forgot the cached API of %s\n", ios.SuccessIcon(), ios.Bold(name))
+					return nil
+				}
 				return fmt.Errorf("no site named %s was added", name)
 			}
 			defaultPointsToRemoved := cfg.Context == name || cfg.Context == removedSite.API
