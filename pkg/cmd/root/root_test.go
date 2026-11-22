@@ -891,3 +891,67 @@ func TestOAuth1Login(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Contains(t, out, "The OAuth 1.0a keys are invalid")
 }
+
+func TestApiPaginate(t *testing.T) {
+	e := newEnv(t)
+	out, stderr, code := e.run("", "api", "--api", e.api, "action=query", "list=allpages", "--paginate", "--jq", ".query.allpages[].title")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "P1\nP2\nP3\nP4\nP5\nP6\nP7\n", out)
+	require.Len(t, e.wiki.lists, 3)
+	assert.Equal(t, "6", e.wiki.lists[2].Get("fakecontinue"))
+
+	// Numbers in continue, as sroffset, are sent as they are.
+	out, stderr, code = e.run("", "api", "--api", e.api, "action=query", "list=search", "srsearch=x", "--paginate", "--slurp")
+	require.Equal(t, 0, code, stderr)
+	var pages []map[string]any
+	require.NoError(t, json.Unmarshal([]byte(out), &pages))
+	assert.Len(t, pages, 3)
+	assert.Equal(t, "6", e.wiki.lists[5].Get("sroffset"))
+
+	out, stderr, code = e.run("", "api", "--api", e.api, "action=query", "list=allpages", "--jq", ".query.allpages | length")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "3\n", out)
+
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--slurp"}, "`--slurp` requires `--paginate`"},
+		{[]string{"--paginate", "--slurp", "--jq", "."}, "not supported with `--jq`"},
+		{[]string{"--paginate", "format=xml"}, "need format=json"},
+		{[]string{"--jq", ".["}, "invalid --jq expression"},
+	} {
+		_, stderr, code := e.run("", append([]string{"api", "--api", e.api, "action=query", "list=allpages"}, c.args...)...)
+		assert.Equal(t, 2, code, c.args)
+		assert.Contains(t, stderr, c.want, c.args)
+	}
+}
+
+// A continue value that a later response drops is not sent again: each
+// request is the original one with the last continue values.
+func TestApiPaginateResetsContinue(t *testing.T) {
+	var got []url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		got = append(got, r.Form)
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{"query": map[string]any{"n": len(got)}}
+		switch len(got) {
+		case 1:
+			resp["continue"] = map[string]string{"a": "1", "continue": "x"}
+		case 2:
+			resp["continue"] = map[string]string{"b": "2", "continue": "x"}
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+	e := newEnv(t)
+	out, stderr, code := e.run("", "api", "--api", srv.URL+"/w/api.php", "action=query", "list=x", "--paginate", "-q", ".query.n")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "1\n2\n3\n", out)
+	require.Len(t, got, 3)
+	assert.Equal(t, "1", got[1].Get("a"))
+	assert.False(t, got[2].Has("a"))
+	assert.Equal(t, "2", got[2].Get("b"))
+	assert.Equal(t, "x", got[2].Get("list"))
+}

@@ -18,7 +18,7 @@ mw
 │   ├── list    [--wiki WIKI] [--api URL] [--prefix TEXT | --category NAME | -S QUERY | --links-to TITLE | --embeds TITLE] [-n ID] [-L N] [--json FIELDS [-q EXPR]]
 │   ├── create  [--wiki WIKI] [--api URL] [-s SUMMARY] [--minor] [--bot] (--text WIKITEXT | -F FILE) TITLE
 │   └── edit    [--wiki WIKI] [--api URL] [-s SUMMARY] [--minor] [--bot] (--text WIKITEXT | -F FILE) TITLE
-├── api         [--wiki WIKI] [--api URL] [-X METHOD] [-f key=value] [-F key=@file] [key=value ...]
+├── api         [--wiki WIKI] [--api URL] [-X METHOD] [-f key=value] [-F key=@file] [--paginate [--slurp]] [-q EXPR] [key=value ...]
 ├── completion  SHELL
 └── version
 ```

@@ -23,6 +23,9 @@ type options struct {
 	method    string
 	rawFields []string
 	fields    []string
+	paginate  bool
+	slurp     bool
+	jq        string
 }
 
 // NewCmdApi returns `mw api`.
@@ -40,12 +43,21 @@ func NewCmdApi(f *cmdutil.Factory) *cobra.Command {
 
 			With a method other than GET and no token parameter, a CSRF token is fetched
 			and added. The exit status is 1 when the response reports an error.
+
+			--paginate follows the continue values of each response with more requests
+			until the result is complete, and prints each response; --slurp prints
+			them as one JSON array instead. --jq filters each response with a jq
+			expression. These need format=json.
 		`),
 		Example: heredoc.Doc(`
 			$ mw api action=query meta=userinfo uiprop=rights
 			$ mw api --wiki mediawiki.org action=parse page=MediaWiki prop=wikitext
 			$ mw api -X POST action=purge titles=Sandbox
 			$ mw api -X POST action=edit title=Sandbox -F text=@page.wiki summary=update
+
+			# every member of a category, one title per line
+			$ mw api action=query list=categorymembers cmtitle=Category:Physics cmlimit=max \
+			    --paginate --jq '.query.categorymembers[].title'
 		`),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.rawFields = append(args, opts.rawFields...)
@@ -56,6 +68,9 @@ func NewCmdApi(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().StringVarP(&opts.method, "method", "X", "GET", "The HTTP method for the request")
 	cmd.Flags().StringArrayVarP(&opts.rawFields, "raw-field", "f", nil, "Add a string parameter in `key=value` format")
 	cmd.Flags().StringArrayVarP(&opts.fields, "field", "F", nil, "Add a parameter in `key=value` format; @file reads the value from a file")
+	cmd.Flags().BoolVar(&opts.paginate, "paginate", false, "Make additional requests following continue until the result is complete")
+	cmd.Flags().BoolVar(&opts.slurp, "slurp", false, "Use with \"--paginate\" to print an array of all responses")
+	cmd.Flags().StringVarP(&opts.jq, "jq", "q", "", "Filter each JSON response using a jq `expression`")
 	return cmd
 }
 
@@ -103,6 +118,20 @@ func run(f *cmdutil.Factory, opts *options) error {
 		params.Set("formatversion", "2")
 	}
 	method := strings.ToUpper(opts.method)
+	isJSON := params.Get("format") == "json"
+	switch {
+	case opts.slurp && !opts.paginate:
+		return cmdutil.FlagErrorf("`--slurp` requires `--paginate`")
+	case opts.slurp && opts.jq != "":
+		return cmdutil.FlagErrorf("the `--slurp` option is not supported with `--jq`")
+	case (opts.paginate || opts.jq != "") && !isJSON:
+		return cmdutil.FlagErrorf("`--paginate` and `--jq` need format=json")
+	}
+	if opts.jq != "" {
+		if _, err := cmdutil.CompileJQ(opts.jq); err != nil {
+			return err
+		}
+	}
 
 	cfg, err := f.Config()
 	if err != nil {
@@ -123,25 +152,107 @@ func run(f *cmdutil.Factory, opts *options) error {
 		}
 		params.Set("token", tok)
 	}
-	body, err := c.Raw(method, params)
-	if err != nil {
-		return err
+	// Each request is the original one with the continue values of the last
+	// response: values a later response drops must not be sent again.
+	base := url.Values{}
+	for k, v := range params {
+		base[k] = v
 	}
+	var slurped []json.RawMessage
+	for {
+		body, err := c.Raw(method, params)
+		if err != nil {
+			return err
+		}
+		var apiErr error
+		if isJSON {
+			apiErr = mwapi.CheckError(body)
+		}
+		switch {
+		case opts.slurp && apiErr == nil:
+			slurped = append(slurped, json.RawMessage(bytes.TrimSpace(body)))
+		case opts.jq != "" && apiErr == nil:
+			var v any
+			if err := json.Unmarshal(body, &v); err != nil {
+				return fmt.Errorf("decode API response: %w", err)
+			}
+			if err := cmdutil.WriteJQ(ios.Out, opts.jq, v, ios.IsStdoutTTY()); err != nil {
+				return err
+			}
+		default:
+			if err := writeBody(ios.Out, body, isJSON && ios.IsStdoutTTY()); err != nil {
+				return err
+			}
+		}
+		if apiErr != nil {
+			return apiErr
+		}
+		if !opts.paginate {
+			return nil
+		}
+		next, err := continueValues(body)
+		if err != nil {
+			return err
+		}
+		if next == nil {
+			break
+		}
+		params = url.Values{}
+		for k, v := range base {
+			params[k] = v
+		}
+		for k, v := range next {
+			params.Set(k, v)
+		}
+	}
+	if opts.slurp {
+		b, err := json.Marshal(slurped)
+		if err != nil {
+			return err
+		}
+		return writeBody(ios.Out, b, ios.IsStdoutTTY())
+	}
+	return nil
+}
+
+func writeBody(w io.Writer, body []byte, indent bool) error {
 	out := body
-	if ios.IsStdoutTTY() && params.Get("format") == "json" {
+	if indent {
 		var buf bytes.Buffer
 		if json.Indent(&buf, body, "", "  ") == nil {
 			out = buf.Bytes()
 		}
 	}
-	ios.Out.Write(out)
-	if len(out) > 0 && out[len(out)-1] != '\n' {
-		fmt.Fprintln(ios.Out)
+	if _, err := w.Write(out); err != nil {
+		return err
 	}
-	if params.Get("format") == "json" {
-		if err := mwapi.CheckError(body); err != nil {
-			return err
-		}
+	if len(out) > 0 && out[len(out)-1] != '\n' {
+		_, err := fmt.Fprintln(w)
+		return err
 	}
 	return nil
+}
+
+// continueValues returns the parameters of the next request from the continue
+// object of a response, or nil when the result is complete. Values are strings
+// or, like sroffset, numbers.
+func continueValues(body []byte) (map[string]string, error) {
+	var resp struct {
+		Continue map[string]json.RawMessage `json:"continue"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("decode API response: %w", err)
+	}
+	if len(resp.Continue) == 0 {
+		return nil, nil
+	}
+	next := map[string]string{}
+	for k, raw := range resp.Continue {
+		var s string
+		if json.Unmarshal(raw, &s) != nil {
+			s = string(raw)
+		}
+		next[k] = s
+	}
+	return next, nil
 }

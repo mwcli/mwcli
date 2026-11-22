@@ -96,18 +96,33 @@ func (j *JSONFlags) Write(w io.Writer, v any, tty bool) error {
 	if j.jq == "" {
 		return writeJSON(w, out, tty)
 	}
-	q, err := gojq.Parse(j.jq)
-	if err != nil {
-		return FlagErrorf("invalid --jq expression: %v", err)
-	}
-	code, err := gojq.Compile(q)
-	if err != nil {
-		return FlagErrorf("invalid --jq expression: %v", err)
-	}
 	var generic any
 	b, _ = json.Marshal(out)
 	_ = json.Unmarshal(b, &generic)
-	iter := code.Run(generic)
+	return WriteJQ(w, j.jq, generic, tty)
+}
+
+// CompileJQ parses a --jq expression.
+func CompileJQ(expr string) (*gojq.Code, error) {
+	q, err := gojq.Parse(expr)
+	if err != nil {
+		return nil, FlagErrorf("invalid --jq expression: %v", err)
+	}
+	code, err := gojq.Compile(q)
+	if err != nil {
+		return nil, FlagErrorf("invalid --jq expression: %v", err)
+	}
+	return code, nil
+}
+
+// WriteJQ prints the results of expr on v, a value decoded from JSON: strings
+// as plain lines, other values as JSON, indented on a terminal.
+func WriteJQ(w io.Writer, expr string, v any, tty bool) error {
+	code, err := CompileJQ(expr)
+	if err != nil {
+		return err
+	}
+	iter := code.Run(v)
 	for {
 		r, ok := iter.Next()
 		if !ok {
