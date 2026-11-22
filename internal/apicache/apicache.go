@@ -66,13 +66,14 @@ func Load() *Cache {
 	return c
 }
 
-// Key normalizes a host or page URL: lowercase host, no query or fragment.
+// Key normalizes a host or page URL: lowercase scheme and host, no fragment.
+// The query stays, since a query such as ?wiki=a can pick the wiki.
 func Key(target string) string {
 	target = strings.TrimSpace(target)
 	if !strings.Contains(target, "://") {
 		return strings.ToLower(target)
 	}
-	if i := strings.IndexAny(target, "?#"); i >= 0 {
+	if i := strings.Index(target, "#"); i >= 0 {
 		target = target[:i]
 	}
 	scheme, rest, _ := strings.Cut(target, "://")
@@ -81,11 +82,16 @@ func Key(target string) string {
 }
 
 // Get returns the entry for target and its key: the entry of target itself,
-// else, for a page URL, the entry whose page URL prefix it starts with.
+// else, for a page URL without a query, the entry whose page URL prefix it
+// starts with. A URL with a query matches only itself, as the query may pick
+// another wiki under the same path.
 func (c *Cache) Get(target string) (Entry, string, bool) {
 	k := Key(target)
 	if e, ok := c.Entries[k]; ok {
 		return e, k, true
+	}
+	if strings.Contains(k, "?") {
+		return Entry{}, "", false
 	}
 	best := ""
 	for p := range c.Entries {
@@ -104,7 +110,7 @@ func (c *Cache) Get(target string) (Entry, string, bool) {
 // that other pages of the wiki find the entry too.
 func (c *Cache) Put(target string, s *config.Site) error {
 	k := Key(target)
-	if p := pagePrefix(k, s); p != "" && strings.HasPrefix(k, p) {
+	if p := pagePrefix(k, s); p != "" && strings.HasPrefix(k, p) && !strings.Contains(k, "?") {
 		k = p
 	}
 	c.Entries[k] = Entry{API: s.API, Server: s.Server, Script: s.Script, ArticlePath: s.ArticlePath, Found: time.Now().UTC().Truncate(time.Second)}
@@ -121,6 +127,7 @@ func pagePrefix(key string, s *config.Site) string {
 		return ""
 	}
 	host, _, _ := strings.Cut(rest, "/")
+	host, _, _ = strings.Cut(host, "?")
 	p := Key(scheme + "://" + host + s.ArticlePath[:i])
 	if !strings.HasSuffix(p, "/") {
 		return ""

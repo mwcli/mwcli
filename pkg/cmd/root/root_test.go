@@ -68,6 +68,12 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		send(map[string]any{"error": map[string]string{"code": "mwoauth-invalid-authorization", "info": "Invalid access token"}})
 		return
 	}
+	if r.URL.Path == "/index.php" && r.URL.Query().Get("wiki") != "" {
+		// A farm that picks the wiki by query: each wiki has its own API.
+		rw.Header().Set("Content-Type", "text/html")
+		fmt.Fprintf(rw, `<html><head><link rel="EditURI" type="application/rsd+xml" href="http://%s/%s/api.php?action=rsd"/></head></html>`, r.Host, r.URL.Query().Get("wiki"))
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/wiki/") {
 		// A page of the wiki points to its API, as MediaWiki's pages do.
 		rw.Header().Set("Content-Type", "text/html")
@@ -1215,4 +1221,25 @@ func TestWikiURLAndAPICache(t *testing.T) {
 	_, stderr, code = e.run("", "page", "view", "Sandbox", "--api", e.api)
 	assert.NotEqual(t, 0, code)
 	assert.Contains(t, stderr, "unknown flag: --api")
+}
+
+// Page URLs that differ only in a query that picks the wiki are found and
+// cached apart.
+func TestWikiURLQueryPicksWiki(t *testing.T) {
+	e := newEnv(t)
+	a := e.base + "/index.php?wiki=a&title=Main_Page"
+	b := e.base + "/index.php?wiki=b&title=Main_Page"
+	_, stderr, code := e.run("", "page", "view", "Sandbox", "--wiki", a)
+	require.Equal(t, 0, code, stderr)
+	before := e.wiki.siteinfos
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--wiki", b)
+	require.Equal(t, 0, code, stderr)
+	assert.Greater(t, e.wiki.siteinfos, before, "the second wiki is looked up, not taken from the first")
+	c := apicache.Load()
+	ea, _, ok := c.Get(a)
+	require.True(t, ok)
+	eb, _, ok := c.Get(b)
+	require.True(t, ok)
+	assert.Equal(t, e.base+"/a/api.php", ea.API)
+	assert.Equal(t, e.base+"/b/api.php", eb.API)
 }

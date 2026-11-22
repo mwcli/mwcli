@@ -33,7 +33,7 @@ mw page view 'Main Page' --wiki wiki.example.org
 mw page history 'Main Page' --wiki https://docs.example.org/handbook/wiki/Start
 ```
 
-A wiki found from a page URL is kept under the prefix of its page URLs, such as `https://docs.example.org/handbook/wiki/`, so other pages of that wiki use the same entry. `mw site list --cached` lists the entries with the date each was found, and `mw site remove KEY` forgets one. When a cached API stops answering as MediaWiki, mw forgets it and says so; the next command looks again.
+A wiki found from a page URL is kept under the prefix of its page URLs, such as `https://docs.example.org/handbook/wiki/`, so other pages of that wiki use the same entry. A URL with a query is kept as it is and matches only itself, since a query such as `?wiki=a` can pick the wiki. `mw site list --cached` lists the entries with the date each was found, and `mw site remove KEY` forgets one. When a cached API stops answering as MediaWiki, mw forgets it and says so; the next command looks again.
 
 The cache holds only API addresses, never credentials: logins are kept for added sites. The cache directory is `MW_CACHE_DIR`, else `mw` in the user cache directory (`$XDG_CACHE_HOME` or `~/.cache` on Linux, `~/Library/Caches` on macOS, `%LocalAppData%` on Windows).
 

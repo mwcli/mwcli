@@ -34,13 +34,14 @@ func Find(target string) (*config.Site, error) {
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return nil, fmt.Errorf("invalid wiki URL %q", target)
 	}
-	u.RawQuery, u.Fragment = "", ""
+	// The query stays: it can pick the wiki, as in index.php?wiki=a.
+	u.Fragment = ""
 	if strings.HasSuffix(u.Path, "/api.php") {
 		return probe(u.String())
 	}
 	base := u.Scheme + "://" + u.Host
 	var errs []error
-	if u.Path == "" || u.Path == "/" {
+	if (u.Path == "" || u.Path == "/") && u.RawQuery == "" {
 		for _, candidate := range []string{base + "/w/api.php", base + "/api.php"} {
 			s, err := probe(candidate)
 			if err == nil {
