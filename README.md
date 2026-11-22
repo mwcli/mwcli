@@ -22,7 +22,7 @@ It runs on Linux, macOS and Windows.
 - [Choosing a wiki](docs/wikis.md): built-in sites, `mw site add`, `mw site view`, `--wiki` and the default site
 - [Authentication](docs/auth.md): choosing between OAuth 2 tokens, OAuth 1.0a consumers, bot passwords and passwords, keeping them secure
 - [Pages](docs/pages.md): `mw page view` with `--json`, `--jq` and `--web`, `mw page list`, `mw page history`, `mw page diff`, `mw page download`, `mw page create`, `mw page edit`, `mw page move`, `mw page delete`, `mw user contribs` and `mw browse`
-- [Files](docs/files.md): `mw file view` with `--json`, `--jq` and `--web`, and `mw file download`
+- [Files](docs/files.md): `mw file view` with `--json`, `--jq` and `--web`, `mw file download` and `mw file upload`
 - [API requests](docs/api.md): `mw api` for the Action API, with `--paginate` and `--jq`, and the REST API
 - [Commands](docs/command.md): the command tree, environment variables and exit status
 - [Example configuration](config.example.yaml): farms, aliases and login structure

@@ -26,7 +26,8 @@ mw
 │   └── delete  [--wiki WIKI] [--reason TEXT] [--yes] TITLE
 ├── file
 │   ├── view     [--wiki WIKI] [-w] [--json FIELDS [-q EXPR]] FILE
-│   └── download [--wiki WIKI] [-D DIR] [--clobber | --skip-existing] (FILE... | - | --category NAME [-L N])
+│   ├── download [--wiki WIKI] [-D DIR] [--clobber | --skip-existing] (FILE... | - | --category NAME [-L N])
+│   └── upload   [--wiki WIKI] [--name NAME] [-s SUMMARY] [--text WIKITEXT | --text-file FILE] [--ignore-warnings] PATH...
 ├── user
 │   └── contribs [--wiki WIKI] [-n ID] [-L N] [-w] [--json FIELDS [-q EXPR]] USER
 ├── browse      [--wiki WIKI] [-n] [TITLE]

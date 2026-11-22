@@ -23,14 +23,14 @@ import (
 func NewCmdFile(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "file <command>",
-		Short: "Look at and download uploaded files",
+		Short: "Look at, download and upload files",
 		Long: heredoc.Doc(`
 			A file is given by its name, with or without the File: prefix or the
 			wiki's own name for that namespace. Files of a shared repository, such as
 			Wikimedia Commons files used on Wikipedia, work too.
 		`),
 	}
-	cmd.AddCommand(newCmdView(f), newCmdDownload(f))
+	cmd.AddCommand(newCmdView(f), newCmdDownload(f), newCmdUpload(f))
 	return cmd
 }
 
