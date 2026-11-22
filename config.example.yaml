@@ -1,14 +1,16 @@
-# Copy and edit this file as config.yml in the mw configuration directory.
-sites:
-  default: zetawiki
+# Copy this file to config.yml in the mw configuration directory.
+# A first login sets the default site automatically.
+# sites:
+#   default: zetawiki
 farms:
-  archwiki:
-    - host: wiki.archlinux.org
-      aliases: [arch, archwiki]
-      api: https://wiki.archlinux.org/api.php
   zetawiki:
     - host: zetawiki.com
       aliases: [zeta, zetawiki]
       api: https://zetawiki.com/w/api.php
-# Run `mw auth login --wiki archwiki` or `mw auth login --wiki zetawiki`
-# to store credentials for either farm.
+  # Add another farm if you use more than one wiki account scope.
+  # archwiki:
+  #   - host: wiki.archlinux.org
+  #     aliases: [arch, archwiki]
+  #     api: https://wiki.archlinux.org/api.php
+# Run `mw auth login --wiki zetawiki` to log in.
+# If enabled above, use `mw auth login --wiki archwiki` for ArchWiki.
