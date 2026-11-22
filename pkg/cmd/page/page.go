@@ -77,7 +77,7 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			if jsonFlags.Enabled() {
-				info, err := c.PageInfo(args[0], jsonFlags.Has("content"))
+				info, err := c.PageInfo(args[0], api.PageInfoOptions{Content: jsonFlags.Has("content"), Categories: jsonFlags.Has("categories")})
 				if err != nil {
 					return err
 				}

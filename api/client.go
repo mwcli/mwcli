@@ -363,47 +363,34 @@ type Revision struct {
 	Size      int    `json:"size"`
 }
 
-// PageInfo returns information about a page and its latest revision. The
-// wikitext is fetched only when withContent is set; categories, hidden ones
-// included, are fetched up to the API limit.
-func (c *Client) PageInfo(title string, withContent bool) (*PageInfo, error) {
+// PageInfoOptions chooses the costly parts of PageInfo.
+type PageInfoOptions struct {
+	// Content fetches the wikitext of the latest revision.
+	Content bool
+	// Categories fetches every category, hidden ones included, following
+	// continuation until the list is complete.
+	Categories bool
+}
+
+// PageInfo returns information about a page and its latest revision.
+func (c *Client) PageInfo(title string, opts PageInfoOptions) (*PageInfo, error) {
 	rvprop := "ids|timestamp|user|comment|size"
-	if withContent {
+	if opts.Content {
 		rvprop += "|content"
 	}
+	prop := "info|revisions"
+	if opts.Categories {
+		prop += "|categories"
+	}
 	params := url.Values{
-		"action": {"query"}, "titles": {title},
-		"prop":   {"info|revisions|categories"},
+		"action": {"query"}, "titles": {title}, "prop": {prop},
 		"inprop": {"url|protection"},
 		"rvprop": {rvprop}, "rvslots": {"main"},
-		"cllimit": {"max"},
 	}
-	var result struct {
-		Query struct {
-			Pages []struct {
-				Title        string       `json:"title"`
-				PageID       int          `json:"pageid"`
-				NS           int          `json:"ns"`
-				Missing      bool         `json:"missing"`
-				Invalid      bool         `json:"invalid"`
-				FullURL      string       `json:"fullurl"`
-				ContentModel string       `json:"contentmodel"`
-				Length       int          `json:"length"`
-				Touched      string       `json:"touched"`
-				Redirect     bool         `json:"redirect"`
-				Protection   []Protection `json:"protection"`
-				Categories   []struct {
-					Title string `json:"title"`
-				} `json:"categories"`
-				Revisions []struct {
-					Revision
-					Slots map[string]struct {
-						Content string `json:"content"`
-					} `json:"slots"`
-				} `json:"revisions"`
-			} `json:"pages"`
-		} `json:"query"`
+	if opts.Categories {
+		params.Set("cllimit", "max")
 	}
+	var result pageInfoResponse
 	if err := c.request(http.MethodGet, params, &result); err != nil {
 		return nil, err
 	}
@@ -431,5 +418,54 @@ func (c *Client) PageInfo(title string, withContent bool) (*PageInfo, error) {
 	for _, cat := range p.Categories {
 		info.Categories = append(info.Categories, cat.Title)
 	}
+	// More categories than one response holds come back with clcontinue;
+	// fetch only the categories for the rest.
+	cont := result.Continue
+	for opts.Categories && cont["clcontinue"] != "" {
+		params := url.Values{
+			"action": {"query"}, "pageids": {fmt.Sprint(info.PageID)}, "prop": {"categories"}, "cllimit": {"max"},
+		}
+		for k, v := range cont {
+			params.Set(k, v)
+		}
+		var next pageInfoResponse
+		if err := c.request(http.MethodGet, params, &next); err != nil {
+			return nil, err
+		}
+		for _, np := range next.Query.Pages {
+			for _, cat := range np.Categories {
+				info.Categories = append(info.Categories, cat.Title)
+			}
+		}
+		cont = next.Continue
+	}
 	return info, nil
+}
+
+type pageInfoResponse struct {
+	Continue map[string]string `json:"continue"`
+	Query    struct {
+		Pages []struct {
+			Title        string       `json:"title"`
+			PageID       int          `json:"pageid"`
+			NS           int          `json:"ns"`
+			Missing      bool         `json:"missing"`
+			Invalid      bool         `json:"invalid"`
+			FullURL      string       `json:"fullurl"`
+			ContentModel string       `json:"contentmodel"`
+			Length       int          `json:"length"`
+			Touched      string       `json:"touched"`
+			Redirect     bool         `json:"redirect"`
+			Protection   []Protection `json:"protection"`
+			Categories   []struct {
+				Title string `json:"title"`
+			} `json:"categories"`
+			Revisions []struct {
+				Revision
+				Slots map[string]struct {
+					Content string `json:"content"`
+				} `json:"slots"`
+			} `json:"revisions"`
+		} `json:"pages"`
+	} `json:"query"`
 }

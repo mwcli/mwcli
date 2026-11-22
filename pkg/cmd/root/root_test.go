@@ -25,6 +25,7 @@ type fakeWiki struct {
 	edits      []map[string]string
 	extraToken string
 	rvprop     string
+	prop       string
 }
 
 func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
@@ -51,8 +52,15 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		send(map[string]any{"query": map[string]any{"userinfo": map[string]any{"id": 7, "name": "Jmnote", "rights": []string{"read", "edit", "minoredit"}}}})
 	case p("meta") == "tokens":
 		send(map[string]any{"query": map[string]any{"tokens": map[string]string{p("type") + "token": "tok+\\"}}})
-	case p("prop") == "info|revisions|categories":
-		w.rvprop = p("rvprop")
+	case p("prop") == "categories" && p("pageids") == "7":
+		if p("clcontinue") != "7|B" || p("continue") != "||info|revisions" {
+			send(map[string]any{"error": map[string]string{"code": "badcontinue", "info": "bad continue"}})
+			return
+		}
+		send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"pageid": 7,
+			"categories": []any{map[string]any{"ns": 14, "title": "Category:C"}}}}}})
+	case strings.HasPrefix(p("prop"), "info|revisions"):
+		w.rvprop, w.prop = p("rvprop"), p("prop")
 		if p("titles") == "Missing" {
 			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": "Missing", "missing": true}}}})
 			return
@@ -65,7 +73,7 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			"protection": []any{map[string]string{"type": "edit", "level": "sysop", "expiry": "infinity"}},
 			"categories": []any{map[string]any{"ns": 14, "title": "Category:A"}, map[string]any{"ns": 14, "title": "Category:B"}},
 			"revisions":  []any{rev},
-		}}}})
+		}}}, "continue": map[string]string{"clcontinue": "7|B", "continue": "||info|revisions"}})
 	case p("prop") == "revisions":
 		if p("titles") == "Missing" {
 			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"missing": true}}}})
@@ -337,10 +345,11 @@ func TestPageViewJSON(t *testing.T) {
 		"revision":{"revid":42,"parentid":41,"timestamp":"2026-11-22T00:00:00Z","user":"Jmnote","comment":"fix","size":5},
 		"protection":[{"type":"edit","level":"sysop","expiry":"infinity"}]}`, out)
 	assert.NotContains(t, e.wiki.rvprop, "content")
+	assert.Equal(t, "info|revisions", e.wiki.prop)
 
 	out, _, code = e.run("", "page", "view", "Sandbox", "--api", e.api, "--json", "categories,content", "--jq", ".categories[]")
 	assert.Equal(t, 0, code)
-	assert.Equal(t, "Category:A\nCategory:B\n", out)
+	assert.Equal(t, "Category:A\nCategory:B\nCategory:C\n", out)
 	assert.Contains(t, e.wiki.rvprop, "content")
 
 	out, _, _ = e.run("", "page", "view", "Sandbox", "--api", e.api, "--json", "content", "--jq", ".content")
