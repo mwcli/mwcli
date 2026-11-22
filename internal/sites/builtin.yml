@@ -48,7 +48,7 @@ wikis:
     aliases: [metawikimedia]
   species.wikimedia.org:
     api: https://species.wikimedia.org/w/api.php
-    aliases: [wikispecies]
+    aliases: [species, wikispecies]
   tmbw.net:
     api: https://tmbw.net/wiki/api.php
     aliases: [tmbw]
