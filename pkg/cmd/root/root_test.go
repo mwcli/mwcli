@@ -1252,7 +1252,7 @@ func TestWikiURLAPIQueryPicksWiki(t *testing.T) {
 		q := r.URL.Query()
 		wiki := q.Get("wiki")
 		switch r.URL.Path {
-		case "/index.php":
+		case "/index.php", "/":
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprintf(w, `<link rel="EditURI" type="application/rsd+xml" href="/api.php?wiki=%s&amp;action=rsd"/>`, wiki)
 		case "/api.php":
@@ -1273,8 +1273,9 @@ func TestWikiURLAPIQueryPicksWiki(t *testing.T) {
 	}))
 	defer srv.Close()
 	e := newEnv(t)
-	for _, wiki := range []string{"a", "b"} {
-		page := srv.URL + "/index.php?wiki=" + wiki + "&title=Main_Page"
+	// A page URL, and a root URL without a path whose query picks the wiki.
+	for _, page := range []string{srv.URL + "/index.php?wiki=a&title=Main_Page", srv.URL + "/index.php?wiki=b&title=Main_Page", srv.URL + "?wiki=c", srv.URL + "?wiki=d"} {
+		wiki := page[strings.Index(page, "wiki=")+5 : strings.Index(page, "wiki=")+6]
 		out, stderr, code := e.run("", "page", "view", "Sandbox", "--wiki", page)
 		require.Equal(t, 0, code, stderr)
 		assert.Equal(t, "Wiki "+wiki, out)

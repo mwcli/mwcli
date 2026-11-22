@@ -50,10 +50,10 @@ func Find(target string) (*config.Site, error) {
 			errs = append(errs, err)
 		}
 	}
-	page := u.String()
 	if u.Path == "" {
-		page = base + "/"
+		u.Path = "/"
 	}
+	page := u.String()
 	if found, err := editURI(page); err != nil {
 		errs = append(errs, err)
 	} else if s, err := probe(found); err != nil {
