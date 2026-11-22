@@ -647,3 +647,26 @@ func TestFirstLoginRejectsFarmNameCollision(t *testing.T) {
 	cfg, _ = config.LoadDir(e.dir)
 	assert.NotContains(t, cfg.Sites.Wikis, "unrelated.example.org")
 }
+
+func TestFarmAliasAndAPISelectSameWikiAndPreserveDefault(t *testing.T) {
+	e := newEnv(t)
+	secondAPI := e.base + "/two/api.php"
+	cfg := &config.Config{Dir: e.dir, Sites: config.Sites{Wikis: map[string]*config.Site{}}, Farms: map[string][]config.FarmSite{
+		"multi": {
+			{Host: e.host, Aliases: []string{"first"}, API: e.api},
+			{Host: e.host, Aliases: []string{"second"}, API: secondAPI},
+		},
+	}}
+	require.NoError(t, cfg.Save())
+	_, stderr, code := e.run("", "page", "view", "Main Page", "--wiki", "second", "--api", secondAPI)
+	require.Equal(t, 0, code, stderr)
+
+	_, stderr, code = e.run(goodToken, "auth", "login", "--api", secondAPI, "--with-token")
+	require.Equal(t, 0, code, stderr)
+	cfg, err := config.LoadDir(e.dir)
+	require.NoError(t, err)
+	assert.Equal(t, "second", cfg.Sites.Default)
+	r, err := sites.Lookup(cfg, cfg.Sites.Default)
+	require.NoError(t, err)
+	assert.Equal(t, secondAPI, r.Site.API)
+}

@@ -89,7 +89,7 @@ func (f *Factory) Resolve(cfg *config.Config, wiki, apiURL string) (Target, erro
 			if err != nil {
 				return Target{}, FlagErrorf("%v", err)
 			}
-			if w.Name != r.Name {
+			if w.Site.API != r.Site.API {
 				return Target{}, FlagErrorf("--api %s is not the API of --wiki %s", apiURL, wiki)
 			}
 		}

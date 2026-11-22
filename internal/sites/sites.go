@@ -220,7 +220,15 @@ func ForAPI(cfg *config.Config, api string) (Resolved, error) {
 				endpoint = config.DefaultAPI(wiki.Host)
 			}
 			if endpoint == api {
-				return Resolved{Name: strings.ToLower(wiki.Host), LoginKey: farm, Site: &config.Site{API: endpoint, Aliases: wiki.Aliases}, Kind: Added}, nil
+				name := strings.ToLower(wiki.Host)
+				if farmHasHost(cfg.Farms[farm], wiki.Host) {
+					if len(wiki.Aliases) > 0 {
+						name = wiki.Aliases[0]
+					} else {
+						name = endpoint
+					}
+				}
+				return Resolved{Name: name, LoginKey: farm, Site: &config.Site{API: endpoint, Aliases: wiki.Aliases}, Kind: Added}, nil
 			}
 		}
 	}
@@ -241,6 +249,16 @@ func ForAPI(cfg *config.Config, api string) (Resolved, error) {
 		name = api
 	}
 	return resolved(cfg, name, &config.Site{API: api}, Unregistered), nil
+}
+
+func farmHasHost(wikis []config.FarmSite, host string) bool {
+	count := 0
+	for _, wiki := range wikis {
+		if strings.EqualFold(wiki.Host, host) {
+			count++
+		}
+	}
+	return count > 1
 }
 
 func sortedFarmNames(farms map[string][]config.FarmSite) []string {
