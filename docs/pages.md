@@ -18,7 +18,7 @@ mw page view 'Main Page' --json categories --jq '.categories[]'
 | Flag | Lists | API module |
 | --- | --- | --- |
 | `--prefix TEXT` | pages whose titles start with `TEXT` | `list=allpages` |
-| `--category NAME` | members of the category, with or without `Category:`; a name with a colon, such as a local prefix, is used as the full title | `list=categorymembers` |
+| `--category NAME` | members of the category, with or without `Category:`; a name that already starts with a name of the category namespace, local or an alias, is used as it is | `list=categorymembers` |
 | `-S`, `--search QUERY` | full-text search results | `list=search` |
 | `--links-to TITLE` | pages that link to `TITLE` | `list=backlinks` |
 | `--embeds TITLE` | pages that transclude `TITLE`, such as a template | `list=embeddedin` |

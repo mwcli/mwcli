@@ -45,6 +45,11 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case p("meta") == "siteinfo" && p("siprop") == "namespaces|namespacealiases":
+		send(map[string]any{"query": map[string]any{
+			"namespaces":       map[string]any{"14": map[string]any{"id": 14, "name": "분류", "canonical": "Category"}},
+			"namespacealiases": []any{map[string]any{"id": 14, "alias": "Cat"}},
+		}})
 	case p("meta") == "siteinfo":
 		send(map[string]any{"query": map[string]any{"general": map[string]string{"sitename": "Fake", "generator": "MediaWiki 1.43.1", "server": "//fake.test", "script": "/w/index.php"}}})
 	case p("meta") == "userinfo":
@@ -62,8 +67,12 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		for i := 1; i <= 7; i++ {
 			all = append(all, map[string]any{"pageid": i, "ns": 0, "title": fmt.Sprintf("P%d", i)})
 		}
+		if p("apprefix") == "Nothing" {
+			send(map[string]any{"query": map[string]any{key: []any{}}})
+			return
+		}
 		start := 0
-		if c := r.Form.Get("fakecontinue"); c != "" {
+		if c := r.Form.Get("fakecontinue") + r.Form.Get("sroffset"); c != "" {
 			fmt.Sscan(c, &start)
 		}
 		n := 3
@@ -78,7 +87,12 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		resp := map[string]any{"query": q}
 		if end < len(all) {
-			resp["continue"] = map[string]string{"fakecontinue": fmt.Sprint(end), "continue": "-||"}
+			if key == "search" {
+				// Like MediaWiki, search continues with a number.
+				resp["continue"] = map[string]any{"sroffset": end, "continue": "-||"}
+			} else {
+				resp["continue"] = map[string]any{"fakecontinue": fmt.Sprint(end), "continue": "-||"}
+			}
 		}
 		send(resp)
 	case p("prop") == "categories" && p("pageids") == "7":
@@ -438,14 +452,28 @@ func TestPageList(t *testing.T) {
 	assert.Equal(t, "Category:Living people", e.wiki.lists[0].Get("cmtitle"))
 	assert.Equal(t, "0", e.wiki.lists[0].Get("cmnamespace"))
 
-	e.wiki.lists = nil
-	_, _, code = e.run("", "page", "list", "--api", e.api, "--category", "분류:사람")
-	require.Equal(t, 0, code)
-	assert.Equal(t, "분류:사람", e.wiki.lists[0].Get("cmtitle"))
+	for in, want := range map[string]string{
+		"분류:사람":                  "분류:사람",
+		"category:A":             "category:A",
+		"Cat:A":                  "Cat:A",
+		"CS1 errors: periodical": "Category:CS1 errors: periodical",
+	} {
+		e.wiki.lists = nil
+		_, stderr, code = e.run("", "page", "list", "--api", e.api, "--category", in)
+		require.Equal(t, 0, code, stderr)
+		assert.Equal(t, want, e.wiki.lists[0].Get("cmtitle"), in)
+	}
 
-	out, _, code = e.run("", "page", "list", "--api", e.api, "-S", "jq", "-L", "100", "--json", "title", "--jq", "length")
+	out, _, code = e.run("", "page", "list", "--api", e.api, "--prefix", "Nothing", "--json", "title")
 	require.Equal(t, 0, code)
+	assert.Equal(t, "[]\n", out)
+
+	e.wiki.lists = nil
+	out, stderr, code = e.run("", "page", "list", "--api", e.api, "-S", "jq", "-L", "100", "--json", "title", "--jq", "length")
+	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "7\n", out)
+	require.Len(t, e.wiki.lists, 3)
+	assert.Equal(t, "6", e.wiki.lists[2].Get("sroffset"))
 
 	for flag, list := range map[string]string{"--links-to": "backlinks", "--embeds": "embeddedin", "--prefix": "allpages"} {
 		e.wiki.lists = nil

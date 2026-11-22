@@ -44,7 +44,7 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 				value  string
 			}{
 				{"prefix", api.AllPages, prefix},
-				{"category", api.CategoryMembers, categoryTitle(category)},
+				{"category", api.CategoryMembers, category},
 				{"search", api.Search, search},
 				{"links-to", api.LinksTo, linksTo},
 				{"embeds", api.EmbeddedIn, embeds},
@@ -79,6 +79,11 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if opts.Source == api.CategoryMembers {
+				if opts.Value, err = categoryTitle(c, opts.Value); err != nil {
+					return err
+				}
+			}
 			pages, err := c.ListPages(opts)
 			if err != nil {
 				return err
@@ -98,7 +103,7 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 	}
 	cmdutil.AddTargetFlags(cmd, &wiki, &apiURL)
 	cmd.Flags().StringVar(&prefix, "prefix", "", "List pages whose titles start with `text`")
-	cmd.Flags().StringVar(&category, "category", "", "List the members of a `category`, with or without the Category: prefix")
+	cmd.Flags().StringVar(&category, "category", "", "List the members of a `category`, with or without its namespace prefix")
 	cmd.Flags().StringVarP(&search, "search", "S", "", "List the results of a full-text search for `query`")
 	cmd.Flags().StringVar(&linksTo, "links-to", "", "List pages that link to `title`")
 	cmd.Flags().StringVar(&embeds, "embeds", "", "List pages that transclude `title`, such as a template")
@@ -108,12 +113,25 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 	return cmd
 }
 
-// categoryTitle adds the canonical Category: prefix unless the name already
-// has a namespace prefix, such as a local one.
-func categoryTitle(name string) string {
+// categoryTitle returns the title of a category: name as it is when it starts
+// with a name of the category namespace, local, canonical or an alias, else
+// Category: followed by name, so that a category named "A: B" works without
+// its prefix too.
+func categoryTitle(c *api.Client, name string) (string, error) {
 	name = strings.TrimSpace(name)
-	if name == "" || strings.Contains(name, ":") {
-		return name
+	prefix, _, ok := strings.Cut(name, ":")
+	if !ok {
+		return "Category:" + name, nil
 	}
-	return "Category:" + name
+	names, err := c.NamespaceNames(14)
+	if err != nil {
+		return "", err
+	}
+	norm := func(s string) string { return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(s), "_", " ")) }
+	for _, n := range names {
+		if n != "" && norm(n) == norm(prefix) {
+			return name, nil
+		}
+	}
+	return "Category:" + name, nil
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -75,18 +76,22 @@ func (j *JSONFlags) Write(w io.Writer, v any, tty bool) error {
 		return err
 	}
 	var out any
-	var one map[string]any
-	var many []map[string]any
-	if json.Unmarshal(b, &one) == nil {
-		out = j.pick(one)
-	} else if err := json.Unmarshal(b, &many); err == nil {
+	if t := bytes.TrimSpace(b); len(t) > 0 && t[0] == '[' || string(t) == "null" && isList(v) {
+		var many []map[string]any
+		if err := json.Unmarshal(b, &many); err != nil {
+			return err
+		}
 		list := make([]any, 0, len(many))
 		for _, m := range many {
 			list = append(list, j.pick(m))
 		}
 		out = list
 	} else {
-		return err
+		var one map[string]any
+		if err := json.Unmarshal(b, &one); err != nil {
+			return err
+		}
+		out = j.pick(one)
 	}
 	if j.jq == "" {
 		return writeJSON(w, out, tty)
@@ -119,6 +124,12 @@ func (j *JSONFlags) Write(w io.Writer, v any, tty bool) error {
 			return err
 		}
 	}
+}
+
+// isList reports whether v is a slice or array, so that a nil one prints as [].
+func isList(v any) bool {
+	k := reflect.ValueOf(v).Kind()
+	return k == reflect.Slice || k == reflect.Array
 }
 
 func (j *JSONFlags) pick(all map[string]any) map[string]any {

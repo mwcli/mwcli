@@ -543,7 +543,7 @@ func (c *Client) ListPages(opts ListOptions) ([]PageRef, error) {
 	if opts.Namespace != nil {
 		base.Set(prefix+"namespace", fmt.Sprint(*opts.Namespace))
 	}
-	var pages []PageRef
+	pages := []PageRef{}
 	cont := map[string]string{}
 	for len(pages) < opts.Limit {
 		params := url.Values{}
@@ -555,7 +555,7 @@ func (c *Client) ListPages(opts ListOptions) ([]PageRef, error) {
 			params.Set(k, v)
 		}
 		var result struct {
-			Continue map[string]string          `json:"continue"`
+			Continue map[string]json.RawMessage `json:"continue"`
 			Query    map[string]json.RawMessage `json:"query"`
 		}
 		if err := c.request(http.MethodGet, params, &result); err != nil {
@@ -571,10 +571,52 @@ func (c *Client) ListPages(opts ListOptions) ([]PageRef, error) {
 		if len(result.Continue) == 0 {
 			break
 		}
-		cont = result.Continue
+		// Continuation values are strings or, like sroffset, numbers.
+		cont = map[string]string{}
+		for k, raw := range result.Continue {
+			var str string
+			if json.Unmarshal(raw, &str) != nil {
+				str = string(raw)
+			}
+			cont[k] = str
+		}
 	}
 	if len(pages) > opts.Limit {
 		pages = pages[:opts.Limit]
 	}
 	return pages, nil
+}
+
+// NamespaceNames returns the names a namespace can be written with: the local
+// name, the canonical name and the aliases.
+func (c *Client) NamespaceNames(id int) ([]string, error) {
+	var result struct {
+		Query struct {
+			Namespaces map[string]struct {
+				ID        int    `json:"id"`
+				Name      string `json:"name"`
+				Canonical string `json:"canonical"`
+			} `json:"namespaces"`
+			Aliases []struct {
+				ID    int    `json:"id"`
+				Alias string `json:"alias"`
+			} `json:"namespacealiases"`
+		} `json:"query"`
+	}
+	params := url.Values{"action": {"query"}, "meta": {"siteinfo"}, "siprop": {"namespaces|namespacealiases"}}
+	if err := c.request(http.MethodGet, params, &result); err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, ns := range result.Query.Namespaces {
+		if ns.ID == id {
+			names = append(names, ns.Name, ns.Canonical)
+		}
+	}
+	for _, a := range result.Query.Aliases {
+		if a.ID == id {
+			names = append(names, a.Alias)
+		}
+	}
+	return names, nil
 }
