@@ -92,5 +92,6 @@ func (s *IOStreams) color(code, text string) string {
 
 func (s *IOStreams) SuccessIcon() string   { return s.color("32", "✓") }
 func (s *IOStreams) FailureIcon() string   { return s.color("31", "X") }
+func (s *IOStreams) WarningIcon() string   { return s.color("33", "!") }
 func (s *IOStreams) Bold(t string) string  { return s.color("1", t) }
 func (s *IOStreams) Muted(t string) string { return s.color("90", t) }
