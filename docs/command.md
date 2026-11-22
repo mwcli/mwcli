@@ -65,3 +65,10 @@ wiki.example.org:
   "checked": "2026-11-21T10:00:00Z"
 }
 ```
+
+## Exit status
+
+- 0: success
+- 1: the command failed, or the API reported an error
+- 2: wrong usage
+- 4: a login is required
