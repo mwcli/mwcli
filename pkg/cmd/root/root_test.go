@@ -526,7 +526,7 @@ func TestPageViewEdit(t *testing.T) {
 	assert.Equal(t, 2, code)
 }
 
-func TestApi(t *testing.T) {
+func TestAPI(t *testing.T) {
 	e := newEnv(t)
 	e.login()
 	out, _, code := e.run("", "api", "action=query", "-f", "meta=userinfo")
@@ -1059,7 +1059,7 @@ func TestOAuth1Login(t *testing.T) {
 	assert.Contains(t, out, "The OAuth 1.0a keys are invalid")
 }
 
-func TestApiPaginate(t *testing.T) {
+func TestAPIPaginate(t *testing.T) {
 	e := newEnv(t)
 	out, stderr, code := e.run("", "api", "--wiki", e.api, "action=query", "list=allpages", "--paginate", "--jq", ".query.allpages[].title")
 	require.Equal(t, 0, code, stderr)
@@ -1096,7 +1096,7 @@ func TestApiPaginate(t *testing.T) {
 
 // A continue value that a later response drops is not sent again: each
 // request is the original one with the last continue values.
-func TestApiPaginateResetsContinue(t *testing.T) {
+func TestAPIPaginateResetsContinue(t *testing.T) {
 	var got []url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -1125,7 +1125,7 @@ func TestApiPaginateResetsContinue(t *testing.T) {
 
 // A continue value replaces a start value of the same name in the API URL, and
 // --jq keeps integers beyond 2^53 exact.
-func TestApiPaginateURLQueryAndBigNumbers(t *testing.T) {
+func TestAPIPaginateURLQueryAndBigNumbers(t *testing.T) {
 	var got []url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = append(got, r.URL.Query())

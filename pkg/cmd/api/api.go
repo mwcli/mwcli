@@ -29,8 +29,8 @@ type options struct {
 	jq        string
 }
 
-// NewCmdApi returns `mw api`.
-func NewCmdApi(f *cmdutil.Factory) *cobra.Command {
+// NewCmdAPI returns `mw api`.
+func NewCmdAPI(f *cmdutil.Factory) *cobra.Command {
 	opts := &options{}
 	cmd := &cobra.Command{
 		Use:   "api [<key>=<value>...]",
@@ -66,7 +66,7 @@ func NewCmdApi(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 	cmdutil.AddTargetFlags(cmd, &opts.wiki)
-	cmd.Flags().StringVarP(&opts.method, "method", "X", "GET", "The HTTP method for the request")
+	cmd.Flags().StringVarP(&opts.method, "method", "X", "GET", "The HTTP `method` for the request")
 	cmd.Flags().StringArrayVarP(&opts.rawFields, "raw-field", "f", nil, "Add a string parameter in `key=value` format")
 	cmd.Flags().StringArrayVarP(&opts.fields, "field", "F", nil, "Add a parameter in `key=value` format; @file reads the value from a file")
 	cmd.Flags().BoolVar(&opts.paginate, "paginate", false, "Make additional requests following continue until the result is complete")

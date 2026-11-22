@@ -15,9 +15,13 @@ bin/mw:
 test:
 	go test ./...
 
+# staticcheck ST1003 checks Go naming, such as ID and API in capitals.
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.2
+
 lint:
 	@test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; }
 	go vet ./...
+	go run $(STATICCHECK) -checks ST1003 ./...
 
 install: bin/mw
 	install -d $(DESTDIR)$(bindir)

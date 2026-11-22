@@ -38,7 +38,7 @@ func NewCmdRoot(f *cmdutil.Factory) *cobra.Command {
 	cmd.AddCommand(authCmd.NewCmdAuth(f))
 	cmd.AddCommand(pageCmd.NewCmdPage(f))
 	cmd.AddCommand(siteCmd.NewCmdSite(f))
-	cmd.AddCommand(apiCmd.NewCmdApi(f))
+	cmd.AddCommand(apiCmd.NewCmdAPI(f))
 	cmd.AddCommand(versionCmd.NewCmdVersion(f))
 	wrapArgs(cmd)
 	return cmd

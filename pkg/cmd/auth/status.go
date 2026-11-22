@@ -39,7 +39,7 @@ func newCmdStatus(f *cmdutil.Factory) *cobra.Command {
 			return statusRun(cmd.Context(), f, opts)
 		},
 	}
-	cmdutil.AddWikiFlag(cmd, &opts.wiki, "Check only this wiki")
+	cmdutil.AddWikiFlag(cmd, &opts.wiki, "Check only this `wiki`")
 	cmd.Flags().BoolVarP(&opts.active, "active", "a", false, "Display the active account only")
 	cmd.Flags().BoolVarP(&opts.showToken, "show-token", "t", false, "Display the auth token")
 	return cmd

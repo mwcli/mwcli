@@ -56,7 +56,7 @@ func newCmdLogout(f *cmdutil.Factory) *cobra.Command {
 			return nil
 		},
 	}
-	cmdutil.AddWikiFlag(cmd, &wiki, "The wiki to log out of")
-	cmd.Flags().StringVarP(&user, "user", "u", "", "The account to log out of")
+	cmdutil.AddWikiFlag(cmd, &wiki, "The `wiki` to log out of")
+	cmd.Flags().StringVarP(&user, "user", "u", "", "The `account` to log out of")
 	return cmd
 }

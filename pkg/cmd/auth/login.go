@@ -84,7 +84,7 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.withToken, "with-token", false, "Read an OAuth 2 access token, or the four keys with --oauth1, from standard input")
 	cmd.Flags().BoolVar(&opts.oauth1, "oauth1", false, "Log in with an owner-only OAuth 1.0a consumer")
 	cmd.Flags().StringVar(&opts.domain, "domain", "", "The authentication `domain` of a wiki that logs in through LDAP, with --username")
-	cmd.Flags().StringVarP(&opts.username, "username", "u", "", "Log in with this username and a password, or a bot password login name such as Alice@mybot")
+	cmd.Flags().StringVarP(&opts.username, "username", "u", "", "Log in with this `username` and a password, or a bot password login name such as Alice@mybot")
 	cmd.Flags().BoolVar(&opts.botPassword, "bot-password", false, "Treat --username as a bot password login name, for wikis whose delimiter is not @")
 	return cmd
 }
