@@ -10,7 +10,7 @@ On Windows:
 winget install mwcli.mwcli
 ```
 
-On macOS and Linux, download an archive from the [releases](https://github.com/mwcli/mwcli/releases) page, or install with Go:
+On Linux and macOS, download an archive from the [releases](https://github.com/mwcli/mwcli/releases) page, or install with Go:
 
 ```sh
 go install github.com/mwcli/mwcli/cmd/mw@latest
