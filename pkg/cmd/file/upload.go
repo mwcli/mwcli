@@ -120,12 +120,14 @@ func newCmdUpload(f *cmdutil.Factory) *cobra.Command {
 				}
 			}
 			failed := false
+			// chunk keeps the smaller parts a server asked for, for the next files.
+			var chunk int64
 			for _, u := range uploads {
 				fh, err := os.Open(u.path)
 				if err != nil {
 					return err
 				}
-				opts := api.UploadOptions{Comment: summary, Text: text, IgnoreWarnings: ignoreWarnings}
+				opts := api.UploadOptions{Comment: summary, Text: text, IgnoreWarnings: ignoreWarnings, ChunkSize: chunk}
 				// open is true while a progress line waits for its line break.
 				open := false
 				if ios.IsStdoutTTY() && u.size > api.DefaultChunkSize {
@@ -136,6 +138,14 @@ func newCmdUpload(f *cmdutil.Factory) *cobra.Command {
 							fmt.Fprintln(ios.ErrOut)
 						}
 					}
+				}
+				opts.Smaller = func(smaller int64) {
+					chunk = smaller
+					if open {
+						fmt.Fprintln(ios.ErrOut)
+						open = false
+					}
+					fmt.Fprintf(ios.ErrOut, "The server refused a request that large; sending %s in parts of %s\n", u.name, sizeText(smaller))
 				}
 				res, err := c.Upload(ctx, u.name, fh, u.size, opts)
 				fh.Close()
@@ -173,4 +183,15 @@ func newCmdUpload(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().StringVar(&textFile, "text-file", "", "Read the description page wikitext from `file` (use \"-\" to read from standard input)")
 	cmd.Flags().BoolVar(&ignoreWarnings, "ignore-warnings", false, "Upload even when the wiki warns, such as about an existing file")
 	return cmd
+}
+
+// sizeText shows a size in bytes as KiB or MiB.
+func sizeText(n int64) string {
+	if n >= 1<<20 && n%(1<<20) == 0 {
+		return fmt.Sprintf("%d MiB", n>>20)
+	}
+	if n >= 1<<20 {
+		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+	}
+	return fmt.Sprintf("%d KiB", n>>10)
 }
