@@ -63,7 +63,7 @@ wikis:
     aliases: [mediawiki, mediawiki.org, mediawikiwiki, mw]
   www.shoutwiki.com:
     api: https://www.shoutwiki.com/w/api.php
-    aliases: [shoutwiki]
+    aliases: [shout, shoutwiki]
   www.wikidata.org:
     api: https://www.wikidata.org/w/api.php
     aliases: [wikidata.org, wikidata]
