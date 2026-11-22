@@ -21,7 +21,9 @@ mw
 │   ├── diff    [--wiki WIKI] [-w] [--color WHEN] REV|TITLE [REV|TITLE]
 │   ├── download [--wiki WIKI] [-D DIR] [--clobber | --skip-existing] (TITLE... | - | --prefix TEXT | --category NAME | -S QUERY | --links-to TITLE | --embeds TITLE) [-n ID] [-L N]
 │   ├── create  [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] [--dry-run] (--text WIKITEXT | -F FILE) TITLE
-│   └── edit    [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] [--baserevid ID] [--dry-run] (--text WIKITEXT | -F FILE) TITLE
+│   ├── edit    [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] [--baserevid ID] [--dry-run] (--text WIKITEXT | -F FILE) TITLE
+│   ├── move    [--wiki WIKI] [--reason TEXT] [--move-talk] [--move-subpages] [--no-redirect] TITLE NEW-TITLE
+│   └── delete  [--wiki WIKI] [--reason TEXT] [--yes] TITLE
 ├── user
 │   └── contribs [--wiki WIKI] [-n ID] [-L N] [-w] [--json FIELDS [-q EXPR]] USER
 ├── browse      [--wiki WIKI] [-n] [TITLE]

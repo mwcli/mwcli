@@ -20,9 +20,9 @@ import (
 func NewCmdPage(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "page <command>",
-		Short: "Read, list, download, create and edit wiki pages and their history",
+		Short: "Read, list, download, create, edit, move and delete wiki pages",
 	}
-	cmd.AddCommand(newCmdView(f), newCmdList(f), newCmdHistory(f), newCmdDiff(f), newCmdCreate(f), newCmdEdit(f), newCmdDownload(f))
+	cmd.AddCommand(newCmdView(f), newCmdList(f), newCmdHistory(f), newCmdDiff(f), newCmdCreate(f), newCmdEdit(f), newCmdMove(f), newCmdDelete(f), newCmdDownload(f))
 	return cmd
 }
 

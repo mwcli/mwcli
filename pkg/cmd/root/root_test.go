@@ -38,6 +38,8 @@ type fakeWiki struct {
 	created   map[string]bool
 	// siteinfos counts general siteinfo requests, which discovery makes.
 	siteinfos int
+	// writes are the forms of move and delete requests.
+	writes []url.Values
 	// batches are the numbers of titles of each request for many pages.
 	batches []int
 	// siprops are the siprop parameters of general siteinfo requests.
@@ -378,6 +380,32 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"revisions": []any{map[string]any{"slots": map[string]any{"main": map[string]string{"content": "Hello"}}}}}}}})
+	case p("action") == "move" || p("action") == "delete":
+		w.writes = append(w.writes, r.Form)
+		if p("assert") != "user" || !authed {
+			send(map[string]any{"error": map[string]string{"code": "assertuserfailed", "info": "not logged in"}})
+			return
+		}
+		title := p("from") + p("title")
+		switch {
+		case strings.HasPrefix(title, "Missing"):
+			send(map[string]any{"error": map[string]string{"code": "missingtitle", "info": "The page you specified doesn't exist."}})
+		case p("to") == "Taken":
+			send(map[string]any{"error": map[string]string{"code": "articleexists", "info": "A page of that name already exists."}})
+		case p("action") == "move" && p("from") == p("to"):
+			send(map[string]any{"error": map[string]string{"code": "selfmove", "info": "The title is the same."}})
+		case p("action") == "delete":
+			send(map[string]any{"delete": map[string]any{"title": title, "reason": p("reason"), "logid": 9}})
+		default:
+			m := map[string]any{"from": p("from"), "to": p("to"), "reason": p("reason"), "redirectcreated": p("noredirect") == ""}
+			if p("movetalk") != "" {
+				m["talkfrom"], m["talkto"] = "Talk:"+p("from"), "Talk:"+p("to")
+			}
+			if p("movesubpages") != "" {
+				m["subpages"] = []any{map[string]string{"from": p("from") + "/A", "to": p("to") + "/A"}}
+			}
+			send(map[string]any{"move": m})
+		}
 	case p("action") == "edit":
 		if p("assert") != "user" || !authed {
 			send(map[string]any{"error": map[string]string{"code": "assertuserfailed", "info": "not logged in"}})
@@ -1859,4 +1887,79 @@ func TestPageDownload(t *testing.T) {
 		_, _, code = e.run("", append([]string{"page", "download", "--wiki", e.api, "-D", dir}, args...)...)
 		assert.Equal(t, 2, code, args)
 	}
+}
+
+func TestPageMove(t *testing.T) {
+	e := newEnv(t)
+	_, stderr, code := e.run("", "page", "move", "--wiki", e.api, "Old", "New")
+	assert.Equal(t, 4, code)
+	assert.Contains(t, stderr, "not logged in")
+	assert.Empty(t, e.wiki.writes)
+
+	e.login()
+	_, stderr, code = e.run("", "page", "move", "--wiki", e.api, "Old", "New", "--reason", "Better name")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "✓ Moved Old to New on "+e.host+"\n", stderr)
+	w := e.wiki.writes[len(e.wiki.writes)-1]
+	assert.Equal(t, "Better name", w.Get("reason"))
+	assert.Equal(t, "tok+\\", w.Get("token"))
+	for _, k := range []string{"movetalk", "movesubpages", "noredirect"} {
+		assert.False(t, w.Has(k), k)
+	}
+
+	_, stderr, code = e.run("", "page", "move", "--wiki", e.api, "Old", "New", "--move-talk", "--move-subpages", "--no-redirect")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "  Moved Talk:Old to Talk:New\n")
+	assert.Contains(t, stderr, "  Moved Old/A to New/A\n")
+	assert.Contains(t, stderr, "  Left no redirect at Old\n")
+	w = e.wiki.writes[len(e.wiki.writes)-1]
+	for _, k := range []string{"movetalk", "movesubpages", "noredirect"} {
+		assert.Equal(t, "1", w.Get(k), k)
+	}
+
+	for _, c := range []struct {
+		from, to, want string
+	}{
+		{"Missing", "New", "page does not exist: Missing on " + e.host},
+		{"Old", "Taken", "page already exists: Taken on " + e.host + "; choose another title"},
+		{"Same", "Same", "the new title is the same as the old one: Same on " + e.host},
+	} {
+		_, stderr, code = e.run("", "page", "move", "--wiki", e.api, c.from, c.to)
+		assert.Equal(t, 1, code, c.from)
+		assert.Contains(t, stderr, c.want)
+	}
+	_, _, code = e.run("", "page", "move", "--wiki", e.api, "Old")
+	assert.Equal(t, 2, code)
+	_, _, code = e.run("", "page", "move", "--wiki", e.api, "Old", " ")
+	assert.Equal(t, 2, code)
+}
+
+func TestPageDelete(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	_, stderr, code := e.run("", "page", "delete", "--wiki", e.api, "Old page")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--yes required when not running interactively")
+	assert.Empty(t, e.wiki.writes)
+
+	_, stderr, code = e.run("", "page", "delete", "--wiki", e.api, "Old page", "--yes", "--reason", "Spam")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "✓ Deleted Old page on "+e.host+"\n", stderr)
+	assert.Equal(t, "Spam", e.wiki.writes[0].Get("reason"))
+
+	e.interactive = true
+	_, stderr, code = e.run("Old pag\n", "page", "delete", "--wiki", e.api, "Old page")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "Type Old page to delete it from "+e.host+": ")
+	assert.Contains(t, stderr, "the title did not match; nothing was deleted")
+	assert.Len(t, e.wiki.writes, 1)
+
+	_, stderr, code = e.run("Old page\n", "page", "delete", "--wiki", e.api, "Old page")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "✓ Deleted Old page on "+e.host)
+	e.interactive = false
+
+	_, stderr, code = e.run("", "page", "delete", "--wiki", e.api, "Missing", "--yes")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "page does not exist: Missing on "+e.host)
 }
