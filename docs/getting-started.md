@@ -4,16 +4,16 @@ This guide takes you from installing mw to editing a page on your wiki. It uses 
 
 ## 1. Install mw
 
-On Windows:
-
-```sh
-winget install mwcli.mwcli
-```
-
 On Linux and macOS, download an archive from the [releases](https://github.com/mwcli/mwcli/releases) page, or install with Go:
 
 ```sh
 go install github.com/mwcli/mwcli/cmd/mw@latest
+```
+
+On Windows:
+
+```sh
+winget install mwcli.mwcli
 ```
 
 Check that it runs:
