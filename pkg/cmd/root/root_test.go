@@ -150,6 +150,34 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			"categories": []any{map[string]any{"ns": 14, "title": "Category:A"}, map[string]any{"ns": 14, "title": "Category:B"}},
 			"revisions":  []any{rev},
 		}}}, "continue": map[string]string{"clcontinue": "7|B", "continue": "||info|revisions"}})
+	case p("prop") == "revisions" && p("rvprop") == "ids|timestamp|user|content":
+		// Diff: Sandbox has revisions 201 and 202; 203 of Hidden has its text hidden.
+		revs := map[int]map[string]any{
+			201: {"title": "Sandbox", "parentid": 0, "content": "a\nb\nc"},
+			202: {"title": "Sandbox", "parentid": 201, "content": "a\nB\nc"},
+			203: {"title": "Hidden", "parentid": 202, "hidden": true},
+		}
+		id := 0
+		switch {
+		case p("revids") != "":
+			fmt.Sscan(p("revids"), &id)
+			if revs[id] == nil {
+				send(map[string]any{"query": map[string]any{"badrevids": map[string]any{p("revids"): map[string]any{"revid": id, "missing": true}}}})
+				return
+			}
+		case p("titles") == "Sandbox":
+			id = 202
+		default:
+			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": p("titles"), "missing": true}}}})
+			return
+		}
+		r := revs[id]
+		slot := map[string]any{"content": r["content"]}
+		if r["hidden"] == true {
+			slot = map[string]any{"texthidden": true}
+		}
+		send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": r["title"], "revisions": []any{map[string]any{
+			"revid": id, "parentid": r["parentid"], "timestamp": "2026-11-22T00:00:00Z", "user": "Jmnote", "slots": map[string]any{"main": slot}}}}}}})
 	case p("prop") == "revisions" && strings.Contains(p("rvprop"), "flags"):
 		// History: revisions 105 down to 101, two per response.
 		if p("titles") == "Missing" {
@@ -1043,4 +1071,54 @@ func TestPageHistory(t *testing.T) {
 	_, stderr, code = e.run("", "page", "history", "Sandbox", "--api", e.api, "-L", "0")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "invalid value for --limit")
+}
+
+func TestPageDiff(t *testing.T) {
+	e := newEnv(t)
+	want := "--- Sandbox\trevision 201 (2026-11-22T00:00:00Z, Jmnote)\n" +
+		"+++ Sandbox\trevision 202 (2026-11-22T00:00:00Z, Jmnote)\n" +
+		"@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n"
+	for _, args := range [][]string{{"Sandbox"}, {"202"}, {"201", "202"}, {"201", "Sandbox"}} {
+		out, stderr, code := e.run("", append([]string{"page", "diff", "--api", e.api}, args...)...)
+		require.Equal(t, 0, code, stderr)
+		assert.Equal(t, want, out, args)
+	}
+
+	// The first revision is compared with empty text.
+	out, stderr, code := e.run("", "page", "diff", "--api", e.api, "201")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "--- /dev/null\n+++ Sandbox\trevision 201 (2026-11-22T00:00:00Z, Jmnote)\n@@ -0,0 +1,3 @@\n+a\n+b\n+c\n", out)
+
+	out, stderr, code = e.run("", "page", "diff", "--api", e.api, "202", "202")
+	require.Equal(t, 0, code, stderr)
+	assert.Empty(t, out)
+
+	out, _, _ = e.run("", "page", "diff", "--api", e.api, "--color", "always", "Sandbox")
+	assert.Contains(t, out, "\x1b[31m-b\x1b[0m\n\x1b[32m+B\x1b[0m\n")
+	assert.Contains(t, out, "\x1b[36m@@ -1,3 +1,3 @@\x1b[0m")
+	e.stdoutTTY = true
+	t.Setenv("NO_COLOR", "1")
+	out, _, _ = e.run("", "page", "diff", "--api", e.api, "Sandbox")
+	assert.Equal(t, want, out)
+	e.stdoutTTY = false
+
+	_, stderr, code = e.run("", "page", "diff", "--api", e.api, "Sandbox", "--web")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, e.browsed, "Special%3ADiff%2F201%2F202")
+
+	for _, c := range []struct {
+		args []string
+		code int
+		want string
+	}{
+		{[]string{"999"}, 1, "revision does not exist: revision 999"},
+		{[]string{"Nowhere"}, 1, "page does not exist: Nowhere"},
+		{[]string{"203"}, 1, "the text of revision 203 of Hidden is hidden or missing"},
+		{[]string{"Sandbox", "--color", "sometimes"}, 2, "invalid value for --color"},
+		{[]string{"1", "2", "3"}, 2, "accepts between 1 and 2 arg(s)"},
+	} {
+		_, stderr, code := e.run("", append([]string{"page", "diff", "--api", e.api}, c.args...)...)
+		assert.Equal(t, c.code, code, c.args)
+		assert.Contains(t, stderr, c.want, c.args)
+	}
 }

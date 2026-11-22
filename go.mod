@@ -4,6 +4,7 @@ go 1.27.0
 
 require (
 	github.com/MakeNowJust/heredoc v1.0.0
+	github.com/aymanbagabas/go-udiff v0.4.1
 	github.com/itchyny/gojq v0.12.19
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/mattn/go-isatty v0.0.24

@@ -41,6 +41,21 @@ mw page history 'Main Page' -L 5
 mw page history 'Main Page' --json revid --jq '.[0].revid'
 ```
 
+## Comparing revisions
+
+`mw page diff` prints the changes between two revisions of wikitext as a unified diff, which tools such as `patch` and editors understand. A number is a revision ID; anything else is a page title, meaning its latest revision.
+
+- `mw page diff A`: the changes made by revision `A`, or by the latest edit of page `A`, from the revision before it. A page's first revision is compared with empty text (`/dev/null`).
+- `mw page diff A B`: from `A` to `B`, which may be revisions of different pages.
+
+Each side is labeled with the title and, after a tab, the revision, its time and user. Identical revisions print nothing. On a terminal, removed lines are red and added lines green; `--color always|never|auto` overrides this, and `NO_COLOR` turns it off. `--web` opens the wiki's own diff page (`Special:Diff`) instead.
+
+```sh
+mw page diff 'Main Page'
+mw page diff 1001 1042
+mw page diff "$(mw page history 'Main Page' -L 10 --json revid --jq '.[9].revid')" 'Main Page'
+```
+
 ## Creating and editing pages
 
 `mw page edit TITLE` replaces the wikitext of an existing page from `--text` or `--file` (`-` for standard input). `mw page create TITLE` makes a new page the same way. Each refuses the other's job, so a typo in a title does not create a page and a new page does not overwrite one made meanwhile; the error says to run the same command with the other one.

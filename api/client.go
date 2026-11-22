@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -831,4 +832,81 @@ func (c *Client) History(title string, limit int) ([]HistoryEntry, error) {
 		}
 	}
 	return entries, nil
+}
+
+// RevisionText is one revision with its wikitext.
+type RevisionText struct {
+	Title    string
+	RevID    int
+	ParentID int
+	Timestamp,
+	User,
+	Content string
+}
+
+// ErrMissingRevision means no revision has the ID.
+var ErrMissingRevision = errors.New("revision does not exist")
+
+// RevisionByID returns a revision and its wikitext.
+func (c *Client) RevisionByID(revid int) (*RevisionText, error) {
+	return c.revisionText(url.Values{"revids": {strconv.Itoa(revid)}}, fmt.Sprint("revision ", revid))
+}
+
+// LatestRevision returns the latest revision of title and its wikitext.
+func (c *Client) LatestRevision(title string) (*RevisionText, error) {
+	return c.revisionText(url.Values{"titles": {title}}, title)
+}
+
+func (c *Client) revisionText(params url.Values, what string) (*RevisionText, error) {
+	params.Set("action", "query")
+	params.Set("prop", "revisions")
+	params.Set("rvprop", "ids|timestamp|user|content")
+	params.Set("rvslots", "main")
+	var result struct {
+		Query struct {
+			// badrevids is an object keyed by revision ID, also in formatversion 2.
+			BadRevIDs map[string]json.RawMessage `json:"badrevids"`
+			Pages     []struct {
+				Title     string `json:"title"`
+				Missing   bool   `json:"missing"`
+				Invalid   bool   `json:"invalid"`
+				Revisions []struct {
+					RevID      int    `json:"revid"`
+					ParentID   int    `json:"parentid"`
+					Timestamp  string `json:"timestamp"`
+					User       string `json:"user"`
+					TextHidden bool   `json:"texthidden"`
+					Slots      map[string]struct {
+						Content     string `json:"content"`
+						TextHidden  bool   `json:"texthidden"`
+						TextMissing bool   `json:"textmissing"`
+					} `json:"slots"`
+				} `json:"revisions"`
+			} `json:"pages"`
+		} `json:"query"`
+	}
+	if err := c.request(http.MethodGet, params, &result); err != nil {
+		return nil, err
+	}
+	if len(result.Query.BadRevIDs) > 0 {
+		return nil, fmt.Errorf("%w: %s", ErrMissingRevision, what)
+	}
+	if len(result.Query.Pages) != 1 {
+		return nil, fmt.Errorf("%s not found", what)
+	}
+	p := result.Query.Pages[0]
+	switch {
+	case p.Invalid:
+		return nil, fmt.Errorf("invalid title %q", what)
+	case p.Missing && len(p.Revisions) == 0:
+		return nil, fmt.Errorf("%w: %s", ErrMissingPage, what)
+	case len(p.Revisions) == 0:
+		return nil, fmt.Errorf("%s has no readable revision", what)
+	}
+	r := p.Revisions[0]
+	main := r.Slots["main"]
+	if r.TextHidden || main.TextHidden || main.TextMissing {
+		return nil, fmt.Errorf("the text of revision %d of %s is hidden or missing", r.RevID, p.Title)
+	}
+	return &RevisionText{Title: p.Title, RevID: r.RevID, ParentID: r.ParentID, Timestamp: r.Timestamp, User: r.User, Content: main.Content}, nil
 }
