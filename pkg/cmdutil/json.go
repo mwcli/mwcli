@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"reflect"
 	"slices"
@@ -122,7 +123,7 @@ func DecodeJSON(b []byte) (any, error) {
 func normalizeNumbers(v any) any {
 	switch v := v.(type) {
 	case json.Number:
-		if i, err := v.Int64(); err == nil {
+		if i, err := v.Int64(); err == nil && i >= math.MinInt && i <= math.MaxInt {
 			return int(i)
 		}
 		if n, ok := new(big.Int).SetString(v.String(), 10); ok {

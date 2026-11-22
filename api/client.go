@@ -770,3 +770,65 @@ func (c *Client) BotLogin(name, password string) error {
 	}
 	return nil
 }
+
+// HistoryEntry is one revision in the history of a page. Field names follow
+// the MediaWiki API; a hidden user or comment is empty.
+type HistoryEntry struct {
+	Revision
+	Minor bool     `json:"minor"`
+	Tags  []string `json:"tags"`
+}
+
+// History returns up to limit revisions of title, newest first, following
+// continuation across requests.
+func (c *Client) History(title string, limit int) ([]HistoryEntry, error) {
+	entries := []HistoryEntry{}
+	cont := map[string]string{}
+	for len(entries) < limit {
+		params := url.Values{
+			"action": {"query"}, "prop": {"revisions"}, "titles": {title},
+			"rvprop":  {"ids|timestamp|user|comment|size|flags|tags"},
+			"rvlimit": {fmt.Sprint(min(limit-len(entries), 500))},
+		}
+		for k, v := range cont {
+			params.Set(k, v)
+		}
+		var result struct {
+			Continue map[string]string `json:"continue"`
+			Query    struct {
+				Pages []struct {
+					Missing   bool           `json:"missing"`
+					Invalid   bool           `json:"invalid"`
+					Revisions []HistoryEntry `json:"revisions"`
+				} `json:"pages"`
+			} `json:"query"`
+		}
+		if err := c.request(http.MethodGet, params, &result); err != nil {
+			return nil, err
+		}
+		if len(result.Query.Pages) != 1 {
+			return nil, fmt.Errorf("page %q not found", title)
+		}
+		p := result.Query.Pages[0]
+		switch {
+		case p.Invalid:
+			return nil, fmt.Errorf("invalid title %q", title)
+		case p.Missing:
+			return nil, fmt.Errorf("%w: %s", ErrMissingPage, title)
+		}
+		entries = append(entries, p.Revisions...)
+		if len(result.Continue) == 0 {
+			break
+		}
+		cont = result.Continue
+	}
+	if len(entries) > limit {
+		entries = entries[:limit]
+	}
+	for i := range entries {
+		if entries[i].Tags == nil {
+			entries[i].Tags = []string{}
+		}
+	}
+	return entries, nil
+}
