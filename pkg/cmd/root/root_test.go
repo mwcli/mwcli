@@ -360,6 +360,14 @@ func TestPageViewJSON(t *testing.T) {
 	assert.Contains(t, stderr, "Specify one or more comma-separated fields")
 	assert.Contains(t, stderr, "categories")
 
+	for _, args := range [][]string{{"--json="}, {"--json", ""}, {"--web", "--json="}} {
+		out, stderr, code = e.run("", append([]string{"page", "view", "Sandbox", "--api", e.api}, args...)...)
+		assert.Equal(t, 2, code, args)
+		assert.Empty(t, out, args)
+		assert.Contains(t, stderr, "Specify one or more comma-separated fields", args)
+	}
+	assert.Empty(t, e.browsed)
+
 	_, stderr, code = e.run("", "page", "view", "Sandbox", "--api", e.api, "--json", "nope")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, `Unknown JSON field: "nope"`)

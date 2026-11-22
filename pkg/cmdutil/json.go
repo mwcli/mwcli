@@ -17,11 +17,12 @@ type JSONFlags struct {
 	fields []string
 	jq     string
 	known  []string
+	cmd    *cobra.Command
 }
 
 // AddJSONFlags adds --json FIELDS and --jq EXPR to cmd; known lists the fields.
 func AddJSONFlags(cmd *cobra.Command, known []string) *JSONFlags {
-	j := &JSONFlags{known: known}
+	j := &JSONFlags{known: known, cmd: cmd}
 	cmd.Flags().StringSliceVar(&j.fields, "json", nil, "Output JSON with the specified `fields`")
 	cmd.Flags().StringVarP(&j.jq, "jq", "q", "", "Filter JSON output using a jq `expression`")
 	// A bare --json lists the fields instead of failing on the missing value.
@@ -35,8 +36,9 @@ func AddJSONFlags(cmd *cobra.Command, known []string) *JSONFlags {
 	return j
 }
 
-// Enabled reports whether JSON output was asked for.
-func (j *JSONFlags) Enabled() bool { return len(j.fields) > 0 }
+// Enabled reports whether JSON output was asked for, even with no fields
+// (--json=""), so that an empty field list is an error and not plain output.
+func (j *JSONFlags) Enabled() bool { return j.cmd.Flags().Changed("json") }
 
 // Has reports whether field was asked for.
 func (j *JSONFlags) Has(field string) bool { return slices.Contains(j.fields, field) }
@@ -48,6 +50,9 @@ func (j *JSONFlags) Validate() error {
 	}
 	if !j.Enabled() {
 		return nil
+	}
+	if len(j.fields) == 0 {
+		return j.fieldsError()
 	}
 	for _, f := range j.fields {
 		if !slices.Contains(j.known, f) {
