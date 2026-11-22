@@ -23,7 +23,7 @@ mw page view 'Main Page' --json categories --jq '.categories[]'
 
 | Flag | Lists | API module |
 | --- | --- | --- |
-| `--prefix TEXT` | pages whose titles start with `TEXT`, without the namespace; use `--namespace` to select another namespace | `list=allpages` |
+| `--prefix TEXT` | pages whose titles start with `TEXT`; a `TEXT` that starts with a namespace name, local, canonical or an alias, such as `Help:Edit`, lists that namespace (a different `--namespace` is an error), and any other `TEXT` is in the main namespace or the one `--namespace` selects | `list=allpages` |
 | `--category NAME` | members of the category, with or without `Category:`; a name that already starts with a name of the category namespace, local or an alias, is used as it is | `list=categorymembers` |
 | `-S`, `--search QUERY` | full-text search results | `list=search` |
 | `--links-to TITLE` | pages that link to `TITLE` | `list=backlinks` |
@@ -33,6 +33,7 @@ mw page view 'Main Page' --json categories --jq '.categories[]'
 
 ```sh
 mw page list --category 'Living people' -L 100
+mw page list --prefix 'Help:Edit'
 mw page list --embeds 'Template:Infobox' --namespace 0 --json title --jq '.[].title'
 ```
 
