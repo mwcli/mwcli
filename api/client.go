@@ -40,7 +40,7 @@ func New(api string, account *config.Account) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Client{API: api, url: u, http: &http.Client{Jar: jar, Timeout: 45 * time.Second}}
+	c := &Client{API: api, url: u, http: &http.Client{Jar: jar, Timeout: 45 * time.Second, CheckRedirect: checkRedirect}}
 	if account != nil {
 		if account.Auth == config.AuthOAuth2 {
 			c.Token = account.OAuthToken
@@ -57,6 +57,19 @@ func New(api string, account *config.Account) (*Client, error) {
 		}
 	}
 	return c, nil
+}
+
+// checkRedirect follows redirects of GET requests, which discovery relies on,
+// but never of a POST: a 307 or 308 would send its body, with a password, a
+// bot password or an edit, to another address.
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if via[0].Method != http.MethodGet && via[0].Method != http.MethodHead {
+		return fmt.Errorf("refusing to follow a redirect of a %s request to %s; check the API URL", via[0].Method, req.URL.Redacted())
+	}
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return nil
 }
 
 // Cookies returns the session cookies to store after a password login.
