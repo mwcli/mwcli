@@ -27,7 +27,7 @@ Every command also prints its own help with `mw <command> --help`.
 
 ## Contributing
 
-See [AGENTS.md](AGENTS.md) for how changes are designed and [Releasing](docs/releasing.md) for how versions are published.
+See [AGENTS.md](https://github.com/mwcli/mwcli/blob/main/AGENTS.md) for how changes are designed and [Releasing](docs/releasing.md) for how versions are published.
 
 ## Installation
 
@@ -51,10 +51,26 @@ Building requires Go 1.27 or newer. `make` builds `bin/mw`, and `make install` i
 
 ### Verification of binaries
 
-Each release has a `checksums.txt` with the SHA-256 of its archives. After downloading an archive into the same directory:
+Each release has a `checksums.txt` with the SHA-256 of its archives. Download it next to the archive and compare.
+
+On Linux:
 
 ```sh
 sha256sum --check --ignore-missing checksums.txt
+```
+
+On macOS, print the hash of the archive and check that `checksums.txt` has the same value for that file name:
+
+```sh
+shasum -a 256 mw_0.4.2_darwin_arm64.tar.gz
+grep mw_0.4.2_darwin_arm64.tar.gz checksums.txt
+```
+
+On Windows (PowerShell), compare the same way; `Get-FileHash` prints the hash in upper case:
+
+```powershell
+Get-FileHash mw_0.4.2_windows_amd64.zip -Algorithm SHA256
+Select-String mw_0.4.2_windows_amd64.zip checksums.txt
 ```
 
 ## Similar projects
