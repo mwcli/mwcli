@@ -91,4 +91,4 @@ Libraries and frameworks:
 | [mwclient](https://github.com/mwclient/mwclient) | Python | the MediaWiki API |
 | [mwcli on PyPI](https://pypi.org/project/mwcli/) | Python | helpers for MediaWiki command-line utilities, from mediawiki-utilities |
 
-a Wikimedia CLI still installs `mw` while it moves to `wm`; if you use both, run that one as `wm`. Sam Wilson's MediaWiki CLI and the PyPI package share the name mwcli but are separate projects.
+a Wikimedia CLI still installs `mw` while it moves to `wm`; if you use both, run that one as `wm`. Sam Wilson's MediaWiki CLI and the PyPI package share the name mwcli but are separate projects. mwcli is not an official MediaWiki or Wikimedia project.
