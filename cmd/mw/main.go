@@ -22,7 +22,7 @@ func run(args []string) int {
 	if err == nil {
 		return 0
 	}
-	f.Forget(err)
+	err = f.Hint(err)
 	var ee *cmdutil.ExitError
 	if !errors.As(err, &ee) || ee.Err != nil {
 		fmt.Fprintln(f.IOStreams.ErrOut, err)

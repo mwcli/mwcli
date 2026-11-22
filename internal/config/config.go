@@ -1,5 +1,6 @@
-// Package config reads and writes the mw configuration directory:
-// hosts.yml holds per-host accounts and credentials, config.yml holds settings.
+// Package config reads and writes config.yml in the mw configuration directory.
+// It holds two parts: sites, the wikis mw knows (where), and logins, the
+// accounts for them (who).
 package config
 
 import (
@@ -11,57 +12,82 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	// DefaultHost is used when no host is given and none is configured.
-	DefaultHost = "en.wikipedia.org"
+	// DefaultSite is used when no site is given and none is configured.
+	DefaultSite = "en.wikipedia.org"
 
 	AuthOAuth2      = "oauth2"
 	AuthSession     = "session"
 	AuthBotPassword = "botpassword"
 
-	hostsFile  = "hosts.yml"
 	configFile = "config.yml"
 )
 
-// Account is one logged-in user on a host.
+// Account is one logged-in user of a site.
 type Account struct {
 	Auth       string            `yaml:"auth"`
 	OAuthToken string            `yaml:"oauth_token,omitempty"`
 	Cookies    map[string]string `yaml:"cookies,omitempty"`
 	// BotName and BotPassword are a bot password from Special:BotPasswords:
-	// BotName is the login name, such as Alice@mybot. BotAPI is the api.php it
-	// was created for; it is sent nowhere else, even on the same host.
+	// BotName is the login name, such as Alice@mybot.
 	BotName     string `yaml:"bot_name,omitempty"`
 	BotPassword string `yaml:"bot_password,omitempty"`
-	BotAPI      string `yaml:"bot_api,omitempty"`
 }
 
-// UsableAt reports whether the account may be sent to api. A bot password is
-// tied to the api.php it was created for.
-func (a *Account) UsableAt(api string) bool {
-	return a.Auth != AuthBotPassword || a.BotAPI == api
+// Site is one wiki: one api.php. Server, Script and ArticlePath come from the
+// wiki's siteinfo when the site is added, for page URLs.
+type Site struct {
+	API string `yaml:"api"`
+	// Aliases are other names --wiki accepts for the site, such as an
+	// interwiki prefix or a domain that redirects to it.
+	Aliases     []string `yaml:"aliases,omitempty"`
+	Server      string   `yaml:"server,omitempty"`
+	Script      string   `yaml:"script,omitempty"`
+	ArticlePath string   `yaml:"articlepath,omitempty"`
 }
 
-// Host is one wiki, keyed by its host name in hosts.yml.
-type Host struct {
-	API   string              `yaml:"api,omitempty"`
+// PageURL returns the URL of an index.php page such as "Special:Version".
+func (s *Site) PageURL(title string) string {
+	server := s.Server
+	if strings.HasPrefix(server, "//") {
+		server = "https:" + server
+	}
+	if server == "" || s.Script == "" {
+		return strings.TrimSuffix(s.API, "api.php") + "index.php?title=" + url.QueryEscape(title)
+	}
+	return server + s.Script + "?title=" + url.QueryEscape(title)
+}
+
+// Sites are the wikis the user added and the default one.
+type Sites struct {
+	Default string           `yaml:"default,omitempty"`
+	Wikis   map[string]*Site `yaml:"wikis,omitempty"`
+}
+
+// FarmSite is a wiki endpoint and the names accepted for it within a farm.
+type FarmSite struct {
+	Host    string   `yaml:"host"`
+	Aliases []string `yaml:"aliases,omitempty"`
+	API     string   `yaml:"api,omitempty"`
+}
+
+// Login holds the accounts of one site and which one is active.
+type Login struct {
 	User  string              `yaml:"user,omitempty"`
 	Users map[string]*Account `yaml:"users,omitempty"`
 }
 
-type settings struct {
-	DefaultHost string `yaml:"default_host,omitempty"`
-}
-
-// Config is the loaded configuration directory.
+// Config is config.yml of the configuration directory.
 type Config struct {
-	Dir         string
-	Hosts       map[string]*Host
-	DefaultHost string
+	Dir    string                `yaml:"-"`
+	Sites  Sites                 `yaml:"sites,omitempty"`
+	Farms  map[string][]FarmSite `yaml:"farms,omitempty"`
+	Logins map[string]*Login     `yaml:"logins,omitempty"`
 }
 
 // Dir returns the configuration directory: MW_CONFIG_DIR, $XDG_CONFIG_HOME/mw,
@@ -83,71 +109,54 @@ func Dir() string {
 	return filepath.Join(home, ".config", "mw")
 }
 
-// HostsPath is the path of hosts.yml.
-func (c *Config) HostsPath() string { return filepath.Join(c.Dir, hostsFile) }
+// Path is the path of config.yml.
+func (c *Config) Path() string { return filepath.Join(c.Dir, configFile) }
 
-// Load reads the configuration directory. Missing files mean an empty config.
+// Load reads the configuration directory. A missing file is an empty config.
 func Load() (*Config, error) {
 	return LoadDir(Dir())
 }
 
 // LoadDir reads the configuration from dir.
 func LoadDir(dir string) (*Config, error) {
-	c := &Config{Dir: dir, Hosts: map[string]*Host{}}
-	b, err := os.ReadFile(filepath.Join(dir, hostsFile))
+	c := &Config{Dir: dir}
+	b, err := os.ReadFile(c.Path())
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
 		return nil, err
 	default:
-		if err := yaml.Unmarshal(b, &c.Hosts); err != nil {
-			return nil, fmt.Errorf("parse %s: %w", c.HostsPath(), err)
-		}
-		if c.Hosts == nil {
-			c.Hosts = map[string]*Host{}
+		if err := yaml.Unmarshal(b, c); err != nil {
+			return nil, fmt.Errorf("parse %s: %w", c.Path(), err)
 		}
 	}
-	b, err = os.ReadFile(filepath.Join(dir, configFile))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
+	if c.Sites.Wikis == nil {
+		c.Sites.Wikis = map[string]*Site{}
 	}
-	if err == nil {
-		var s settings
-		if err := yaml.Unmarshal(b, &s); err != nil {
-			return nil, fmt.Errorf("parse %s: %w", filepath.Join(dir, configFile), err)
-		}
-		if c.DefaultHost == "" {
-			c.DefaultHost = s.DefaultHost
-		}
+	if c.Logins == nil {
+		c.Logins = map[string]*Login{}
 	}
-	for _, h := range c.Hosts {
-		if h.Users == nil {
-			h.Users = map[string]*Account{}
+	for _, l := range c.Logins {
+		if l.Users == nil {
+			l.Users = map[string]*Account{}
 		}
 	}
 	return c, nil
 }
 
-// Save writes hosts.yml and config.yml with owner-only permissions.
+// Save writes config.yml with owner-only permissions: it holds credentials.
 func (c *Config) Save() error {
 	if err := os.MkdirAll(c.Dir, 0o700); err != nil {
 		return err
 	}
-	hosts, err := yaml.Marshal(c.Hosts)
+	b, err := yaml.Marshal(c)
 	if err != nil {
 		return err
 	}
-	if len(c.Hosts) == 0 {
-		hosts = nil
+	if strings.TrimSpace(string(b)) == "{}" {
+		b = nil
 	}
-	if err := writeFile(c.HostsPath(), hosts); err != nil {
-		return err
-	}
-	s, err := yaml.Marshal(settings{DefaultHost: c.DefaultHost})
-	if err != nil {
-		return err
-	}
-	return writeFile(filepath.Join(c.Dir, configFile), s)
+	return writeFile(c.Path(), b)
 }
 
 func writeFile(path string, data []byte) error {
@@ -170,37 +179,44 @@ func writeFile(path string, data []byte) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-// HostNames returns the configured hosts in sorted order.
-func (c *Config) HostNames() []string {
-	names := make([]string, 0, len(c.Hosts))
-	for h := range c.Hosts {
-		names = append(names, h)
+// ValidSiteName reports whether name may name a site: not empty, and without
+// "/" or whitespace, which other names use.
+func ValidSiteName(name string) bool {
+	return name != "" && !strings.ContainsAny(name, "/ \t\n")
+}
+
+// SiteNames returns the added sites in sorted order.
+func (c *Config) SiteNames() []string {
+	return sortedKeys(c.Sites.Wikis)
+}
+
+// LoginNames returns the sites with logins in sorted order.
+func (c *Config) LoginNames() []string {
+	return sortedKeys(c.Logins)
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	names := make([]string, 0, len(m))
+	for k := range m {
+		names = append(names, k)
 	}
 	sort.Strings(names)
 	return names
 }
 
-// UserNames returns the users of a host in sorted order, active user first.
-func (h *Host) UserNames() []string {
-	names := make([]string, 0, len(h.Users))
-	for u := range h.Users {
-		if u != h.User {
+// UserNames returns the users of a login in sorted order, active user first.
+func (l *Login) UserNames() []string {
+	names := make([]string, 0, len(l.Users))
+	for u := range l.Users {
+		if u != l.User {
 			names = append(names, u)
 		}
 	}
 	sort.Strings(names)
-	if _, ok := h.Users[h.User]; ok {
-		names = append([]string{h.User}, names...)
+	if _, ok := l.Users[l.User]; ok {
+		names = append([]string{l.User}, names...)
 	}
 	return names
-}
-
-// API returns the API endpoint stored for host, or the MediaWiki default path.
-func (c *Config) API(host string) string {
-	if h, ok := c.Hosts[host]; ok && h.API != "" {
-		return h.API
-	}
-	return DefaultAPI(host)
 }
 
 // DefaultAPI is the usual MediaWiki API endpoint of a host.
@@ -217,66 +233,61 @@ func HostOf(api string) (string, error) {
 	return u.Host, nil
 }
 
-// ActiveAccount returns the active user and account of host.
-func (c *Config) ActiveAccount(host string) (string, *Account, bool) {
-	h, ok := c.Hosts[host]
+// ActiveAccount returns the active user and account of site.
+func (c *Config) ActiveAccount(site string) (string, *Account, bool) {
+	l, ok := c.Logins[site]
 	if !ok {
 		return "", nil, false
 	}
-	a, ok := h.Users[h.User]
-	return h.User, a, ok
+	a, ok := l.Users[l.User]
+	return l.User, a, ok
 }
 
-// Login stores an account, makes it active on host and makes host the default.
-func (c *Config) Login(host, api, user string, a *Account) {
-	h, ok := c.Hosts[host]
+// Login stores an account and makes it active on site. The site becomes the
+// default only when there is none yet; `mw site default` changes it later.
+func (c *Config) Login(site, user string, a *Account) {
+	l, ok := c.Logins[site]
 	if !ok {
-		h = &Host{Users: map[string]*Account{}}
-		c.Hosts[host] = h
+		l = &Login{Users: map[string]*Account{}}
+		c.Logins[site] = l
 	}
-	if api != "" && api != DefaultAPI(host) {
-		h.API = api
-	} else if api == DefaultAPI(host) {
-		h.API = ""
+	l.Users[user] = a
+	l.User = user
+	if c.Sites.Default == "" {
+		c.Sites.Default = site
 	}
-	h.Users[user] = a
-	h.User = user
-	c.DefaultHost = host
 }
 
-// Logout removes a user from host. It returns the user that became active, if any.
-func (c *Config) Logout(host, user string) (string, error) {
-	h, ok := c.Hosts[host]
+// Logout removes a user from site. It returns the user that became active, if any.
+func (c *Config) Logout(site, user string) (string, error) {
+	l, ok := c.Logins[site]
 	if !ok {
-		return "", fmt.Errorf("not logged in to %s", host)
+		return "", fmt.Errorf("not logged in to %s", site)
 	}
-	if _, ok := h.Users[user]; !ok {
-		return "", fmt.Errorf("not logged in to %s account %s", host, user)
+	if _, ok := l.Users[user]; !ok {
+		return "", fmt.Errorf("not logged in to %s account %s", site, user)
 	}
-	delete(h.Users, user)
-	if len(h.Users) == 0 {
-		delete(c.Hosts, host)
-		if c.DefaultHost == host {
-			c.DefaultHost = ""
-		}
+	delete(l.Users, user)
+	if len(l.Users) == 0 {
+		delete(c.Logins, site)
 		return "", nil
 	}
-	if h.User == user {
-		h.User = h.UserNames()[0]
-		return h.User, nil
+	if l.User == user {
+		l.User = l.UserNames()[0]
+		return l.User, nil
 	}
 	return "", nil
 }
 
-// Switch makes user the active account of host.
-func (c *Config) Switch(host, user string) error {
-	h, ok := c.Hosts[host]
+// Switch makes user the active account of site.
+func (c *Config) Switch(site, user string) error {
+	l, ok := c.Logins[site]
 	if !ok {
-		return fmt.Errorf("not logged in to %s", host)
+		return fmt.Errorf("not logged in to %s", site)
 	}
-	if _, ok := h.Users[user]; !ok {
-		return fmt.Errorf("not logged in to %s account %s", host, user)
+	if _, ok := l.Users[user]; !ok {
+		return fmt.Errorf("not logged in to %s account %s", site, user)
 	}
-	h.User = user
+	l.User = user
 	return nil
 }

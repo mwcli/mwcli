@@ -1,19 +1,35 @@
 # Choosing a wiki
 
-Commands that talk to a wiki take `--wiki WIKI`: a host name such as `mediawiki.org` or an interwiki prefix such as `wikipedia`. Without it, the wiki is chosen in this order:
+A site is a MediaWiki wiki and its Action API endpoint. Use `--wiki WIKI` with a site name, an alias or a host. Commands that accept `--api URL` can target an exact Action API endpoint. If you give both flags, they must resolve to the same site.
 
-1. `MW_WIKI`
-2. the host of the last `mw auth login`
-3. `en.wikipedia.org`
+With neither flag, commands that talk to a wiki use `MW_WIKI`, then the configured default site, then `en.wikipedia.org`. A successful login sets the default if it is unset. To see or change the default, use:
 
-mw finds the host's `api.php` itself: it tries `https://HOST/w/api.php`, then `https://HOST/api.php`, then the `EditURI` link of the main page, follows redirects (so `mediawiki.org` reaches `www.mediawiki.org`) and checks that the answer comes from MediaWiki. Like the kubectl discovery cache, the result and the site information are kept in `discovery/HOST/siteinfo.json` in the cache directory (`$XDG_CACHE_HOME/mw`, else `%LocalAppData%\mw` on Windows, else `~/.cache/mw`) for 24 hours, and dropped when the API answers 404. Deleting the directory is always safe.
+```sh
+mw site default
+mw site default commons
+```
 
-Accounts are stored under the host of the API, so `mediawiki.org` and `www.mediawiki.org` are one wiki.
+With no argument, `mw site default` shows the effective choice, including an override from `MW_WIKI`.
 
-`--wiki` and `MW_WIKI` take the interwiki prefixes of MediaWiki's default [interwiki list](https://github.com/wikimedia/mediawiki/blob/master/maintenance/interwiki.list) that point to MediaWiki wikis, such as `wikipedia` (en.wikipedia.org), `commons`, `wikidata`, `mw` (www.mediawiki.org) and `metawikimedia`; `mw help interwiki` lists all 21. A name with a dot is always a host name.
+## Built-in and added sites
+
+`mw site list --builtin` lists the built-in sites and their aliases, including `wikipedia`, `commons`, `wikidata` and `mw`. You can use them immediately:
 
 ```sh
 mw page view --wiki commons 'Main Page'
 ```
 
-`--api URL` names the endpoint directly; `mw auth login --api URL` stores it in `hosts.yml` for that host, and then no discovery is done for it.
+For an unregistered host, a regular request tries `https://HOST/w/api.php`. If the wiki uses another path, add it first:
+
+```sh
+mw site add wiki.example.org
+mw site add docs https://wiki.example.org/docs/api.php --alias handbook
+mw page view --wiki handbook 'Main Page'
+```
+
+`mw site add [NAME] WIKI` accepts a host, a page URL or an exact `api.php` URL. Given a host or page URL, it looks for the API at standard paths and checks the page's `EditURI` link if needed. Given an API URL, it checks that endpoint directly. A successful first login to an unregistered wiki also discovers and saves the site. Use a separate name for each wiki when several wikis share a host.
+
+`mw site list` shows added sites and marks the configured default with `*` if it appears in the list. `mw site remove NAME` removes an added site and its local logins. To revoke a token or bot password, use the wiki's settings.
+
+
+Built-in and custom wikis are organized under named farms in `config.yml`. A farm is the login-sharing scope. Every wiki entry in one farm uses the farm’s stored accounts. See [Commands](command.md) for the configuration shape.

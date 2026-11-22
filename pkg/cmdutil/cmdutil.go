@@ -10,7 +10,7 @@ import (
 	"github.com/mwcli/mwcli/api"
 	"github.com/mwcli/mwcli/internal/config"
 	"github.com/mwcli/mwcli/internal/discovery"
-	"github.com/mwcli/mwcli/internal/interwiki"
+	"github.com/mwcli/mwcli/internal/sites"
 	"github.com/mwcli/mwcli/pkg/iostreams"
 	"github.com/spf13/cobra"
 )
@@ -19,18 +19,18 @@ import (
 type Factory struct {
 	IOStreams *iostreams.IOStreams
 	Config    func() (*config.Config, error)
-	// Discovery finds the api.php of hosts without a configured one; nil means /w/api.php.
-	Discovery *discovery.Cache
 	// Browse opens a URL for --web.
 	Browse func(url string) error
+	// Find discovers a site for `mw site add` and a first login.
+	Find func(target string) (*config.Site, error)
 
-	cached []string
+	last *Target
 }
 
 // New returns the factory for the running process.
 func New() *Factory {
 	var cached *config.Config
-	f := &Factory{IOStreams: iostreams.System(), Discovery: discovery.New(), Browse: OpenBrowser}
+	f := &Factory{IOStreams: iostreams.System(), Browse: OpenBrowser, Find: discovery.Find}
 	f.Config = func() (*config.Config, error) {
 		if cached != nil {
 			return cached, nil
@@ -48,12 +48,14 @@ func New() *Factory {
 // TokenEnv is the environment variable whose access token overrides stored credentials.
 const TokenEnv = "MW_TOKEN"
 
-// Target is the wiki a command talks to.
+// Target is the site a command talks to.
 type Target struct {
-	Host string
-	API  string
-	// Site is what discovery knows about the wiki, when it was used.
-	Site *discovery.Site
+	// Name is the site name; logins are stored under it.
+	Name     string
+	LoginKey string
+	API      string
+	Site     *config.Site
+	Kind     sites.Kind
 }
 
 // PageURL returns the URL of an index.php page of the target.
@@ -61,108 +63,63 @@ func (t Target) PageURL(title string) string {
 	if t.Site != nil {
 		return t.Site.PageURL(title)
 	}
-	return (&discovery.Site{API: t.API}).PageURL(title)
+	return (&config.Site{API: t.API}).PageURL(title)
 }
 
-// Resolve picks the wiki: --api, then --wiki, MW_WIKI, the default host
-// set by the last login, and finally en.wikipedia.org. The API is --api, the
-// api of the host in hosts.yml, or the one discovery finds.
+// SiteName picks the site name: --wiki, MW_WIKI, the default site, en.wikipedia.org.
+func SiteName(cfg *config.Config, wiki string) string {
+	for _, n := range []string{wiki, os.Getenv("MW_WIKI"), cfg.Sites.Default} {
+		if n != "" {
+			return n
+		}
+	}
+	return config.DefaultSite
+}
+
+// Resolve picks the site: --api, else --wiki, MW_WIKI, the default site and
+// finally en.wikipedia.org, each a site name, an alias or a host.
 func (f *Factory) Resolve(cfg *config.Config, wiki, apiURL string) (Target, error) {
 	if apiURL != "" {
-		host, err := config.HostOf(apiURL)
+		r, err := sites.ForAPI(cfg, apiURL)
 		if err != nil {
 			return Target{}, FlagErrorf("%v", err)
 		}
-		if wiki != "" && CanonicalHost(wiki) != host {
-			return Target{}, FlagErrorf("--api host %s does not match --wiki %s", host, wiki)
+		if wiki != "" {
+			w, err := sites.Lookup(cfg, wiki)
+			if err != nil {
+				return Target{}, FlagErrorf("%v", err)
+			}
+			if w.Site.API != r.Site.API {
+				return Target{}, FlagErrorf("--api %s is not the API of --wiki %s", apiURL, wiki)
+			}
 		}
-		return Target{Host: host, API: apiURL}, nil
+		return f.target(r), nil
 	}
-	host := HostName(cfg, wiki)
-	api, site := f.APIFor(cfg, host)
-	return Target{Host: f.keyFor(cfg, host, api), API: api, Site: site}, nil
-}
-
-// keyFor is the host under which accounts of host are stored: the host itself
-// when hosts.yml names its API, else the host of the API it resolves to, so
-// that mediawiki.org, www.mediawiki.org and the prefix mw are one wiki.
-func (f *Factory) keyFor(cfg *config.Config, host, api string) string {
-	if h, ok := cfg.Hosts[host]; ok && h.API != "" {
-		return host
-	}
-	if apiHost, err := config.HostOf(api); err == nil {
-		return apiHost
-	}
-	return host
-}
-
-// HostKey returns the stored host name for a user-given host or prefix.
-func (f *Factory) HostKey(cfg *config.Config, name string) string {
-	name = CanonicalHost(name)
-	if name == "" {
-		return ""
-	}
-	if _, ok := cfg.Hosts[name]; ok {
-		return name
-	}
-	api, _ := f.APIFor(cfg, name)
-	return f.keyFor(cfg, name, api)
-}
-
-// HostName picks the host: --wiki, MW_WIKI, the default host, en.wikipedia.org.
-// An interwiki prefix such as "commons" stands for its host.
-func HostName(cfg *config.Config, wiki string) string {
-	for _, h := range []string{wiki, os.Getenv("MW_WIKI"), cfg.DefaultHost} {
-		if h != "" {
-			return CanonicalHost(h)
-		}
-	}
-	return config.DefaultHost
-}
-
-// CanonicalHost turns an interwiki prefix into its host; other names are kept.
-func CanonicalHost(name string) string {
-	if host, _, ok := interwiki.Lookup(name); ok {
-		return host
-	}
-	return name
-}
-
-// APIFor returns the api.php of host: hosts.yml, the interwiki list, discovery,
-// else /w/api.php.
-func (f *Factory) APIFor(cfg *config.Config, host string) (string, *discovery.Site) {
-	if h, ok := cfg.Hosts[host]; ok && h.API != "" {
-		return h.API, nil
-	}
-	if api, ok := interwiki.APIForHost(host); ok {
-		return api, nil
-	}
-	if f.Discovery == nil {
-		return config.DefaultAPI(host), nil
-	}
-	if s, ok := f.Discovery.Lookup(host); ok {
-		f.cached = append(f.cached, host)
-		return s.API, s
-	}
-	s, err := f.Discovery.Site(host)
+	r, err := sites.Lookup(cfg, SiteName(cfg, wiki))
 	if err != nil {
-		return config.DefaultAPI(host), nil
+		return Target{}, FlagErrorf("%v", err)
 	}
-	return s.API, s
+	return f.target(r), nil
 }
 
-// Forget drops cached discovery results when err suggests the API moved.
-func (f *Factory) Forget(err error) {
+func (f *Factory) target(r sites.Resolved) Target {
+	t := Target{Name: r.Name, LoginKey: r.LoginKey, API: r.Site.API, Site: r.Site, Kind: r.Kind}
+	f.last = &t
+	return t
+}
+
+// Hint adds advice to an error of the command when it talked to a site that
+// was not added: its API may not be at /w/api.php.
+func (f *Factory) Hint(err error) error {
+	if err == nil || f.last == nil || f.last.Kind != sites.Unregistered {
+		return err
+	}
+	t := *f.last
 	var he *api.HTTPError
-	if f.Discovery == nil || err == nil {
-		return
+	if errors.As(err, &he) || strings.Contains(err.Error(), "decode API response") {
+		return fmt.Errorf("%w\nmw tried %s; if %s is a MediaWiki wiki elsewhere, add it with `mw site add %s`", err, t.API, t.Name, t.Name)
 	}
-	if (errors.As(err, &he) && (strings.HasPrefix(he.Status, "404") || strings.HasPrefix(he.Status, "410"))) ||
-		strings.Contains(err.Error(), "decode API response") {
-		for _, h := range f.cached {
-			f.Discovery.Invalidate(h)
-		}
-	}
+	return err
 }
 
 // AuthSource says where the credentials of a client came from.
@@ -177,8 +134,8 @@ func Credentials(cfg *config.Config, t Target) (AuthSource, bool) {
 	if tok := os.Getenv(TokenEnv); tok != "" {
 		return AuthSource{Account: &config.Account{Auth: config.AuthOAuth2, OAuthToken: tok}, FromEnv: true}, true
 	}
-	user, a, ok := cfg.ActiveAccount(t.Host)
-	if !ok || !a.UsableAt(t.API) {
+	user, a, ok := cfg.ActiveAccount(loginKey(t))
+	if !ok {
 		return AuthSource{}, false
 	}
 	return AuthSource{User: user, Account: a}, true
@@ -257,4 +214,11 @@ func ExitCode(err error) int {
 		return 4
 	}
 	return 1
+}
+
+func loginKey(t Target) string {
+	if t.LoginKey != "" {
+		return t.LoginKey
+	}
+	return t.Name
 }
