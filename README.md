@@ -19,7 +19,7 @@ It runs on macOS, Windows and Linux.
 ## Documentation
 
 - [Getting started](docs/getting-started.md): install mw, connect to a wiki, log in and edit a page
-- [Choosing a wiki](docs/wikis.md): built-in sites, `mw site add`, `--wiki` and the default site
+- [Choosing a wiki](docs/wikis.md): built-in sites, `mw site add`, `mw site view`, `--wiki` and the default site
 - [Authentication](docs/auth.md): choosing between OAuth 2 tokens, OAuth 1.0a consumers, bot passwords and passwords, keeping them secure
 - [Pages](docs/pages.md): `mw page view` with `--json`, `--jq` and `--web`, `mw page list`, `mw page history`, `mw page diff`, `mw page create`, `mw page edit` and `mw browse`
 - [API requests](docs/api.md): `mw api`, with `--paginate` and `--jq`
