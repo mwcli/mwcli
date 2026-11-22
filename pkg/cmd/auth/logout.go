@@ -13,8 +13,8 @@ func newCmdLogout(f *cmdutil.Factory) *cobra.Command {
 		Use:   "logout",
 		Short: "Log out of a wiki account",
 		Long: "Remove a stored account. Without --user, the active account of the host is removed.\n" +
-			"This does not revoke an OAuth token; reset or disable its consumer on the wiki at\n" +
-			"Special:OAuthConsumerRegistration/list.",
+			"This does not revoke an OAuth token; reset or disable its consumer at\n" +
+			"Special:OAuthConsumerRegistration/list on the wiki where it was registered.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			io := f.IOStreams
