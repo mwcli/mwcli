@@ -8,8 +8,10 @@ import (
 	"os"
 
 	"github.com/MakeNowJust/heredoc"
+	"github.com/aymanbagabas/go-udiff"
 	"github.com/mwcli/mwcli/api"
 	"github.com/mwcli/mwcli/pkg/cmdutil"
+	"github.com/mwcli/mwcli/pkg/iostreams"
 	"github.com/spf13/cobra"
 )
 
@@ -100,7 +102,7 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 // editFlags are the flags `mw page edit` and `mw page create` share.
 type editFlags struct {
 	wiki, summary, text, file string
-	minor, bot                bool
+	minor, bot, dryRun        bool
 }
 
 func (o *editFlags) add(cmd *cobra.Command) {
@@ -110,6 +112,7 @@ func (o *editFlags) add(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.file, "file", "F", "", "Read the new wikitext from `file` (use \"-\" to read from standard input)")
 	cmd.Flags().BoolVar(&o.minor, "minor", false, "Mark the edit as minor")
 	cmd.Flags().BoolVar(&o.bot, "bot", false, "Mark the edit as a bot edit, when the account has the bot right")
+	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "Print the changes as a diff without saving")
 }
 
 func newCmdEdit(f *cmdutil.Factory) *cobra.Command {
@@ -120,6 +123,10 @@ func newCmdEdit(f *cmdutil.Factory) *cobra.Command {
 		Long: heredoc.Doc(`
 			Replace the wikitext of an existing page. To make a new page, use
 			'mw page create'.
+
+			--dry-run prints the changes as a diff, with the text as the wiki would
+			save it (signatures, substitutions, trailing white space), and saves
+			nothing; it needs no login.
 		`),
 		Example: heredoc.Doc(`
 			$ mw page edit 'Sandbox' --summary 'Fix typo' --file page.wiki
@@ -142,7 +149,8 @@ func newCmdCreate(f *cmdutil.Factory) *cobra.Command {
 		Long: heredoc.Doc(`
 			Create a page with the given wikitext. It fails when the page exists; to
 			change one, use 'mw page edit'. Creating pages needs the right to create
-			them, such as the createeditmovepage grant of a token.
+			them, such as the createeditmovepage grant of a token. --dry-run prints
+			the new text as the wiki would save it, as a diff, and saves nothing.
 		`),
 		Example: heredoc.Doc(`
 			$ mw page create 'Sandbox/Test' --text 'Hello' --summary 'New test page'
@@ -189,22 +197,19 @@ func saveRun(f *cmdutil.Factory, cmd *cobra.Command, o *editFlags, title string,
 	if err != nil {
 		return err
 	}
+	if o.dryRun {
+		return dryRun(ios, c, t, title, text, mode)
+	}
 	if !ok {
 		return cmdutil.NotLoggedIn(t.Name)
 	}
 	res, err := c.Edit(title, text, api.EditOptions{Summary: o.summary, Mode: mode, Minor: o.minor, Bot: o.bot})
 	var ae *api.APIError
-	switch {
-	case errors.As(err, &ae) && ae.Code == "assertuserfailed":
+	if errors.As(err, &ae) && ae.Code == "assertuserfailed" {
 		return cmdutil.NotLoggedIn(t.Name)
-	// The hints name the other command but keep the user's own command line,
-	// which holds the wiki, the text and its source, rather than rebuild it.
-	case errors.Is(err, api.ErrMissingPage):
-		return fmt.Errorf("%w on %s; to make it, run the same command with `mw page create` in place of `mw page edit`", err, t.Name)
-	case errors.Is(err, api.ErrPageExists):
-		return fmt.Errorf("%w on %s; to change it, run the same command with `mw page edit` in place of `mw page create`", err, t.Name)
-	case err != nil:
-		return err
+	}
+	if err != nil {
+		return saveError(err, t)
 	}
 	switch {
 	case res.NoChange:
@@ -214,5 +219,57 @@ func saveRun(f *cmdutil.Factory, cmd *cobra.Command, o *editFlags, title string,
 	default:
 		fmt.Fprintf(ios.ErrOut, "%s Updated %s on %s\n", ios.SuccessIcon(), res.Title, t.Name)
 	}
+	return nil
+}
+
+// saveError adds to a refusal of edit or create the command to use instead. The
+// hints keep the user's own command line, which holds the wiki, the text and
+// its source, rather than rebuild it.
+func saveError(err error, t cmdutil.Target) error {
+	switch {
+	case errors.Is(err, api.ErrMissingPage):
+		return fmt.Errorf("%w on %s; to make it, run the same command with `mw page create` in place of `mw page edit`", err, t.Name)
+	case errors.Is(err, api.ErrPageExists):
+		return fmt.Errorf("%w on %s; to change it, run the same command with `mw page edit` in place of `mw page create`", err, t.Name)
+	}
+	return err
+}
+
+// dryRun prints what saving text would change, without saving: a diff from the
+// latest revision, or from nothing for a new page, to the text as the wiki
+// would save it.
+func dryRun(ios *iostreams.IOStreams, c *api.Client, t cmdutil.Target, title, text string, mode api.EditMode) error {
+	cur, err := c.LatestRevision(title)
+	switch {
+	case errors.Is(err, api.ErrMissingPage) && mode == api.CreateOnly:
+		cur = nil
+	case err != nil:
+		return saveError(err, t)
+	case mode == api.CreateOnly:
+		return saveError(fmt.Errorf("%w: %s", api.ErrPageExists, cur.Title), t)
+	}
+	// The text is saved in the page's model, or for a new page the model the
+	// wiki gives the title, such as JSON for a .json page.
+	model := ""
+	if cur != nil {
+		model = cur.ContentModel
+	}
+	saved, err := c.PreSaveTransform(title, text, model)
+	if err != nil {
+		return err
+	}
+	oldLabel, oldText, name := "/dev/null", "", title
+	if cur != nil {
+		oldLabel, oldText, name = label(cur), cur.Content, cur.Title
+	}
+	if cur != nil && oldText == saved {
+		fmt.Fprintf(ios.ErrOut, "%s No changes to %s on %s\n", ios.WarningIcon(), name, t.Name)
+		return nil
+	}
+	out := udiff.Unified(oldLabel, name+"\t(new text, not saved)", oldText, saved)
+	if ios.IsStdoutTTY() && os.Getenv("NO_COLOR") == "" {
+		out = colorize(out)
+	}
+	fmt.Fprint(ios.Out, out)
 	return nil
 }
