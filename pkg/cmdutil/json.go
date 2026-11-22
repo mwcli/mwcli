@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -66,20 +67,31 @@ func (j *JSONFlags) fieldsError() error {
 	return FlagErrorf("Specify one or more comma-separated fields for `--json`:\n  %s", strings.Join(j.known, "\n  "))
 }
 
-// Write prints the requested fields of v, a struct whose JSON names are the
-// known fields, filtered by --jq when given. Output is indented on a terminal.
+// Write prints the requested fields of v, filtered by --jq when given. v is a
+// struct whose JSON names are the known fields, or a slice of them, printed as
+// an array. Output is indented on a terminal.
 func (j *JSONFlags) Write(w io.Writer, v any, tty bool) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	var all map[string]any
-	if err := json.Unmarshal(b, &all); err != nil {
-		return err
-	}
-	out := map[string]any{}
-	for _, f := range j.fields {
-		out[f] = all[f]
+	var out any
+	if t := bytes.TrimSpace(b); len(t) > 0 && t[0] == '[' || string(t) == "null" && isList(v) {
+		var many []map[string]any
+		if err := json.Unmarshal(b, &many); err != nil {
+			return err
+		}
+		list := make([]any, 0, len(many))
+		for _, m := range many {
+			list = append(list, j.pick(m))
+		}
+		out = list
+	} else {
+		var one map[string]any
+		if err := json.Unmarshal(b, &one); err != nil {
+			return err
+		}
+		out = j.pick(one)
 	}
 	if j.jq == "" {
 		return writeJSON(w, out, tty)
@@ -112,6 +124,20 @@ func (j *JSONFlags) Write(w io.Writer, v any, tty bool) error {
 			return err
 		}
 	}
+}
+
+// isList reports whether v is a slice or array, so that a nil one prints as [].
+func isList(v any) bool {
+	k := reflect.ValueOf(v).Kind()
+	return k == reflect.Slice || k == reflect.Array
+}
+
+func (j *JSONFlags) pick(all map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, f := range j.fields {
+		out[f] = all[f]
+	}
+	return out
 }
 
 func writeJSON(w io.Writer, v any, tty bool) error {
