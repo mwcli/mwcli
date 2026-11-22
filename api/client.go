@@ -850,6 +850,8 @@ type RevisionText struct {
 	Timestamp,
 	User,
 	Content string
+	// ContentModel is the model of the main slot, such as wikitext or json.
+	ContentModel string
 }
 
 // ErrMissingRevision means no revision has the ID.
@@ -868,7 +870,7 @@ func (c *Client) LatestRevision(title string) (*RevisionText, error) {
 func (c *Client) revisionText(params url.Values, what string) (*RevisionText, error) {
 	params.Set("action", "query")
 	params.Set("prop", "revisions")
-	params.Set("rvprop", "ids|timestamp|user|content")
+	params.Set("rvprop", "ids|timestamp|user|content|contentmodel")
 	params.Set("rvslots", "main")
 	var result struct {
 		Query struct {
@@ -887,9 +889,10 @@ func (c *Client) revisionText(params url.Values, what string) (*RevisionText, er
 					Slots      map[string]struct {
 						// Content is nil when the response has none, which
 						// differs from an empty text.
-						Content     *string `json:"content"`
-						TextHidden  bool    `json:"texthidden"`
-						TextMissing bool    `json:"textmissing"`
+						Content      *string `json:"content"`
+						ContentModel string  `json:"contentmodel"`
+						TextHidden   bool    `json:"texthidden"`
+						TextMissing  bool    `json:"textmissing"`
 					} `json:"slots"`
 				} `json:"revisions"`
 			} `json:"pages"`
@@ -921,14 +924,19 @@ func (c *Client) revisionText(params url.Values, what string) (*RevisionText, er
 	if !ok || main.Content == nil {
 		return nil, fmt.Errorf("the API returned no text for revision %d of %s", r.RevID, p.Title)
 	}
-	return &RevisionText{Title: p.Title, RevID: r.RevID, ParentID: r.ParentID, Timestamp: r.Timestamp, User: r.User, Content: *main.Content}, nil
+	return &RevisionText{Title: p.Title, RevID: r.RevID, ParentID: r.ParentID, Timestamp: r.Timestamp, User: r.User, Content: *main.Content, ContentModel: main.ContentModel}, nil
 }
 
-// PreSaveTransform returns text as the wiki would save it as title: with
-// signatures, substitutions and trailing white space handled, as the logged-in
-// user when the client has credentials.
-func (c *Client) PreSaveTransform(title, text string) (string, error) {
-	form := url.Values{"action": {"parse"}, "onlypst": {"1"}, "title": {title}, "text": {text}, "contentmodel": {"wikitext"}}
+// PreSaveTransform returns text as the wiki would save it as title in the
+// content model model: for wikitext, with signatures, substitutions and
+// trailing white space handled, as the logged-in user when the client has
+// credentials; JSON, for one, is reformatted. An empty model is the model the
+// wiki gives title, as for a new page.
+func (c *Client) PreSaveTransform(title, text, model string) (string, error) {
+	form := url.Values{"action": {"parse"}, "onlypst": {"1"}, "title": {title}, "text": {text}}
+	if model != "" {
+		form.Set("contentmodel", model)
+	}
 	var result struct {
 		Parse struct {
 			Text *string `json:"text"`

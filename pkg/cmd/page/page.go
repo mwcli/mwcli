@@ -248,7 +248,13 @@ func dryRun(ios *iostreams.IOStreams, c *api.Client, t cmdutil.Target, title, te
 	case mode == api.CreateOnly:
 		return saveError(fmt.Errorf("%w: %s", api.ErrPageExists, cur.Title), t)
 	}
-	saved, err := c.PreSaveTransform(title, text)
+	// The text is saved in the page's model, or for a new page the model the
+	// wiki gives the title, such as JSON for a .json page.
+	model := ""
+	if cur != nil {
+		model = cur.ContentModel
+	}
+	saved, err := c.PreSaveTransform(title, text, model)
 	if err != nil {
 		return err
 	}
