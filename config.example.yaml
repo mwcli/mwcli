@@ -6,10 +6,4 @@ farms:
     - host: zetawiki.com
       aliases: [zeta, zetawiki]
       api: https://zetawiki.com/w/api.php
-  # Add another farm if you use more than one wiki account scope.
-  # archwiki:
-  #   - host: wiki.archlinux.org
-  #     aliases: [arch, archwiki]
-  #     api: https://wiki.archlinux.org/api.php
 # Run `mw auth login --wiki zetawiki` to log in.
-# If enabled above, use `mw auth login --wiki archwiki` for ArchWiki.
