@@ -25,9 +25,12 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 			List page titles, one per line. Without a source, all pages are listed in
 			title order. Choose at most one source: --prefix, --category, --search,
 			--links-to or --embeds. --namespace limits any of them to one namespace ID.
+			A --prefix may start with a namespace, such as Help:, which picks that
+			namespace.
 		`),
 		Example: heredoc.Doc(`
 			$ mw page list --prefix 'Sand'
+			$ mw page list --prefix 'Help:Edit'
 			$ mw page list --category 'Living people' -L 100
 			$ mw page list --search 'jq json' --json title,pageid
 			$ mw page list --embeds 'Template:Infobox' --namespace 0
@@ -80,6 +83,11 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if opts.Source == api.AllPages && strings.Contains(opts.Value, ":") {
+				if err := splitPrefix(cmd.Context(), c, &opts); err != nil {
+					return err
+				}
+			}
 			if opts.Source == api.CategoryMembers {
 				if opts.Value, err = categoryTitle(cmd.Context(), c, opts.Value); err != nil {
 					return err
@@ -112,6 +120,23 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().IntVarP(&limit, "limit", "L", 30, "Maximum number of pages to list")
 	jsonFlags = cmdutil.AddJSONFlags(cmd, listFields)
 	return cmd
+}
+
+// splitPrefix moves the namespace of a --prefix such as Manual:Hooks/ into
+// opts.Namespace, since the API takes the prefix without it. A prefix whose
+// part before the colon is not a namespace name stays as it is.
+func splitPrefix(ctx context.Context, c *api.Client, opts *api.ListOptions) error {
+	name, rest, _ := strings.Cut(opts.Value, ":")
+	id, ok, err := c.NamespaceID(ctx, name)
+	if err != nil || !ok {
+		return err
+	}
+	if opts.Namespace != nil && *opts.Namespace != id {
+		return cmdutil.FlagErrorf("--prefix %q is in namespace %d, not %d of --namespace", opts.Value, id, *opts.Namespace)
+	}
+	opts.Namespace = &id
+	opts.Value = strings.TrimLeft(rest, " _")
+	return nil
 }
 
 // categoryTitle returns the title of a category: name as it is when it starts

@@ -96,7 +96,7 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	switch {
 	case p("meta") == "siteinfo" && p("siprop") == "namespaces|namespacealiases":
 		send(map[string]any{"query": map[string]any{
-			"namespaces":       map[string]any{"14": map[string]any{"id": 14, "name": "분류", "canonical": "Category"}},
+			"namespaces":       map[string]any{"0": map[string]any{"id": 0, "name": ""}, "12": map[string]any{"id": 12, "name": "도움말", "canonical": "Help"}, "14": map[string]any{"id": 14, "name": "분류", "canonical": "Category"}},
 			"namespacealiases": []any{map[string]any{"id": 14, "alias": "Cat"}},
 		}})
 	case p("action") == "parse" && p("onlypst") != "":
@@ -1722,4 +1722,34 @@ func TestUserContribs(t *testing.T) {
 		_, _, code = e.run("", append([]string{"user", "contribs", "--wiki", e.api}, args...)...)
 		assert.Equal(t, 2, code, args)
 	}
+}
+
+func TestPageListPrefixNamespace(t *testing.T) {
+	e := newEnv(t)
+	for _, c := range []struct {
+		prefix, ns, apprefix string
+	}{
+		{"help:Edit", "12", "Edit"},
+		{"도움말:편집", "12", "편집"},
+		{"Help: Edit", "12", "Edit"},
+		{"Help:", "12", ""},
+		{"Star Wars: E", "", "Star Wars: E"},
+		{":Main", "", ":Main"},
+	} {
+		e.wiki.lists = nil
+		_, stderr, code := e.run("", "page", "list", "--wiki", e.api, "--prefix", c.prefix, "-L", "1")
+		require.Equal(t, 0, code, c.prefix, stderr)
+		require.NotEmpty(t, e.wiki.lists, c.prefix)
+		assert.Equal(t, c.ns, e.wiki.lists[0].Get("apnamespace"), c.prefix)
+		assert.Equal(t, c.apprefix, e.wiki.lists[0].Get("apprefix"), c.prefix)
+	}
+
+	e.wiki.lists = nil
+	_, stderr, code := e.run("", "page", "list", "--wiki", e.api, "--prefix", "Help:Edit", "-n", "12", "-L", "1")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "12", e.wiki.lists[0].Get("apnamespace"))
+
+	_, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--prefix", "Help:Edit", "-n", "0")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, `--prefix "Help:Edit" is in namespace 12, not 0 of --namespace`)
 }

@@ -924,6 +924,38 @@ func (c *Client) ListPages(ctx context.Context, opts ListOptions) ([]PageRef, er
 // NamespaceNames returns the names a namespace can be written with: the local
 // name, the canonical name and the aliases.
 func (c *Client) NamespaceNames(ctx context.Context, id int) ([]string, error) {
+	all, err := c.namespaceNames(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return all[id], nil
+}
+
+// NamespaceID returns the ID of the namespace that name, local, canonical or
+// an alias, stands for, ignoring case and treating _ as a space; ok is false
+// when no namespace has that name.
+func (c *Client) NamespaceID(ctx context.Context, name string) (id int, ok bool, err error) {
+	all, err := c.namespaceNames(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	norm := func(s string) string { return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(s), "_", " ")) }
+	want := norm(name)
+	if want == "" {
+		return 0, false, nil
+	}
+	for id, names := range all {
+		for _, n := range names {
+			if n != "" && norm(n) == want {
+				return id, true, nil
+			}
+		}
+	}
+	return 0, false, nil
+}
+
+// namespaceNames returns the names of every namespace by ID.
+func (c *Client) namespaceNames(ctx context.Context) (map[int][]string, error) {
 	var result struct {
 		Query struct {
 			Namespaces map[string]struct {
@@ -941,18 +973,14 @@ func (c *Client) NamespaceNames(ctx context.Context, id int) ([]string, error) {
 	if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
 		return nil, err
 	}
-	var names []string
+	all := map[int][]string{}
 	for _, ns := range result.Query.Namespaces {
-		if ns.ID == id {
-			names = append(names, ns.Name, ns.Canonical)
-		}
+		all[ns.ID] = append(all[ns.ID], ns.Name, ns.Canonical)
 	}
 	for _, a := range result.Query.Aliases {
-		if a.ID == id {
-			names = append(names, a.Alias)
-		}
+		all[a.ID] = append(all[a.ID], a.Alias)
 	}
-	return names, nil
+	return all, nil
 }
 
 // IsBotName reports whether name looks like the login name of a bot password,
