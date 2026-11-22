@@ -1,10 +1,6 @@
 # Built-in farms and their wiki API endpoints.
 # An omitted api uses https://<host>/w/api.php.
 farms:
-  archwiki:
-    - host: wiki.archlinux.org
-      aliases: [arch, archwiki]
-      api: https://wiki.archlinux.org/api.php
   memoryalpha:
     - host: memory-alpha.fandom.com
       aliases: [memoryalpha]
@@ -58,6 +54,3 @@ farms:
       aliases: [mediawiki, mediawiki.org, mediawikiwiki, mw]
     - host: www.wikidata.org
       aliases: [wikidata.org, wikidata]
-  zetawiki:
-    - host: zetawiki.com
-      aliases: [zeta, zetawiki]

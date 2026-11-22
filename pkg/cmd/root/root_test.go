@@ -385,7 +385,7 @@ func TestBuiltinSites(t *testing.T) {
 	e := newEnv(t)
 	for alias, name := range map[string]string{
 		"mw": "www.mediawiki.org", "mediawiki.org": "www.mediawiki.org", "commons": "commons.wikimedia.org",
-		"wikipedia": "en.wikipedia.org", "arch": "wiki.archlinux.org", "zeta": "zetawiki.com",
+		"wikipedia": "en.wikipedia.org",
 	} {
 		_, stderr, code := e.run("", "site", "default", alias)
 		require.Equal(t, 0, code, alias+": "+stderr)
