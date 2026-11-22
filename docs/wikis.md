@@ -24,6 +24,18 @@ With no argument, `mw site default` shows the effective choice, including an ove
 mw page view --wiki commons 'Main Page'
 ```
 
+## Showing a wiki
+
+`mw site view` shows the name, main page, software, language, page and user counts of a wiki and how many extensions it has. The wiki is given as for `--wiki`, as an argument or with `--wiki`; without one, it is the default site. It needs no login.
+
+```sh
+mw site view mediawiki.org
+mw site view --json generator,statistics
+mw site view --json extensions --jq '.extensions[] | "\(.name) \(.version)"'
+```
+
+The JSON fields are named as in the MediaWiki API (`meta=siteinfo`), with `url` for the main page and `api` for the `api.php` mw uses. `--web` opens the main page.
+
 ## Wikis that were not added
 
 For a host or page URL that is neither added nor built in, mw looks for the API once: at `/w/api.php`, then `/api.php` of a host, then through the `EditURI` link that MediaWiki puts in every page, which also finds an API at another path such as `/wiki/api.php`. A page URL is looked up through its `EditURI` link only, so that a wiki under a path is not mistaken for another one on the same host. mw keeps what it found in `apis.yml` in its cache directory, so later commands go straight to the API:

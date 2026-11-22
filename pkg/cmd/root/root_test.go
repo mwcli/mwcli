@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/MakeNowJust/heredoc"
 	"github.com/mwcli/mwcli/internal/apicache"
 	"github.com/mwcli/mwcli/internal/config"
 	"github.com/mwcli/mwcli/internal/discovery"
@@ -35,6 +36,8 @@ type fakeWiki struct {
 	created   map[string]bool
 	// siteinfos counts general siteinfo requests, which discovery makes.
 	siteinfos int
+	// siprops are the siprop parameters of general siteinfo requests.
+	siprops []string
 	// pstModels are the contentmodel parameters of pre-save transforms.
 	pstModels []string
 	// domains are the domain or lgdomain parameters of logins; logouts counts
@@ -158,7 +161,19 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		send(map[string]any{"login": map[string]string{"result": "Success", "lgusername": "Jmnote"}})
 	case p("meta") == "siteinfo":
 		w.siteinfos++
-		send(map[string]any{"query": map[string]any{"general": map[string]string{"sitename": "Fake", "generator": "MediaWiki 1.43.1", "server": "//fake.test", "script": "/w/index.php", "articlepath": "/wiki/$1"}}})
+		w.siprops = append(w.siprops, p("siprop"))
+		q := map[string]any{"general": map[string]string{"sitename": "Fake", "generator": "MediaWiki 1.43.1", "server": "//fake.test", "script": "/w/index.php", "articlepath": "/wiki/$1",
+			"mainpage": "Main Page", "base": "https://fake.test/wiki/Main_Page", "scriptpath": "/w", "lang": "ko", "phpversion": "8.3.1", "dbtype": "mysql", "dbversion": "10.11.6-MariaDB", "timezone": "Asia/Seoul"}}
+		if strings.Contains(p("siprop"), "statistics") {
+			q["statistics"] = map[string]int{"pages": 1234567, "articles": 89012, "edits": 3456789, "images": 12, "users": 345, "activeusers": 6, "admins": 2, "jobs": 0}
+		}
+		if strings.Contains(p("siprop"), "extensions") {
+			q["extensions"] = []any{
+				map[string]string{"type": "parserhook", "name": "Cite", "version": "", "url": "https://www.mediawiki.org/wiki/Extension:Cite", "license-name": "GPL-2.0-or-later", "license": "/wiki/Special:Version/License/Cite"},
+				map[string]string{"type": "skin", "name": "Vector", "version": "1.0.0", "url": "https://www.mediawiki.org/wiki/Skin:Vector"},
+			}
+		}
+		send(map[string]any{"query": q})
 	case p("meta") == "userinfo":
 		if !authed {
 			send(map[string]any{"query": map[string]any{"userinfo": map[string]any{"id": 0, "name": "127.0.0.1", "anon": true, "rights": []string{"read", "edit"}}}})
@@ -1571,5 +1586,69 @@ func TestBrowse(t *testing.T) {
 	e.stdoutTTY = false
 
 	_, _, code = e.run("", "browse", "--wiki", e.api, "A", "B")
+	assert.Equal(t, 2, code)
+}
+
+func TestSiteView(t *testing.T) {
+	e := newEnv(t)
+	out, stderr, code := e.run("", "site", "view", "--wiki", e.api)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, heredoc.Doc(`
+		sitename:	Fake
+		url:	https://fake.test/wiki/Main_Page
+		api:	`+e.api+`
+		generator:	MediaWiki 1.43.1
+		phpversion:	8.3.1
+		dbtype:	mysql
+		dbversion:	10.11.6-MariaDB
+		lang:	ko
+		pages:	1234567
+		articles:	89012
+		edits:	3456789
+		images:	12
+		users:	345
+		activeusers:	6
+		admins:	2
+		extensions:	2
+		readonly:	false
+	`), out)
+	assert.Equal(t, "general|statistics|extensions", e.wiki.siprops[len(e.wiki.siprops)-1])
+
+	e.stdoutTTY = true
+	out, stderr, code = e.run("", "site", "view", e.api)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "\x1b[1mFake\x1b[0m\n"+heredoc.Doc(`
+		https://fake.test/wiki/Main_Page
+
+		Software    MediaWiki 1.43.1 (PHP 8.3.1, mysql 10.11.6-MariaDB)
+		Language    ko
+		API         `+e.api+`
+		Pages       1,234,567 (89,012 articles)
+		Edits       3,456,789
+		Files       12
+		Users       345 (6 active, 2 admins)
+		Extensions  2
+	`), out)
+	e.stdoutTTY = false
+
+	out, stderr, code = e.run("", "site", "view", e.api, "--json", "sitename,api,extensions")
+	require.Equal(t, 0, code, stderr)
+	assert.JSONEq(t, `{"sitename":"Fake","api":"`+e.api+`","extensions":[
+		{"name":"Cite","type":"parserhook","version":"","url":"https://www.mediawiki.org/wiki/Extension:Cite","license":"GPL-2.0-or-later"},
+		{"name":"Vector","type":"skin","version":"1.0.0","url":"https://www.mediawiki.org/wiki/Skin:Vector","license":""}]}`, out)
+	assert.Equal(t, "general|extensions", e.wiki.siprops[len(e.wiki.siprops)-1])
+
+	out, _, code = e.run("", "site", "view", e.api, "--json", "statistics", "--jq", ".statistics.articles")
+	require.Equal(t, 0, code)
+	assert.Equal(t, "89012\n", out)
+
+	_, stderr, code = e.run("", "site", "view", e.api, "--web")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, e.base+"/w/index.php", e.browsed)
+
+	_, stderr, code = e.run("", "site", "view", e.api, "--wiki", e.api)
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "either as an argument or with --wiki")
+	_, _, code = e.run("", "site", "view", e.api, "--web", "--json", "api")
 	assert.Equal(t, 2, code)
 }

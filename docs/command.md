@@ -11,6 +11,7 @@ mw
 ├── site
 │   ├── add     [NAME] WIKI [--alias ALIAS] [--farm FARM]
 │   ├── list    [--builtin | --cached]
+│   ├── view    [-w] [--json FIELDS [-q EXPR]] [WIKI]
 │   ├── remove  NAME
 │   └── default [NAME]
 ├── page

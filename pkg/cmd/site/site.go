@@ -18,7 +18,7 @@ import (
 func NewCmdSite(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "site <command>",
-		Short: "Add and choose wikis",
+		Short: "Add, choose and show wikis",
 		Long: heredoc.Doc(`
 			A site is one wiki: a name and its api.php. --wiki takes a site name, an alias
 			or a host. Built-in sites, such as en.wikipedia.org (alias wikipedia) and
@@ -26,7 +26,7 @@ func NewCmdSite(f *cmdutil.Factory) *cobra.Command {
 			at https://HOST/w/api.php until it is added.
 		`),
 	}
-	cmd.AddCommand(newCmdAdd(f), newCmdList(f), newCmdRemove(f), newCmdDefault(f))
+	cmd.AddCommand(newCmdAdd(f), newCmdList(f), newCmdView(f), newCmdRemove(f), newCmdDefault(f))
 	return cmd
 }
 
