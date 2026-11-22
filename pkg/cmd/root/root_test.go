@@ -1547,3 +1547,29 @@ func TestFailedFirstLoginAddsNoSite(t *testing.T) {
 	assert.Contains(t, stderr, "Added site "+e.host)
 	assert.Less(t, strings.Index(stderr, "Added site"), strings.Index(stderr, "Logged in"))
 }
+
+func TestBrowse(t *testing.T) {
+	e := newEnv(t)
+	out, stderr, code := e.run("", "browse", "--wiki", e.api, "Main Page", "-n")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, e.base+"/w/index.php?title=Main+Page\n", out)
+	assert.Empty(t, e.browsed)
+
+	out, _, code = e.run("", "browse", "--wiki", e.api, "--no-browser")
+	require.Equal(t, 0, code)
+	assert.Equal(t, e.base+"/w/index.php\n", out)
+	out, _, code = e.run("", "browse", "--wiki", e.api, "", "-n")
+	require.Equal(t, 0, code)
+	assert.Equal(t, e.base+"/w/index.php\n", out)
+
+	e.stdoutTTY = true
+	out, stderr, code = e.run("", "browse", "--wiki", e.api, "Special:RecentChanges")
+	require.Equal(t, 0, code, stderr)
+	assert.Empty(t, out)
+	assert.Equal(t, e.base+"/w/index.php?title=Special%3ARecentChanges", e.browsed)
+	assert.Contains(t, stderr, "Opening "+e.browsed+" in your browser.")
+	e.stdoutTTY = false
+
+	_, _, code = e.run("", "browse", "--wiki", e.api, "A", "B")
+	assert.Equal(t, 2, code)
+}

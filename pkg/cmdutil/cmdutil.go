@@ -76,6 +76,12 @@ func (t Target) PageURL(title string) string {
 	return (&config.Site{API: t.API}).PageURL(title)
 }
 
+// MainPageURL returns the URL of index.php with no title, which shows the
+// main page of the target.
+func (t Target) MainPageURL() string {
+	return strings.TrimSuffix(t.PageURL(""), "?title=")
+}
+
 // SiteName picks the site name: --wiki, MW_WIKI, the default site, en.wikipedia.org.
 func SiteName(cfg *config.Config, wiki string) string {
 	for _, n := range []string{wiki, os.Getenv("MW_WIKI"), cfg.Context} {

@@ -20,6 +20,7 @@ mw
 │   ├── diff    [--wiki WIKI] [-w] [--color WHEN] REV|TITLE [REV|TITLE]
 │   ├── create  [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] [--dry-run] (--text WIKITEXT | -F FILE) TITLE
 │   └── edit    [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] [--baserevid ID] [--dry-run] (--text WIKITEXT | -F FILE) TITLE
+├── browse      [--wiki WIKI] [-n] [TITLE]
 ├── api         [--wiki WIKI] [-X METHOD] [-f key=value] [-F key=@file] [--paginate [--slurp]] [-q EXPR] [key=value ...]
 ├── completion  SHELL
 └── version
@@ -37,7 +38,7 @@ mw
 | `MW_OTP` | Two-factor code for a password login without a prompt |
 | `MW_CONFIG_DIR` | Configuration directory (default `~/.config/mw`) |
 | `MW_CACHE_DIR` | Cache directory for the APIs of wikis that were not added (default `~/.cache/mw`) |
-| `MW_BROWSER` | Browser command for `--web`, before `BROWSER` |
+| `MW_BROWSER` | Browser command for `--web` and `mw browse`, before `BROWSER` |
 
 ## config.yml
 
