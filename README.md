@@ -19,7 +19,7 @@ It runs on macOS, Windows and Linux.
 ## Documentation
 
 - [Choosing a wiki](docs/wikis.md): `--wiki`, interwiki prefixes, API discovery
-- [Authentication](docs/auth.md): OAuth 2 tokens, passwords, replacing a token, `MW_TOKEN`
+- [Authentication](docs/auth.md): choosing between OAuth 2 tokens, bot passwords and passwords, keeping them secure
 - [Pages](docs/pages.md): `mw page view` with `--json`, `--jq` and `--web`, `mw page list`, `mw page edit`
 - [API requests](docs/api.md): `mw api`
 - [Commands](docs/command.md): the command tree, environment variables and exit status

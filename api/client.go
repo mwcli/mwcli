@@ -24,6 +24,10 @@ type Client struct {
 	Resolved string
 	http     *http.Client
 	url      *url.URL
+	// botName and botPassword log in with action=login before the first request.
+	botName, botPassword string
+	botState             int // 0 not tried, 1 logging in, 2 done
+	botErr               error
 }
 
 // New returns a client for api, authenticated with account when it is not nil.
@@ -36,10 +40,14 @@ func New(api string, account *config.Account) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Client{API: api, url: u, http: &http.Client{Jar: jar, Timeout: 45 * time.Second}}
+	c := &Client{API: api, url: u, http: &http.Client{Jar: jar, Timeout: 45 * time.Second, CheckRedirect: checkRedirect}}
 	if account != nil {
 		if account.Auth == config.AuthOAuth2 {
 			c.Token = account.OAuthToken
+		} else if account.Auth == config.AuthBotPassword {
+			if account.UsableAt(api) {
+				c.botName, c.botPassword = account.BotName, account.BotPassword
+			}
 		} else {
 			var cookies []*http.Cookie
 			for name, value := range account.Cookies {
@@ -49,6 +57,19 @@ func New(api string, account *config.Account) (*Client, error) {
 		}
 	}
 	return c, nil
+}
+
+// checkRedirect follows redirects of GET requests, which discovery relies on,
+// but never of a POST: a 307 or 308 would send its body, with a password, a
+// bot password or an edit, to another address.
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if via[0].Method != http.MethodGet && via[0].Method != http.MethodHead {
+		return fmt.Errorf("refusing to follow a redirect of a %s request to %s; check the API URL", via[0].Method, req.URL.Redacted())
+	}
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return nil
 }
 
 // Cookies returns the session cookies to store after a password login.
@@ -84,6 +105,15 @@ func (e *APIError) Error() string { return "MediaWiki API error " + e.Code + ": 
 // Raw sends params with method and returns the response body. A non-2xx status
 // is an *HTTPError; API errors in the body are not checked.
 func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
+	if c.botName != "" && c.botState == 0 {
+		// A bot password session is short lived, so each run logs in afresh.
+		c.botState = 1
+		c.botErr = c.BotLogin(c.botName, c.botPassword)
+		c.botState = 2
+	}
+	if c.botErr != nil {
+		return nil, c.botErr
+	}
 	var req *http.Request
 	var err error
 	if method == http.MethodGet {
@@ -207,7 +237,7 @@ func (c *Client) Login(username, password string) error {
 	if err != nil {
 		return err
 	}
-	form := url.Values{"action": {"clientlogin"}, "loginreturnurl": {c.API}, "logintoken": {token}, "username": {username}, "password": {password}}
+	form := url.Values{"action": {"clientlogin"}, "loginreturnurl": {c.API}, "logintoken": {token}, "username": {username}, "password": {password}, "rememberMe": {"1"}}
 	var result struct {
 		ClientLogin struct {
 			Status  string `json:"status"`
@@ -619,4 +649,36 @@ func (c *Client) NamespaceNames(id int) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// IsBotName reports whether name looks like the login name of a bot password,
+// such as Alice@mybot: @ is MediaWiki's default delimiter, and user names
+// cannot contain it by default.
+func IsBotName(name string) bool { return strings.Contains(name, "@") }
+
+// BotLogin logs in with a bot password from Special:BotPasswords through
+// action=login, the only login module that accepts them.
+func (c *Client) BotLogin(name, password string) error {
+	token, err := c.TokenOf("login")
+	if err != nil {
+		return err
+	}
+	form := url.Values{"action": {"login"}, "lgname": {name}, "lgpassword": {password}, "lgtoken": {token}}
+	var result struct {
+		Login struct {
+			Result string `json:"result"`
+			Reason string `json:"reason"`
+		} `json:"login"`
+	}
+	if err := c.request(http.MethodPost, form, &result); err != nil {
+		return err
+	}
+	if result.Login.Result != "Success" {
+		reason := result.Login.Reason
+		if reason == "" {
+			reason = result.Login.Result
+		}
+		return fmt.Errorf("bot password login failed for %s: %s", name, reason)
+	}
+	return nil
 }
