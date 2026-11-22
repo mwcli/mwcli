@@ -15,3 +15,7 @@ mw api action=query list=categorymembers cmtitle=Category:Physics cmlimit=max --
 # all revisions of a page as one array
 mw api action=query prop=revisions titles=Sandbox rvprop='ids|timestamp|user' rvlimit=max --paginate --slurp
 ```
+
+## Database lag
+
+mw sends `maxlag=5` with every request, as Wikimedia asks of tools: while the wiki's database replicas lag more than 5 seconds, the wiki refuses the request before doing anything. mw then waits as long as the wiki's `Retry-After` says (5 seconds when it says nothing), prints a line on standard error, and sends the request again, up to 5 times; then the `maxlag` error is reported. Ctrl-C stops the wait. A wiki without replicas never refuses. With `mw api`, a `maxlag=N` parameter of your own replaces the default.

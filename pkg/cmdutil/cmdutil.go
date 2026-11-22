@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/mwcli/mwcli/api"
 	"github.com/mwcli/mwcli/internal/apicache"
@@ -286,7 +287,13 @@ func NewClient(apiURL string, account *config.Account) (*api.Client, error) {
 
 // ClientOptions turns a stored account into the options of an API client.
 func ClientOptions(account *config.Account) []api.Option {
-	opts := []api.Option{api.WithUserAgent(build.UserAgent())}
+	opts := []api.Option{api.WithUserAgent(build.UserAgent()), api.OnMaxlag(func(wait time.Duration, lag string) {
+		// A request the wiki refused for lag is sent again after the wait.
+		if lag != "" {
+			lag = " (" + lag + " s)"
+		}
+		fmt.Fprintf(os.Stderr, "The wiki's database is lagging%s; trying again in %s\n", lag, wait)
+	})}
 	if account == nil {
 		return opts
 	}

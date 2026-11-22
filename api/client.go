@@ -35,6 +35,11 @@ type Client struct {
 	botState             int // 0 not tried, 1 logging in, 2 done
 	botErr               error
 	loginDomain          string
+	// maxlag is sent with each request; onMaxlag hears of each wait, and
+	// sleep waits, which tests replace.
+	maxlag   int
+	onMaxlag func(wait time.Duration, lag string)
+	sleep    func(ctx context.Context, d time.Duration) error
 	// oauth1 signs every request to the API host with OAuth 1.0a.
 	oauth1 *OAuth1
 }
@@ -78,6 +83,24 @@ func WithCookies(cookies map[string]string) Option {
 	}
 }
 
+// DefaultMaxlag is the maxlag a client sends unless WithMaxlag says another:
+// the value Wikimedia asks of tools that are not run by a person.
+const DefaultMaxlag = 5
+
+// WithMaxlag sets the maxlag parameter of every request, in seconds: the wiki
+// refuses a request while its database replicas lag more, and the client waits
+// as the wiki asks and sends it again, up to 5 times. 0 sends none. A request
+// with its own maxlag parameter keeps it.
+func WithMaxlag(seconds int) Option {
+	return func(c *Client) { c.maxlag = seconds }
+}
+
+// OnMaxlag calls f before each wait for a wiki that refused a request for lag,
+// with the wait and the lag the wiki reported, such as to tell a person.
+func OnMaxlag(f func(wait time.Duration, lag string)) Option {
+	return func(c *Client) { c.onMaxlag = f }
+}
+
 // WithUserAgent sets the User-Agent of every request.
 func WithUserAgent(ua string) Option {
 	return func(c *Client) { c.UserAgent = ua }
@@ -94,7 +117,7 @@ func New(apiURL string, opts ...Option) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Client{API: apiURL, url: u, UserAgent: DefaultUserAgent}
+	c := &Client{API: apiURL, url: u, UserAgent: DefaultUserAgent, maxlag: DefaultMaxlag, sleep: sleepContext}
 	c.http = &http.Client{Jar: jar, Timeout: 45 * time.Second, CheckRedirect: c.checkRedirect}
 	for _, opt := range opts {
 		opt(c)
@@ -166,6 +189,63 @@ func (c *Client) Raw(ctx context.Context, method string, params url.Values) ([]b
 	if c.botErr != nil {
 		return nil, c.botErr
 	}
+	if c.maxlag > 0 && !params.Has("maxlag") {
+		p := url.Values{}
+		for k, v := range params {
+			p[k] = v
+		}
+		p.Set("maxlag", strconv.Itoa(c.maxlag))
+		params = p
+	}
+	for retry := 0; ; retry++ {
+		body, header, err := c.send(ctx, method, params)
+		if err != nil || retry >= maxlagRetries || !isMaxlag(body) {
+			return body, err
+		}
+		// The wiki refused the request before doing anything, as its database
+		// replicas lag, so it is safe to send again, a POST too.
+		wait := retryAfter(header)
+		if c.onMaxlag != nil {
+			c.onMaxlag(wait, header.Get("X-Database-Lag"))
+		}
+		if err := c.sleep(ctx, wait); err != nil {
+			return nil, err
+		}
+	}
+}
+
+// maxlagRetries is how many times a request refused for lag is sent again.
+const maxlagRetries = 5
+
+// isMaxlag reports whether body is the error of a request refused because the
+// wiki's database replicas lag more than maxlag seconds.
+func isMaxlag(body []byte) bool {
+	var ae *APIError
+	return errors.As(CheckError(body), &ae) && ae.Code == "maxlag"
+}
+
+// retryAfter is the wait the wiki asks for, 5 seconds when it names none.
+func retryAfter(h http.Header) time.Duration {
+	if s, err := strconv.Atoi(strings.TrimSpace(h.Get("Retry-After"))); err == nil && s > 0 {
+		return time.Duration(s) * time.Second
+	}
+	return 5 * time.Second
+}
+
+// sleepContext waits d, or until ctx is done.
+func sleepContext(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// send makes one request and returns its body and headers.
+func (c *Client) send(ctx context.Context, method string, params url.Values) ([]byte, http.Header, error) {
 	var req *http.Request
 	var err error
 	// Keep the query of the API URL, such as one that picks the wiki, but let a
@@ -190,7 +270,7 @@ func (c *Client) Raw(ctx context.Context, method string, params url.Values) ([]b
 		}
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req.Header.Set("User-Agent", c.UserAgent)
 	if c.Token != "" {
@@ -205,7 +285,7 @@ func (c *Client) Raw(ctx context.Context, method string, params url.Values) ([]b
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 	// Keep the query of the API URL itself, such as one that picks the wiki,
@@ -227,9 +307,10 @@ func (c *Client) Raw(ctx context.Context, method string, params url.Values) ([]b
 			b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 			e.Body = strings.TrimSpace(string(b))
 		}
-		return nil, e
+		return nil, resp.Header, e
 	}
-	return io.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
+	return b, resp.Header, err
 }
 
 // CheckError returns the first API error reported in body, if any.
