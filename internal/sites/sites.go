@@ -175,6 +175,9 @@ func resolved(cfg *config.Config, name string, site *config.Site, kind Kind) Res
 // itself when name looks like one.
 func Lookup(cfg *config.Config, name string) (Resolved, error) {
 	name = strings.TrimSpace(name)
+	if strings.Contains(name, "://") {
+		return ForAPI(cfg, name)
+	}
 	if s, ok := cfg.Sites.Wikis[name]; ok {
 		return resolved(cfg, name, s, Added), nil
 	}

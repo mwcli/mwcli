@@ -670,3 +670,22 @@ func TestFarmAliasAndAPISelectSameWikiAndPreserveDefault(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, secondAPI, r.Site.API)
 }
+
+func TestAPILoginWithoutAliasPersistsResolvableDefault(t *testing.T) {
+	e := newEnv(t)
+	secondAPI := e.base + "/two/api.php"
+	cfg := &config.Config{Dir: e.dir, Sites: config.Sites{Wikis: map[string]*config.Site{}}, Farms: map[string][]config.FarmSite{
+		"multi": {
+			{Host: e.host, API: e.api},
+			{Host: e.host, API: secondAPI},
+		},
+	}}
+	require.NoError(t, cfg.Save())
+	_, stderr, code := e.run(goodToken, "auth", "login", "--api", secondAPI, "--with-token")
+	require.Equal(t, 0, code, stderr)
+	cfg, err := config.LoadDir(e.dir)
+	require.NoError(t, err)
+	assert.Equal(t, secondAPI, cfg.Sites.Default)
+	_, stderr, code = e.run("", "page", "view", "Main Page")
+	require.Equal(t, 0, code, stderr)
+}
