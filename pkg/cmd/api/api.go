@@ -27,16 +27,18 @@ type options struct {
 	paginate  bool
 	slurp     bool
 	jq        string
+	input     string
 }
 
 // NewCmdAPI returns `mw api`.
 func NewCmdAPI(f *cmdutil.Factory) *cobra.Command {
 	opts := &options{}
 	cmd := &cobra.Command{
-		Use:   "api [<key>=<value>...]",
-		Short: "Make an authenticated MediaWiki Action API request",
+		Use:   "api [<path>] [<key>=<value>...]",
+		Short: "Make an authenticated MediaWiki API request",
 		Long: heredoc.Doc(`
-			Make a request to the wiki's api.php and print the response.
+			Make a request to the wiki's api.php and print the response. A first
+			argument starting with / is a path of the REST API instead (see below).
 
 			Parameters are given as <key>=<value> arguments or with -f/--raw-field.
 			-F/--field reads the value from a file when it starts with "@" ("@-" for
@@ -49,6 +51,15 @@ func NewCmdAPI(f *cmdutil.Factory) *cobra.Command {
 			until the result is complete, and prints each response; --slurp prints
 			them as one JSON array instead. --jq filters each response with a jq
 			expression. These need format=json.
+
+			REST API: the path is under the wiki's rest.php, next to its api.php, such
+			as /v1/page/Main_Page; it may have a query. Parameters go in the query of
+			a GET, HEAD or DELETE request, and otherwise make a JSON object sent as the
+			body, where -F also turns true, false, null and numbers into JSON values.
+			--input sends a file ("-" for standard input) as the body instead, and
+			parameters then go in the query. A request with a login session, not OAuth,
+			that is not a GET gets a CSRF token field. The exit status is 1 when the
+			response status is not 2xx; the response is printed all the same.
 		`),
 		Example: heredoc.Doc(`
 			$ mw api action=query meta=userinfo uiprop=rights
@@ -59,8 +70,21 @@ func NewCmdAPI(f *cmdutil.Factory) *cobra.Command {
 			# every member of a category, one title per line
 			$ mw api action=query list=categorymembers cmtitle=Category:Physics cmlimit=max \
 			    --paginate --jq '.query.categorymembers[].title'
+
+			# REST API
+			$ mw api /v1/page/Main_Page/bare --jq .latest.id
+			$ mw api '/v1/search/page?q=jq&limit=5' --jq '.pages[].title'
+			$ mw api -X POST /v1/page -f title=Sandbox/New -f source=Hello -f comment=test
+			$ mw api -X PUT /v1/page/Sandbox --input edit.json
 		`),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 && strings.HasPrefix(args[0], "/") {
+				opts.rawFields = append(args[1:], opts.rawFields...)
+				return runREST(cmd.Context(), f, args[0], opts)
+			}
+			if opts.input != "" {
+				return cmdutil.FlagErrorf("`--input` is only for a REST API path")
+			}
 			opts.rawFields = append(args, opts.rawFields...)
 			return run(cmd.Context(), f, opts)
 		},
@@ -72,6 +96,7 @@ func NewCmdAPI(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.paginate, "paginate", false, "Make additional requests following continue until the result is complete")
 	cmd.Flags().BoolVar(&opts.slurp, "slurp", false, "Use with \"--paginate\" to print an array of all responses")
 	cmd.Flags().StringVarP(&opts.jq, "jq", "q", "", "Filter each JSON response using a jq `expression`")
+	cmd.Flags().StringVar(&opts.input, "input", "", "The `file` to send as the body of a REST API request (use \"-\" to read from standard input)")
 	return cmd
 }
 
