@@ -2,7 +2,9 @@ package root
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -128,11 +130,34 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		http.NotFound(rw, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/files/") {
+		files := map[string]string{
+			"/files/Example.jpg": "jpeg-bytes",
+			"/files/Shared.png":  "shared-png-bytes",
+			"/files/Audio.ogg":   "ogg-bytes",
+			"/files/A_B.jpg":     "colon-file-bytes",
+			"/files/BadHash.png": "corrupt-bytes",
+		}
+		if body, ok := files[r.URL.Path]; ok {
+			_, _ = io.WriteString(rw, body)
+			return
+		}
+		http.NotFound(rw, r)
+		return
+	}
 	switch {
 	case p("meta") == "siteinfo" && p("siprop") == "namespaces|namespacealiases":
 		send(map[string]any{"query": map[string]any{
-			"namespaces":       map[string]any{"0": map[string]any{"id": 0, "name": ""}, "12": map[string]any{"id": 12, "name": "도움말", "canonical": "Help"}, "14": map[string]any{"id": 14, "name": "분류", "canonical": "Category"}},
-			"namespacealiases": []any{map[string]any{"id": 14, "alias": "Cat"}},
+			"namespaces": map[string]any{
+				"0":  map[string]any{"id": 0, "name": ""},
+				"6":  map[string]any{"id": 6, "name": "파일", "canonical": "File"},
+				"12": map[string]any{"id": 12, "name": "도움말", "canonical": "Help"},
+				"14": map[string]any{"id": 14, "name": "분류", "canonical": "Category"},
+			},
+			"namespacealiases": []any{
+				map[string]any{"id": 6, "alias": "Image"},
+				map[string]any{"id": 14, "alias": "Cat"},
+			},
 		}})
 	case p("action") == "parse" && p("onlypst") != "":
 		// The pre-save transform: for wikitext, trailing white space goes and
@@ -241,8 +266,15 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		w.lists = append(w.lists, r.Form)
 		key := p("list")
 		all := []any{}
-		for i := 1; i <= 7; i++ {
-			all = append(all, map[string]any{"pageid": i, "ns": 0, "title": fmt.Sprintf("P%d", i)})
+		if key == "categorymembers" && p("cmnamespace") == "6" {
+			all = []any{
+				map[string]any{"pageid": 101, "ns": 6, "title": "File:Example.jpg"},
+				map[string]any{"pageid": 102, "ns": 6, "title": "File:Audio.ogg"},
+			}
+		} else {
+			for i := 1; i <= 7; i++ {
+				all = append(all, map[string]any{"pageid": i, "ns": 0, "title": fmt.Sprintf("P%d", i)})
+			}
 		}
 		if p("apprefix") == "Nothing" {
 			send(map[string]any{"query": map[string]any{key: []any{}}})
@@ -270,6 +302,100 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			} else {
 				resp["continue"] = map[string]any{"fakecontinue": fmt.Sprint(end), "continue": "-||"}
 			}
+		}
+		send(resp)
+	case p("prop") == "imageinfo":
+		titles := strings.Split(p("titles"), "|")
+		var normalized, pages []any
+		sum := func(s string) string {
+			h := sha1.Sum([]byte(s))
+			return hex.EncodeToString(h[:])
+		}
+		for _, t := range titles {
+			n := strings.ReplaceAll(t, "_", " ")
+			switch {
+			case n == "File:example.jpg":
+				normalized = append(normalized, map[string]string{"from": t, "to": "File:Example.jpg"})
+				n = "File:Example.jpg"
+			case n == "File:Shared.png" || n == "Image:Shared.png":
+				normalized = append(normalized, map[string]string{"from": t, "to": "파일:Shared.png"})
+				n = "파일:Shared.png"
+			}
+			switch {
+			case strings.Contains(n, "<"):
+				pages = append(pages, map[string]any{"title": t, "invalid": true})
+			case n == "File:Example.jpg":
+				pages = append(pages, map[string]any{
+					"title": n, "imagerepository": "local",
+					"imageinfo": []any{map[string]any{
+						"url":            "http://" + r.Host + "/files/Example.jpg?utm_source=fake&utm_campaign=imageinfo",
+						"descriptionurl": "http://" + r.Host + "/wiki/File:Example.jpg",
+						"size":           len("jpeg-bytes"), "width": 300, "height": 200,
+						"mime": "image/jpeg", "mediatype": "BITMAP",
+						"timestamp": "2026-11-22T01:02:03Z", "user": "Jmnote",
+						"comment": "Sample\tphoto\nof\nwiki", "sha1": sum("jpeg-bytes"),
+					}},
+				})
+			case n == "파일:Shared.png":
+				pages = append(pages, map[string]any{
+					"title": n, "missing": true, "known": true, "imagerepository": "shared",
+					"imageinfo": []any{map[string]any{
+						"url":            "http://" + r.Host + "/files/Shared.png?utm_source=fake",
+						"descriptionurl": "//commons.example/wiki/File:Shared.png",
+						"size":           len("shared-png-bytes"), "width": 64, "height": 64,
+						"mime": "image/png", "mediatype": "BITMAP",
+						"timestamp": "2026-11-20T00:00:00Z", "user": "CommonsUser",
+						"comment": "From commons", "sha1": sum("shared-png-bytes"),
+					}},
+				})
+			case n == "File:Audio.ogg":
+				pages = append(pages, map[string]any{
+					"title": n, "imagerepository": "local",
+					"imageinfo": []any{map[string]any{
+						"url":            "http://" + r.Host + "/files/Audio.ogg",
+						"descriptionurl": "http://" + r.Host + "/wiki/File:Audio.ogg",
+						"size":           len("ogg-bytes"), "width": 0, "height": 0,
+						"mime": "application/ogg", "mediatype": "AUDIO",
+						"timestamp": "2026-11-21T12:00:00Z", "user": "",
+						"comment": "", "sha1": sum("ogg-bytes"),
+					}},
+				})
+			case n == "File:A: B.jpg":
+				pages = append(pages, map[string]any{
+					"title": n, "imagerepository": "local",
+					"imageinfo": []any{map[string]any{
+						"url":            "http://" + r.Host + "/files/A_B.jpg",
+						"descriptionurl": "http://" + r.Host + "/wiki/File:A:_B.jpg",
+						"size":           len("colon-file-bytes"), "width": 10, "height": 10,
+						"mime": "image/jpeg", "mediatype": "BITMAP",
+						"timestamp": "2026-11-22T05:00:00Z", "user": "Jmnote",
+						"comment": "Colon", "sha1": sum("colon-file-bytes"),
+					}},
+				})
+			case n == "File:BadHash.png":
+				pages = append(pages, map[string]any{
+					"title": n, "imagerepository": "local",
+					"imageinfo": []any{map[string]any{
+						"url":            "http://" + r.Host + "/files/BadHash.png",
+						"descriptionurl": "http://" + r.Host + "/wiki/File:BadHash.png",
+						"size":           len("corrupt-bytes"), "width": 10, "height": 10,
+						"mime": "image/png", "mediatype": "BITMAP",
+						"timestamp": "2026-11-22T06:00:00Z", "user": "Jmnote",
+						"comment": "Bad", "sha1": strings.Repeat("0", 40),
+					}},
+				})
+			case n == "File:Hidden.png":
+				pages = append(pages, map[string]any{
+					"title": n, "imagerepository": "local",
+					"imageinfo": []any{map[string]any{"timestamp": "2026-11-22T07:00:00Z"}},
+				})
+			default:
+				pages = append(pages, map[string]any{"title": n, "missing": true, "imagerepository": ""})
+			}
+		}
+		resp := map[string]any{"query": map[string]any{"normalized": normalized, "pages": pages}}
+		if len(titles) == 1 && titles[0] == "File:Example.jpg" {
+			resp["continue"] = map[string]string{"iistart": "2005-01-01T00:00:00Z", "continue": "||"}
 		}
 		send(resp)
 	case p("prop") == "categories" && p("pageids") == "7":
@@ -2049,6 +2175,165 @@ func TestAPIREST(t *testing.T) {
 		{"/v1/page", "nokey"},
 	} {
 		_, _, code = e.run("", append([]string{"api", "--wiki", e.api}, args...)...)
+		assert.Equal(t, 2, code, args)
+	}
+}
+
+func TestFileView(t *testing.T) {
+	e := newEnv(t)
+	sum := func(s string) string {
+		h := sha1.Sum([]byte(s))
+		return hex.EncodeToString(h[:])
+	}
+
+	out, stderr, code := e.run("", "file", "view", "--wiki", e.api, "Example.jpg")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, heredoc.Doc(`
+		title:	File:Example.jpg
+		url:	`+e.base+`/files/Example.jpg
+		descriptionurl:	`+e.base+`/wiki/File:Example.jpg
+		size:	10
+		width:	300
+		height:	200
+		mime:	image/jpeg
+		mediatype:	BITMAP
+		timestamp:	2026-11-22T01:02:03Z
+		user:	Jmnote
+		comment:	Sample photo of wiki
+		sha1:	`+sum("jpeg-bytes")+`
+		repository:	local
+	`), out)
+
+	e.stdoutTTY = true
+	out, stderr, code = e.run("", "file", "view", "--wiki", e.api, "Example.jpg")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "\x1b[1mFile:Example.jpg\x1b[0m\n"+heredoc.Doc(`
+		`+e.base+`/files/Example.jpg
+
+		Size      10 bytes (300 × 200)
+		Type      image/jpeg (BITMAP)
+		Uploaded  2026-11-22 01:02 by Jmnote
+		Summary   Sample photo of wiki
+	`), out)
+
+	out, stderr, code = e.run("", "file", "view", "--wiki", e.api, "파일:Shared.png")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, out, "Repository  shared, http://commons.example/wiki/File:Shared.png")
+
+	out, stderr, code = e.run("", "file", "view", "--wiki", e.api, "Audio.ogg")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, out, "Size      9 bytes\n")
+	assert.NotContains(t, out, "0 × 0")
+	assert.Contains(t, out, "Uploaded  2026-11-21 12:00\n")
+	assert.NotContains(t, out, " by ")
+	assert.NotContains(t, out, "Summary")
+	e.stdoutTTY = false
+
+	out, stderr, code = e.run("", "file", "view", "--wiki", e.api, "A: B.jpg", "--json", "title,url,sha1,repository")
+	require.Equal(t, 0, code, stderr)
+	assert.JSONEq(t, `{"title":"File:A: B.jpg","url":"`+e.base+`/files/A_B.jpg","sha1":"`+sum("colon-file-bytes")+`","repository":"local"}`, out)
+
+	out, _, code = e.run("", "file", "view", "--wiki", e.api, "Example.jpg", "--json", "sha1", "--jq", ".sha1")
+	require.Equal(t, 0, code)
+	assert.Equal(t, sum("jpeg-bytes")+"\n", out)
+
+	_, stderr, code = e.run("", "file", "view", "--wiki", e.api, "Shared.png", "--web")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "http://commons.example/wiki/File:Shared.png", e.browsed)
+
+	_, stderr, code = e.run("", "file", "view", "--wiki", e.api, "NoSuch.png")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "file does not exist: File:NoSuch.png on "+e.host)
+
+	_, stderr, code = e.run("", "file", "view", "--wiki", e.api, "Bad<file.png")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, `invalid file name "Bad<file.png"`)
+
+	for _, args := range [][]string{
+		{},
+		{"Example.jpg", "Other.jpg"},
+		{" "},
+		{"Example.jpg", "--web", "--json", "url"},
+	} {
+		_, _, code = e.run("", append([]string{"file", "view", "--wiki", e.api}, args...)...)
+		assert.Equal(t, 2, code, args)
+	}
+}
+
+func TestFileDownload(t *testing.T) {
+	e := newEnv(t)
+	dir := t.TempDir()
+	read := func(name string) string {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		require.NoError(t, err, name)
+		return string(b)
+	}
+
+	_, stderr, code := e.run("", "file", "download", "--wiki", e.api, "-D", dir, "Example.jpg", "example.jpg", "파일:Shared.png", "A: B.jpg")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "jpeg-bytes", read("Example.jpg"))
+	assert.Equal(t, "shared-png-bytes", read("Shared.png"))
+	assert.Equal(t, "colon-file-bytes", read("A%3A B.jpg"))
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	assert.Len(t, entries, 3)
+
+	_, stderr, code = e.run("", "file", "download", "--wiki", e.api, "-D", dir, "Example.jpg")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "Example.jpg exists; use --clobber to overwrite it or --skip-existing to keep it")
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Example.jpg"), []byte("mine"), 0o644))
+	_, stderr, code = e.run("", "file", "download", "--wiki", e.api, "-D", dir, "Example.jpg", "--skip-existing")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "mine", read("Example.jpg"))
+
+	_, stderr, code = e.run("", "file", "download", "--wiki", e.api, "-D", dir, "Example.jpg", "--clobber")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "jpeg-bytes", read("Example.jpg"))
+
+	badDir := t.TempDir()
+	_, stderr, code = e.run("", "file", "download", "--wiki", e.api, "-D", badDir, "BadHash.png")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "does not match the wiki's")
+	badEntries, err := os.ReadDir(badDir)
+	require.NoError(t, err)
+	assert.Empty(t, badEntries)
+
+	stdinDir := t.TempDir()
+	_, stderr, code = e.run("Audio.ogg\n\n Missing.png \r\nBad<file\nHidden.png\n", "file", "download", "--wiki", e.api, "-D", stdinDir, "-")
+	assert.Equal(t, 1, code)
+	b, err := os.ReadFile(filepath.Join(stdinDir, "Audio.ogg"))
+	require.NoError(t, err)
+	assert.Equal(t, "ogg-bytes", string(b))
+	assert.Contains(t, stderr, "file does not exist: File:Missing.png")
+	assert.Contains(t, stderr, `invalid file name "File:Bad<file"`)
+	assert.Contains(t, stderr, "file has no readable version: File:Hidden.png")
+
+	e.wiki.lists = nil
+	e.stdoutTTY = true
+	catDir := filepath.Join(dir, "cat")
+	_, stderr, code = e.run("", "file", "download", "--wiki", e.api, "--category", "Test files", "-L", "5", "-D", catDir)
+	e.stdoutTTY = false
+	require.Equal(t, 0, code, stderr)
+	require.NotEmpty(t, e.wiki.lists)
+	assert.Equal(t, "Category:Test files", e.wiki.lists[0].Get("cmtitle"))
+	assert.Equal(t, "6", e.wiki.lists[0].Get("cmnamespace"))
+	assert.Equal(t, "5", e.wiki.lists[0].Get("cmlimit"))
+	assert.Contains(t, stderr, "Downloading File:Example.jpg (10 bytes)")
+	assert.Contains(t, stderr, "\x1b[32m✓\x1b[0m Downloaded 2 file(s) to "+catDir)
+	assert.Equal(t, "jpeg-bytes", read(filepath.Join("cat", "Example.jpg")))
+	assert.Equal(t, "ogg-bytes", read(filepath.Join("cat", "Audio.ogg")))
+
+	for _, args := range [][]string{
+		{},
+		{"Example.jpg", "--category", "X"},
+		{"Example.jpg", "--clobber", "--skip-existing"},
+		{"-", "-"},
+		{" "},
+		{"--category", " "},
+		{"--category", "X", "-L", "0"},
+	} {
+		_, _, code = e.run("", append([]string{"file", "download", "--wiki", e.api, "-D", dir}, args...)...)
 		assert.Equal(t, 2, code, args)
 	}
 }

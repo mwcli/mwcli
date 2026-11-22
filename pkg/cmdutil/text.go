@@ -1,6 +1,7 @@
 package cmdutil
 
 import (
+	"strconv"
 	"strings"
 	"time"
 )
@@ -25,3 +26,21 @@ var tsvReplacer = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", "
 
 // TSVField makes s safe as one column of a tab-separated line.
 func TSVField(s string) string { return tsvReplacer.Replace(s) }
+
+// Thousands writes v with commas between groups of three digits.
+func Thousands(v int64) string {
+	s := strconv.FormatInt(v, 10)
+	neg := strings.HasPrefix(s, "-")
+	s = strings.TrimPrefix(s, "-")
+	var b strings.Builder
+	for i, r := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(r)
+	}
+	if neg {
+		return "-" + b.String()
+	}
+	return b.String()
+}

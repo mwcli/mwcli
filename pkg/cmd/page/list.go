@@ -76,7 +76,7 @@ func list(ctx context.Context, c *api.Client, opts api.ListOptions) ([]api.PageR
 	}
 	if opts.Source == api.CategoryMembers {
 		var err error
-		if opts.Value, err = categoryTitle(ctx, c, opts.Value); err != nil {
+		if opts.Value, err = cmdutil.NamespacedTitle(ctx, c, opts.Value, 14, "Category"); err != nil {
 			return nil, err
 		}
 	}
@@ -164,27 +164,4 @@ func splitPrefix(ctx context.Context, c *api.Client, opts *api.ListOptions) erro
 	opts.Namespace = &id
 	opts.Value = strings.TrimLeft(rest, " _")
 	return nil
-}
-
-// categoryTitle returns the title of a category: name as it is when it starts
-// with a name of the category namespace, local, canonical or an alias, else
-// Category: followed by name, so that a category named "A: B" works without
-// its prefix too.
-func categoryTitle(ctx context.Context, c *api.Client, name string) (string, error) {
-	name = strings.TrimSpace(name)
-	prefix, _, ok := strings.Cut(name, ":")
-	if !ok {
-		return "Category:" + name, nil
-	}
-	names, err := c.NamespaceNames(ctx, 14)
-	if err != nil {
-		return "", err
-	}
-	norm := func(s string) string { return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(s), "_", " ")) }
-	for _, n := range names {
-		if n != "" && norm(n) == norm(prefix) {
-			return name, nil
-		}
-	}
-	return "Category:" + name, nil
 }

@@ -123,7 +123,7 @@ func software(s *api.Site) string {
 }
 
 func printSite(ios *iostreams.IOStreams, s *api.Site, apiURL string) error {
-	n := func(v int) string { return thousands(v) }
+	n := func(v int) string { return cmdutil.Thousands(int64(v)) }
 	fmt.Fprintln(ios.Out, ios.Bold(s.SiteName))
 	if s.URL != "" {
 		fmt.Fprintln(ios.Out, s.URL)
@@ -173,22 +173,4 @@ func printSiteRaw(w io.Writer, s *api.Site, apiURL string) error {
 		}
 	}
 	return nil
-}
-
-// thousands writes v with commas between groups of three digits.
-func thousands(v int) string {
-	s := strconv.Itoa(v)
-	neg := strings.HasPrefix(s, "-")
-	s = strings.TrimPrefix(s, "-")
-	var b strings.Builder
-	for i, r := range s {
-		if i > 0 && (len(s)-i)%3 == 0 {
-			b.WriteByte(',')
-		}
-		b.WriteRune(r)
-	}
-	if neg {
-		return "-" + b.String()
-	}
-	return b.String()
 }

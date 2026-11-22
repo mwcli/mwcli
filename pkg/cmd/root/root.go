@@ -7,6 +7,7 @@ import (
 	apiCmd "github.com/mwcli/mwcli/pkg/cmd/api"
 	authCmd "github.com/mwcli/mwcli/pkg/cmd/auth"
 	browseCmd "github.com/mwcli/mwcli/pkg/cmd/browse"
+	fileCmd "github.com/mwcli/mwcli/pkg/cmd/file"
 	pageCmd "github.com/mwcli/mwcli/pkg/cmd/page"
 	siteCmd "github.com/mwcli/mwcli/pkg/cmd/site"
 	userCmd "github.com/mwcli/mwcli/pkg/cmd/user"
@@ -39,6 +40,7 @@ func NewCmdRoot(f *cmdutil.Factory) *cobra.Command {
 	})
 	cmd.AddCommand(authCmd.NewCmdAuth(f))
 	cmd.AddCommand(pageCmd.NewCmdPage(f))
+	cmd.AddCommand(fileCmd.NewCmdFile(f))
 	cmd.AddCommand(siteCmd.NewCmdSite(f))
 	cmd.AddCommand(userCmd.NewCmdUser(f))
 	cmd.AddCommand(browseCmd.NewCmdBrowse(f))

@@ -212,36 +212,10 @@ var extensions = map[string]string{
 	"Scribunto":     ".lua",
 }
 
-// windowsReserved are base names Windows does not allow for files.
-var windowsReserved = map[string]bool{
-	"CON": true, "PRN": true, "AUX": true, "NUL": true,
-	"COM1": true, "COM2": true, "COM3": true, "COM4": true, "COM5": true, "COM6": true, "COM7": true, "COM8": true, "COM9": true,
-	"LPT1": true, "LPT2": true, "LPT3": true, "LPT4": true, "LPT5": true, "LPT6": true, "LPT7": true, "LPT8": true, "LPT9": true,
-}
-
-// fileName is the file a page is saved as: its title with each character a
-// file name cannot hold on Windows, macOS or Linux, and %, written as %XX, and
-// an extension for its content model.
+// fileName is the file a page is saved as: its title made safe as a file
+// name, with an extension for its content model.
 func fileName(title, model string) string {
-	var b strings.Builder
-	for i, r := range title {
-		switch {
-		case r < 0x20 || r == 0x7f || strings.ContainsRune(`/\:*?"<>|%`, r):
-			fmt.Fprintf(&b, "%%%02X", r)
-		case (r == '.' || r == ' ') && i == len(title)-1:
-			// Windows drops a final dot or space.
-			fmt.Fprintf(&b, "%%%02X", r)
-		case r == '.' && i == 0:
-			// A leading dot hides the file, and . or .. are not files.
-			b.WriteString("%2E")
-		default:
-			b.WriteRune(r)
-		}
-	}
-	name := b.String()
-	if base, _, _ := strings.Cut(name, "."); windowsReserved[strings.ToUpper(base)] {
-		name = fmt.Sprintf("%%%02X", name[0]) + name[1:]
-	}
+	name := cmdutil.SafeFileName(title)
 	ext, ok := extensions[model]
 	if !ok {
 		ext = ".txt"
