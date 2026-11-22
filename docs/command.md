@@ -37,7 +37,6 @@ mw
 ## config.yml
 
 ```yaml
-sites:
 context: wikipedia
 farms:
     wikimedia:

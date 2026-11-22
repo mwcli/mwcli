@@ -24,7 +24,7 @@ func TestLoginLogoutSwitchSave(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, c.Logins)
 
-	c.Sites.Wikis["zeta"] = &Site{API: "https://wiki.example.org/api.php", Aliases: []string{"z"}}
+	c.Farms["zeta"] = []FarmSite{{Host: "wiki.example.org", API: "https://wiki.example.org/api.php", Aliases: []string{"z"}}}
 	c.Login("zeta", "Alice", &Account{Auth: AuthOAuth2, OAuthToken: "t1"})
 	c.Login("zeta", "Bob", &Account{Auth: AuthSession, Cookies: map[string]string{"s": "v"}})
 	c.Login("wiki.example.com", "Carol", &Account{Auth: AuthBotPassword, BotName: "Carol@b", BotPassword: "p"})
@@ -40,8 +40,7 @@ func TestLoginLogoutSwitchSave(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "zeta", c.Context, "the first login sets the default; later ones keep it")
 	assert.Equal(t, []string{"wiki.example.com", "zeta"}, c.LoginNames())
-	assert.Equal(t, []string{"zeta"}, c.SiteNames())
-	assert.Equal(t, []string{"z"}, c.Sites.Wikis["zeta"].Aliases)
+	assert.Equal(t, []string{"z"}, c.Farms["zeta"][0].Aliases)
 	user, a, ok := c.ActiveAccount("zeta")
 	require.True(t, ok)
 	assert.Equal(t, "Bob", user)

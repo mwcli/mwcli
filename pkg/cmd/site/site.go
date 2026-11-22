@@ -61,7 +61,7 @@ func newCmdAdd(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if sites.IsFarmName(cfg, name) {
+			if sites.IsBuiltinFarmName(name) {
 				return cmdutil.FlagErrorf("site name %q conflicts with a farm name", name)
 			}
 			for _, a := range aliases {
@@ -75,13 +75,24 @@ func newCmdAdd(f *cmdutil.Factory) *cobra.Command {
 			}
 			s.Aliases = aliases
 			sort.Strings(s.Aliases)
-			previous, replaced := cfg.Sites.Wikis[name]
-			if replaced && previous.API != s.API {
-				if _, scopedByFarm := loginKeyForAPI(cfg, previous.API); !scopedByFarm {
-					delete(cfg.Logins, name)
+			farm := cfg.Farms[name]
+			replaced := false
+			entry := config.FarmSite{Host: hostOf(s.API), API: s.API, Aliases: s.Aliases, Server: s.Server, Script: s.Script, ArticlePath: s.ArticlePath}
+			for i, previous := range farm {
+				oldAPI := previous.API
+				if oldAPI == "" {
+					oldAPI = config.DefaultAPI(previous.Host)
+				}
+				if oldAPI == s.API {
+					farm[i] = entry
+					replaced = true
+					break
 				}
 			}
-			cfg.Sites.Wikis[name] = s
+			if !replaced {
+				farm = append(farm, entry)
+			}
+			cfg.Farms[name] = farm
 			if err := cfg.Save(); err != nil {
 				return err
 			}
@@ -110,11 +121,12 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			m := cfg.Sites.Wikis
-			if builtin {
-				m = sites.Builtin()
+			entries := listedSites(cfg, builtin)
+			names := make([]string, 0, len(entries))
+			for name := range entries {
+				names = append(names, name)
 			}
-			names := sortedNames(m)
+			sort.Strings(names)
 			if len(names) == 0 {
 				if ios.IsStdoutTTY() {
 					fmt.Fprintln(ios.ErrOut, "No sites added. Add one with: mw site add WIKI")
@@ -126,13 +138,16 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 				width = max(width, len(n))
 			}
 			for _, n := range names {
+				site := entries[n]
 				mark := " "
-				if !builtin && n == cfg.Context {
-					mark = "*"
+				if !builtin && cfg.Context != "" {
+					if cfg.Context == n || cfg.Context == site.API || strings.EqualFold(cfg.Context, hostOf(site.API)) || containsName(site.Aliases, cfg.Context) {
+						mark = "*"
+					}
 				}
-				line := fmt.Sprintf("%s %-*s  %s", mark, width, n, m[n].API)
-				if len(m[n].Aliases) > 0 {
-					aliases := append([]string(nil), m[n].Aliases...)
+				line := fmt.Sprintf("%s %-*s  %s", mark, width, n, site.API)
+				if len(site.Aliases) > 0 {
+					aliases := append([]string(nil), site.Aliases...)
 					sort.Strings(aliases)
 					line += "  (" + strings.Join(aliases, ", ") + ")"
 				}
@@ -143,6 +158,15 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&builtin, "builtin", false, "List the built-in sites")
 	return cmd
+}
+
+func containsName(names []string, name string) bool {
+	for _, candidate := range names {
+		if strings.EqualFold(candidate, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func newCmdRemove(f *cmdutil.Factory) *cobra.Command {
@@ -157,19 +181,28 @@ func newCmdRemove(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			name := args[0]
-			removedSite, ok := cfg.Sites.Wikis[name]
-			if !ok {
+			farm, index, removedSite := findFarmSite(cfg, name)
+			if farm == "" {
 				return fmt.Errorf("no site named %s was added", name)
 			}
 			defaultPointsToRemoved := cfg.Context == name || cfg.Context == removedSite.API
 			if cfg.Context != "" && !defaultPointsToRemoved {
 				if current, err := sites.Lookup(cfg, cfg.Context); err == nil {
-					defaultPointsToRemoved = current.Name == name
+					defaultPointsToRemoved = current.Site.API == removedSite.API
 				}
 			}
-			delete(cfg.Sites.Wikis, name)
-			_, hadLogin := cfg.Logins[name]
-			delete(cfg.Logins, name)
+			wikis := cfg.Farms[farm]
+			wikis = append(wikis[:index], wikis[index+1:]...)
+			if len(wikis) == 0 {
+				delete(cfg.Farms, farm)
+			} else {
+				cfg.Farms[farm] = wikis
+			}
+			hadLogin := false
+			if len(wikis) == 0 {
+				_, hadLogin = cfg.Logins[farm]
+				delete(cfg.Logins, farm)
+			}
 			if defaultPointsToRemoved {
 				cfg.Context = ""
 			}
@@ -226,26 +259,42 @@ func hostOf(target string) string {
 	return target
 }
 
-func sortedNames(m map[string]*config.Site) []string {
-	names := make([]string, 0, len(m))
-	for n := range m {
-		names = append(names, n)
+func listedSites(cfg *config.Config, builtin bool) map[string]*config.Site {
+	if builtin {
+		return sites.Builtin()
 	}
-	sort.Strings(names)
-	return names
-}
-
-func loginKeyForAPI(cfg *config.Config, api string) (string, bool) {
+	m := map[string]*config.Site{}
 	for farm, wikis := range cfg.Farms {
 		for _, wiki := range wikis {
-			endpoint := wiki.API
-			if endpoint == "" {
-				endpoint = config.DefaultAPI(wiki.Host)
+			name := wiki.Host
+			if len(wikis) == 1 {
+				name = farm
 			}
-			if endpoint == api {
-				return farm, true
+			if name == "" {
+				name = farm
+			}
+			s := &config.Site{API: wiki.API, Aliases: wiki.Aliases, Server: wiki.Server, Script: wiki.Script, ArticlePath: wiki.ArticlePath}
+			if s.API == "" {
+				s.API = config.DefaultAPI(wiki.Host)
+			}
+			m[name] = s
+		}
+	}
+	return m
+}
+
+func findFarmSite(cfg *config.Config, name string) (string, int, config.FarmSite) {
+	for farm, wikis := range cfg.Farms {
+		for i, wiki := range wikis {
+			if strings.EqualFold(name, farm) && len(wikis) == 1 || strings.EqualFold(name, wiki.Host) {
+				return farm, i, wiki
+			}
+			for _, alias := range wiki.Aliases {
+				if strings.EqualFold(name, alias) {
+					return farm, i, wiki
+				}
 			}
 		}
 	}
-	return "", false
+	return "", -1, config.FarmSite{}
 }

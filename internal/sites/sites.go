@@ -92,6 +92,12 @@ func IsFarmName(cfg *config.Config, name string) bool {
 	return false
 }
 
+// IsBuiltinFarmName reports whether name is reserved for a built-in farm.
+func IsBuiltinFarmName(name string) bool {
+	_, ok := builtinFarmName[strings.ToLower(name)]
+	return ok
+}
+
 // FarmAPI returns a registered validation API for a farm login key.
 func FarmAPI(cfg *config.Config, name string) string {
 	for farm, wikis := range cfg.Farms {
@@ -178,11 +184,8 @@ func Lookup(cfg *config.Config, name string) (Resolved, error) {
 	if strings.Contains(name, "://") {
 		return ForAPI(cfg, name)
 	}
-	if s, ok := cfg.Sites.Wikis[name]; ok {
-		return resolved(cfg, name, s, Added), nil
-	}
-	if r, ok := byAlias(cfg.Sites.Wikis, name, Added); ok {
-		return resolved(cfg, r.Name, r.Site, r.Kind), nil
+	if r, ok := byFarm(cfg, name); ok {
+		return r, nil
 	}
 	if s, ok := builtin[strings.ToLower(name)]; ok {
 		return resolved(cfg, strings.ToLower(name), s, BuiltIn), nil
@@ -190,16 +193,10 @@ func Lookup(cfg *config.Config, name string) (Resolved, error) {
 	if r, ok := byAlias(builtin, name, BuiltIn); ok {
 		return resolved(cfg, r.Name, r.Site, r.Kind), nil
 	}
-	if r, ok := byFarm(cfg, name); ok {
-		return r, nil
-	}
 	if !strings.Contains(name, ".") {
 		return Resolved{}, fmt.Errorf("unknown site %q; add it with `mw site add %s URL`, or give a host name", name, name)
 	}
 	host := strings.ToLower(name)
-	if r, ok := byHost(cfg.Sites.Wikis, host, Added); ok {
-		return resolved(cfg, r.Name, r.Site, r.Kind), nil
-	}
 	if r, ok := byHost(builtin, host, BuiltIn); ok {
 		return resolved(cfg, r.Name, r.Site, r.Kind), nil
 	}
@@ -235,20 +232,13 @@ func ForAPI(cfg *config.Config, api string) (Resolved, error) {
 			}
 		}
 	}
-	for _, src := range []struct {
-		m    map[string]*config.Site
-		kind Kind
-	}{{cfg.Sites.Wikis, Added}, {builtin, BuiltIn}} {
-		for _, n := range sortedNames(src.m) {
-			if src.m[n].API == api {
-				return resolved(cfg, n, src.m[n], src.kind), nil
-			}
+	for _, n := range sortedNames(builtin) {
+		if builtin[n].API == api {
+			return resolved(cfg, n, builtin[n], BuiltIn), nil
 		}
 	}
 	name := strings.ToLower(host)
-	if _, taken := cfg.Sites.Wikis[name]; taken {
-		name = api
-	} else if _, taken := builtin[name]; taken {
+	if _, taken := builtin[name]; taken {
 		name = api
 	}
 	return resolved(cfg, name, &config.Site{API: api}, Unregistered), nil
@@ -309,20 +299,27 @@ func sortedNames(m map[string]*config.Site) []string {
 }
 
 func byFarm(cfg *config.Config, name string) (Resolved, bool) {
+	if cfg == nil {
+		return Resolved{}, false
+	}
 	for farm, wikis := range cfg.Farms {
 		for _, wiki := range wikis {
-			matched := strings.EqualFold(name, wiki.Host)
+			matched := strings.EqualFold(name, wiki.Host) || len(wikis) == 1 && !strings.Contains(name, ".") && strings.EqualFold(name, farm)
 			for _, alias := range wiki.Aliases {
 				matched = matched || strings.EqualFold(name, alias)
 			}
 			if matched {
-				api := wiki.API
-				if api == "" {
-					api = config.DefaultAPI(wiki.Host)
-				}
-				return Resolved{Name: name, LoginKey: farm, Site: &config.Site{API: api, Aliases: wiki.Aliases}, Kind: Added}, true
+				return Resolved{Name: name, LoginKey: farm, Site: farmSite(wiki), Kind: Added}, true
 			}
 		}
 	}
 	return Resolved{}, false
+}
+
+func farmSite(w config.FarmSite) *config.Site {
+	api := w.API
+	if api == "" {
+		api = config.DefaultAPI(w.Host)
+	}
+	return &config.Site{API: api, Aliases: w.Aliases, Server: w.Server, Script: w.Script, ArticlePath: w.ArticlePath}
 }
