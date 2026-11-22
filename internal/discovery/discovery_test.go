@@ -121,3 +121,39 @@ func TestHostDefaultsToHTTPS(t *testing.T) {
 	_, err := Find(context.Background(), "wiki.invalid")
 	assert.ErrorContains(t, err, "https://wiki.invalid")
 }
+
+func TestEscapeQuery(t *testing.T) {
+	assert.Equal(t, "title=%EB%8C%80%EB%AC%B8&wiki=a", escapeQuery("title=대문&wiki=a"))
+	assert.Equal(t, "title=A%20B&x=%EB%8C%80", escapeQuery("title=A B&x=%EB%8C%80"), "escapes stay as they are")
+	assert.Equal(t, "", escapeQuery(""))
+}
+
+// A page URL with a query copied unescaped from a browser is read with the
+// query escaped, so a server that refuses raw non-ASCII bytes still answers.
+func TestFindUnescapedQuery(t *testing.T) {
+	var raw string
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/w/index.php":
+			raw = r.URL.RawQuery
+			for _, c := range []byte(r.URL.RawQuery) {
+				if c >= 0x80 {
+					http.Error(rw, "bad request", http.StatusBadRequest)
+					return
+				}
+			}
+			rw.Header().Set("Content-Type", "text/html")
+			_, _ = rw.Write([]byte(`<link rel="EditURI" type="application/rsd+xml" href="` + srv.URL + `/w/api.php?action=rsd">`))
+		case "/w/api.php":
+			siteinfo(rw, "Fake")
+		default:
+			http.NotFound(rw, r)
+		}
+	}))
+	defer srv.Close()
+	s, err := Find(context.Background(), srv.URL+"/w/index.php?title=대문")
+	require.NoError(t, err)
+	assert.Equal(t, srv.URL+"/w/api.php", s.API)
+	assert.Equal(t, "title=%EB%8C%80%EB%AC%B8", raw)
+}

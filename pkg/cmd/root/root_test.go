@@ -1531,3 +1531,19 @@ func TestPageEditBaserevid(t *testing.T) {
 	assert.NotEqual(t, 0, code)
 	assert.Contains(t, stderr, "unknown flag: --baserevid")
 }
+
+// A first login that fails adds no site and does not say it did.
+func TestFailedFirstLoginAddsNoSite(t *testing.T) {
+	e := newEnv(t)
+	_, stderr, code := e.run("", "auth", "login", "--wiki", e.api)
+	assert.Equal(t, 2, code)
+	assert.NotContains(t, stderr, "Added site")
+	cfg, err := config.LoadDir(e.dir)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Farms)
+
+	_, stderr, code = e.run(goodToken+"\n", "auth", "login", "--wiki", e.api, "--with-token")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "Added site "+e.host)
+	assert.Less(t, strings.Index(stderr, "Added site"), strings.Index(stderr, "Logged in"))
+}

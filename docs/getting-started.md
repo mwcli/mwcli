@@ -105,12 +105,17 @@ Try it on a sandbox page first. Save its wikitext to a file, change the file, an
 ```sh
 mw page view 'Sandbox' > sandbox.wiki
 # edit sandbox.wiki in any editor
+mw page edit 'Sandbox' --file sandbox.wiki --dry-run
 mw page edit 'Sandbox' --file sandbox.wiki --summary 'Testing mw'
 ```
+
+`--dry-run` shows what the edit would change, as a diff, and saves nothing; run it again without `--dry-run` to save:
 
 ```text
 ✓ Updated Sandbox on wiki.example.org
 ```
+
+`mw page diff 'Sandbox'` shows the change of the latest edit, and `mw page history 'Sandbox'` lists the edits of the page.
 
 If the wiki has no page named Sandbox, `mw page view` says the page does not exist; write the file from scratch and make the page with `mw page create 'Sandbox' --file sandbox.wiki` instead. Creating a page needs the grant to create pages (createeditmovepage) as well as editpage.
 
@@ -135,6 +140,6 @@ MW_WIKI=other.example.org mw page list --namespace 12   # the Help: namespace
 
 ## Next
 
-- [Pages](pages.md): view pages as JSON, list pages by category or search, edit from standard input
+- [Pages](pages.md): view pages as JSON, list pages by category or search, history and diffs, create and edit pages, `--dry-run` and `--baserevid`
 - [API requests](api.md): call any Action API module with `mw api`
 - [Commands](command.md): every command and flag
