@@ -32,7 +32,7 @@ mw page list --embeds 'Template:Infobox' --namespace 0 --json title --jq '.[].ti
 
 ## Creating and editing pages
 
-`mw page edit TITLE` replaces the wikitext of an existing page from `--text` or `--file` (`-` for standard input). `mw page create TITLE` makes a new page the same way. Each refuses the other's job, so a typo in a title does not create a page and a new page does not overwrite one made meanwhile; the error names the command to run instead.
+`mw page edit TITLE` replaces the wikitext of an existing page from `--text` or `--file` (`-` for standard input). `mw page create TITLE` makes a new page the same way. Each refuses the other's job, so a typo in a title does not create a page and a new page does not overwrite one made meanwhile; the error says to run the same command with the other one.
 
 - `-s`, `--summary` sets the edit summary.
 - `--minor` marks the edit minor. `--bot` marks it a bot edit, which hides it from recent changes when the account has the bot right.

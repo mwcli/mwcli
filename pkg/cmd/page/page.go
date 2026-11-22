@@ -197,10 +197,12 @@ func saveRun(f *cmdutil.Factory, cmd *cobra.Command, o *editFlags, title string,
 	switch {
 	case errors.As(err, &ae) && ae.Code == "assertuserfailed":
 		return cmdutil.NotLoggedIn(t.Name)
+	// The hints name the other command but keep the user's own command line,
+	// which holds the wiki, the text and its source, rather than rebuild it.
 	case errors.Is(err, api.ErrMissingPage):
-		return fmt.Errorf("%w on %s; to make it, run: mw page create %s", err, t.Name, cmdutil.Quote(title))
+		return fmt.Errorf("%w on %s; to make it, run the same command with `mw page create` in place of `mw page edit`", err, t.Name)
 	case errors.Is(err, api.ErrPageExists):
-		return fmt.Errorf("%w on %s; to change it, run: mw page edit %s", err, t.Name, cmdutil.Quote(title))
+		return fmt.Errorf("%w on %s; to change it, run the same command with `mw page edit` in place of `mw page create`", err, t.Name)
 	case err != nil:
 		return err
 	}

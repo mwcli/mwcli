@@ -346,10 +346,10 @@ func TestPageViewEdit(t *testing.T) {
 	// edit does not create a page; create does not change one.
 	_, stderr, code = e.run("", "page", "edit", "New/Page one", "--text", "x")
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "page does not exist: New/Page one on "+e.host+"; to make it, run: mw page create 'New/Page one'")
+	assert.Contains(t, stderr, "page does not exist: New/Page one on "+e.host+"; to make it, run the same command with `mw page create` in place of `mw page edit`")
 	_, stderr, code = e.run("", "page", "create", "Sandbox", "--text", "x")
 	assert.Equal(t, 1, code)
-	assert.Contains(t, stderr, "page already exists: Sandbox on "+e.host+"; to change it, run: mw page edit Sandbox")
+	assert.Contains(t, stderr, "page already exists: Sandbox on "+e.host+"; to change it, run the same command with `mw page edit` in place of `mw page create`")
 
 	_, stderr, code = e.run("", "page", "create", "New/Page one", "--text", "First", "-s", "new")
 	require.Equal(t, 0, code, stderr)

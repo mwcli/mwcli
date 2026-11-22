@@ -4,7 +4,6 @@ package cmdutil
 import (
 	"errors"
 	"fmt"
-	"github.com/kballard/go-shellquote"
 	"os"
 	"strings"
 
@@ -223,6 +222,3 @@ func loginKey(t Target) string {
 	}
 	return t.Name
 }
-
-// Quote quotes s for a shell command line shown to the user.
-func Quote(s string) string { return shellquote.Join(s) }
