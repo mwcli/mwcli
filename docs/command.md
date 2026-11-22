@@ -9,7 +9,7 @@ mw
 │   ├── switch  [--wiki WIKI] [-u USER]
 │   └── token   [--wiki WIKI] [-u USER]
 ├── site
-│   ├── add     [NAME] WIKI [--alias ALIAS]
+│   ├── add     [NAME] WIKI [--alias ALIAS] [--farm FARM]
 │   ├── list    [--builtin]
 │   ├── remove  NAME
 │   └── default [NAME]

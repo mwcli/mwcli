@@ -343,7 +343,8 @@ func TestSite(t *testing.T) {
 	assert.Equal(t, goodToken+"\n", out)
 
 	// Logging in elsewhere keeps the default; only `mw site default` changes it.
-	_, stderr, code = e.run("", "site", "add", "second", e.api)
+	secondAPI := e.base + "/second/api.php"
+	_, stderr, code = e.run("", "site", "add", "second", secondAPI)
 	require.Equal(t, 0, code, stderr)
 	_, stderr, code = e.run(goodToken, "auth", "login", "--wiki", "second", "--with-token")
 	require.Equal(t, 0, code, stderr)
@@ -356,7 +357,7 @@ func TestSite(t *testing.T) {
 
 	out, _, _ = e.run("", "site", "list")
 	assert.Contains(t, out, "  other   "+e.base+"/w/api.php  (o)\n")
-	assert.Contains(t, out, "* second  "+e.base+"/w/api.php\n")
+	assert.Contains(t, out, "* second  "+secondAPI+"\n")
 
 	_, stderr, code = e.run("", "site", "remove", "other")
 	require.Equal(t, 0, code, stderr)
@@ -623,6 +624,70 @@ func TestSiteAddRejectsFarmName(t *testing.T) {
 	_, stderr, code := e.run("", "site", "add", "wikimedia", "https://new.example.org/w/api.php")
 	require.Equal(t, 2, code)
 	assert.Contains(t, stderr, "conflicts with a farm name")
+}
+
+func TestSiteAddRequiresExplicitFarmToShareExistingLogin(t *testing.T) {
+	e := newEnv(t)
+	_, stderr, code := e.run("", "site", "add", "docs", e.base)
+	require.Equal(t, 0, code, stderr)
+	_, stderr, code = e.run(goodToken, "auth", "login", "--wiki", "docs", "--with-token")
+	require.Equal(t, 0, code, stderr)
+
+	secondAPI := e.base + "/two/api.php"
+	_, stderr, code = e.run("", "site", "add", "docs", secondAPI)
+	require.Equal(t, 2, code)
+	assert.Contains(t, stderr, `use --farm "docs" to explicitly share its login`)
+	cfg, err := config.LoadDir(e.dir)
+	require.NoError(t, err)
+	require.Len(t, cfg.Farms["docs"], 1)
+	require.Contains(t, cfg.Logins, "docs")
+
+	_, stderr, code = e.run("", "site", "add", "handbook", secondAPI, "--farm", "docs")
+	require.Equal(t, 0, code, stderr)
+	cfg, err = config.LoadDir(e.dir)
+	require.NoError(t, err)
+	require.Len(t, cfg.Farms["docs"], 2)
+	assert.Contains(t, cfg.Farms["docs"][1].Aliases, "handbook")
+	out, stderr, code := e.run("", "auth", "token", "--wiki", "handbook")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, goodToken+"\n", out)
+}
+
+func TestSiteListAndRemoveDisambiguateSameHostAPIs(t *testing.T) {
+	e := newEnv(t)
+	firstAPI := e.base + "/one/api.php"
+	secondAPI := e.base + "/two/api.php"
+	cfg := &config.Config{Dir: e.dir, Context: secondAPI, Farms: map[string][]config.FarmSite{
+		"multi": {
+			{Host: e.host, API: firstAPI},
+			{Host: e.host, API: secondAPI},
+		},
+	}}
+	require.NoError(t, cfg.Save())
+
+	out, stderr, code := e.run("", "site", "list")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, out, "  "+firstAPI+"  "+firstAPI+"\n")
+	assert.Contains(t, out, "* "+secondAPI+"  "+secondAPI+"\n")
+
+	_, stderr, code = e.run("", "site", "remove", e.host)
+	require.Equal(t, 2, code)
+	assert.Contains(t, stderr, "matches multiple wikis")
+
+	_, stderr, code = e.run("", "site", "remove", firstAPI)
+	require.Equal(t, 0, code, stderr)
+	cfg, err := config.LoadDir(e.dir)
+	require.NoError(t, err)
+	require.Len(t, cfg.Farms["multi"], 1)
+	assert.Equal(t, secondAPI, cfg.Farms["multi"][0].API)
+	assert.Equal(t, secondAPI, cfg.Context)
+
+	_, stderr, code = e.run("", "site", "remove", secondAPI)
+	require.Equal(t, 0, code, stderr)
+	cfg, err = config.LoadDir(e.dir)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Farms["multi"])
+	assert.Empty(t, cfg.Context)
 }
 
 func TestStatusUsesFarmAPIWhenSiteAliasConflicts(t *testing.T) {

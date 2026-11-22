@@ -32,19 +32,23 @@ func NewCmdSite(f *cmdutil.Factory) *cobra.Command {
 
 func newCmdAdd(f *cmdutil.Factory) *cobra.Command {
 	var aliases []string
+	var farmFlag string
 	cmd := &cobra.Command{
-		Use:   "add [<name>] <wiki>",
+		Use:   "add [<name>] <wiki> [--farm FARM]",
 		Short: "Add a wiki",
 		Long: heredoc.Doc(`
 			Find the api.php of a wiki and add it as a site. The wiki is a host name
 			(https is assumed), the URL of any page of the wiki, which tells apart wikis
 			under different paths of one host, or the URL of its api.php, which is only
-			checked. The name is the host unless given.
+			checked. The name is the host unless given. An explicitly named site is one
+			farm with one wiki by default. Use --farm to deliberately add another wiki to
+			an existing farm and share its login.
 		`),
 		Example: heredoc.Doc(`
 			$ mw site add wiki.example.org
 			$ mw site add docs https://wiki.example.org/docs/index.php
 			$ mw site add intra http://intranet.example/w/api.php --alias in
+			$ mw site add handbook https://docs.example.org/w/api.php --farm docs
 		`),
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -61,8 +65,11 @@ func newCmdAdd(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if sites.IsBuiltinFarmName(name) {
+			if farmFlag == "" && sites.IsBuiltinFarmName(name) {
 				return cmdutil.FlagErrorf("site name %q conflicts with a farm name", name)
+			}
+			if farmFlag != "" && !config.ValidSiteName(farmFlag) {
+				return cmdutil.FlagErrorf("invalid farm name %q", farmFlag)
 			}
 			for _, a := range aliases {
 				if !config.ValidSiteName(a) {
@@ -73,9 +80,41 @@ func newCmdAdd(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s.Aliases = aliases
-			sort.Strings(s.Aliases)
-			farm := cfg.Farms[name]
+			farmName := name
+			if farmFlag != "" {
+				var ok bool
+				farmName, ok = configuredFarmName(cfg, farmFlag)
+				if !ok {
+					return cmdutil.FlagErrorf("farm %q is not configured; add a site without --farm first", farmFlag)
+				}
+				if len(args) == 2 && !strings.EqualFold(name, hostOf(s.API)) {
+					aliases = append(aliases, name)
+				}
+			} else if existingName, ok := configuredFarmName(cfg, farmName); ok {
+				farmName = existingName
+				endpointExists := false
+				for _, previous := range cfg.Farms[farmName] {
+					if farmAPI(previous) == s.API {
+						endpointExists = true
+						break
+					}
+				}
+				if !endpointExists {
+					return cmdutil.FlagErrorf("farm %q already exists; use --farm %q to explicitly share its login, or choose a different name", farmName, farmName)
+				}
+			}
+			for otherFarm, wikis := range cfg.Farms {
+				if strings.EqualFold(otherFarm, farmName) {
+					continue
+				}
+				for _, wiki := range wikis {
+					if farmAPI(wiki) == s.API {
+						return cmdutil.FlagErrorf("API %s is already registered in farm %q", s.API, otherFarm)
+					}
+				}
+			}
+			s.Aliases = sortedUnique(aliases)
+			farm := cfg.Farms[farmName]
 			replaced := false
 			entry := config.FarmSite{Host: hostOf(s.API), API: s.API, Aliases: s.Aliases, Server: s.Server, Script: s.Script, ArticlePath: s.ArticlePath}
 			for i, previous := range farm {
@@ -92,7 +131,7 @@ func newCmdAdd(f *cmdutil.Factory) *cobra.Command {
 			if !replaced {
 				farm = append(farm, entry)
 			}
-			cfg.Farms[name] = farm
+			cfg.Farms[farmName] = farm
 			if err := cfg.Save(); err != nil {
 				return err
 			}
@@ -101,10 +140,14 @@ func newCmdAdd(f *cmdutil.Factory) *cobra.Command {
 				verb = "Updated"
 			}
 			fmt.Fprintf(ios.ErrOut, "%s %s site %s (%s)\n", ios.SuccessIcon(), verb, ios.Bold(name), s.API)
+			if farmFlag != "" && !replaced {
+				fmt.Fprintf(ios.ErrOut, "  Added to farm %s; its login is shared with the other wikis in that farm\n", ios.Bold(farmName))
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringSliceVar(&aliases, "alias", nil, "Another `name` for the site; repeat or separate with commas")
+	cmd.Flags().StringVar(&farmFlag, "farm", "", "Add this wiki to an existing farm and share its login")
 	return cmd
 }
 
@@ -122,33 +165,36 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			entries := listedSites(cfg, builtin)
-			names := make([]string, 0, len(entries))
-			for name := range entries {
-				names = append(names, name)
-			}
-			sort.Strings(names)
-			if len(names) == 0 {
+			if len(entries) == 0 {
 				if ios.IsStdoutTTY() {
 					fmt.Fprintln(ios.ErrOut, "No sites added. Add one with: mw site add WIKI")
 				}
 				return nil
 			}
 			width := 0
-			for _, n := range names {
-				width = max(width, len(n))
+			for _, entry := range entries {
+				width = max(width, len(entry.Name))
 			}
-			for _, n := range names {
-				site := entries[n]
-				mark := " "
-				if !builtin && cfg.Context != "" {
-					if cfg.Context == n || cfg.Context == site.API || strings.EqualFold(cfg.Context, hostOf(site.API)) || containsName(site.Aliases, cfg.Context) {
-						mark = "*"
-					}
+			var contextAPI string
+			if cfg.Context != "" {
+				if current, err := sites.Lookup(cfg, cfg.Context); err == nil {
+					contextAPI = current.Site.API
 				}
-				line := fmt.Sprintf("%s %-*s  %s", mark, width, n, site.API)
-				if len(site.Aliases) > 0 {
-					aliases := append([]string(nil), site.Aliases...)
+			}
+			for _, entry := range entries {
+				mark := " "
+				if !builtin && contextAPI != "" && contextAPI == entry.Site.API {
+					mark = "*"
+				}
+				line := fmt.Sprintf("%s %-*s  %s", mark, width, entry.Name, entry.Site.API)
+				if len(entry.Aliases) > 0 {
+					aliases := append([]string(nil), entry.Aliases...)
+					aliases = withoutName(aliases, entry.Name)
 					sort.Strings(aliases)
+					if len(aliases) == 0 {
+						fmt.Fprintln(ios.Out, strings.TrimRight(line, " "))
+						continue
+					}
 					line += "  (" + strings.Join(aliases, ", ") + ")"
 				}
 				fmt.Fprintln(ios.Out, strings.TrimRight(line, " "))
@@ -160,20 +206,26 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 	return cmd
 }
 
-func containsName(names []string, name string) bool {
+func withoutName(names []string, name string) []string {
+	filtered := names[:0]
 	for _, candidate := range names {
-		if strings.EqualFold(candidate, name) {
-			return true
+		if !strings.EqualFold(candidate, name) {
+			filtered = append(filtered, candidate)
 		}
 	}
-	return false
+	return filtered
 }
 
 func newCmdRemove(f *cmdutil.Factory) *cobra.Command {
 	return &cobra.Command{
 		Use:   "remove <name>",
-		Short: "Remove an added wiki and its logins",
-		Args:  cobra.ExactArgs(1),
+		Short: "Remove an added wiki",
+		Long: heredoc.Doc(`
+			Remove an added wiki by its listed name, an alias, its host or its exact API URL.
+			When one host has multiple API endpoints, use an alias or the exact API URL.
+			Farm logins are removed only when the last wiki in that farm is removed.
+		`),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ios := f.IOStreams
 			cfg, err := f.Config()
@@ -181,7 +233,10 @@ func newCmdRemove(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			name := args[0]
-			farm, index, removedSite := findFarmSite(cfg, name)
+			farm, index, removedSite, err := findFarmSite(cfg, name)
+			if err != nil {
+				return cmdutil.FlagErrorf("%v", err)
+			}
 			if farm == "" {
 				return fmt.Errorf("no site named %s was added", name)
 			}
@@ -259,42 +314,139 @@ func hostOf(target string) string {
 	return target
 }
 
-func listedSites(cfg *config.Config, builtin bool) map[string]*config.Site {
-	if builtin {
-		return sites.Builtin()
-	}
-	m := map[string]*config.Site{}
-	for farm, wikis := range cfg.Farms {
-		for _, wiki := range wikis {
-			name := wiki.Host
-			if len(wikis) == 1 {
-				name = farm
-			}
-			if name == "" {
-				name = farm
-			}
-			s := &config.Site{API: wiki.API, Aliases: wiki.Aliases, Server: wiki.Server, Script: wiki.Script, ArticlePath: wiki.ArticlePath}
-			if s.API == "" {
-				s.API = config.DefaultAPI(wiki.Host)
-			}
-			m[name] = s
-		}
-	}
-	return m
+type listedSite struct {
+	Name    string
+	Site    *config.Site
+	Aliases []string
 }
 
-func findFarmSite(cfg *config.Config, name string) (string, int, config.FarmSite) {
+func listedSites(cfg *config.Config, builtin bool) []listedSite {
+	if builtin {
+		m := sites.Builtin()
+		entries := make([]listedSite, 0, len(m))
+		for name, site := range m {
+			entries = append(entries, listedSite{Name: name, Site: site, Aliases: site.Aliases})
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
+		return entries
+	}
+	var entries []listedSite
+	for farm, wikis := range cfg.Farms {
+		for _, wiki := range wikis {
+			api := farmAPI(wiki)
+			aliases := sortedUnique(wiki.Aliases)
+			name := displayName(cfg, farm, wikis, wiki, aliases, api)
+			s := &config.Site{API: api, Aliases: aliases, Server: wiki.Server, Script: wiki.Script, ArticlePath: wiki.ArticlePath}
+			entries = append(entries, listedSite{Name: name, Site: s, Aliases: aliases})
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Name == entries[j].Name {
+			return entries[i].Site.API < entries[j].Site.API
+		}
+		return entries[i].Name < entries[j].Name
+	})
+	return entries
+}
+
+func findFarmSite(cfg *config.Config, name string) (string, int, config.FarmSite, error) {
+	var matches []struct {
+		farm string
+		idx  int
+		wiki config.FarmSite
+	}
+	apiName := strings.Contains(name, "://")
 	for farm, wikis := range cfg.Farms {
 		for i, wiki := range wikis {
-			if strings.EqualFold(name, farm) && len(wikis) == 1 || strings.EqualFold(name, wiki.Host) {
-				return farm, i, wiki
+			endpoint := farmAPI(wiki)
+			matched := apiName && name == endpoint
+			if !apiName {
+				matched = strings.EqualFold(name, wiki.Host) || len(wikis) == 1 && strings.EqualFold(name, farm)
 			}
-			for _, alias := range wiki.Aliases {
-				if strings.EqualFold(name, alias) {
-					return farm, i, wiki
+			if matched {
+				matches = append(matches, struct {
+					farm string
+					idx  int
+					wiki config.FarmSite
+				}{farm, i, wiki})
+				continue
+			}
+			if !apiName {
+				for _, alias := range wiki.Aliases {
+					if strings.EqualFold(name, alias) {
+						matches = append(matches, struct {
+							farm string
+							idx  int
+							wiki config.FarmSite
+						}{farm, i, wiki})
+						break
+					}
 				}
 			}
 		}
 	}
-	return "", -1, config.FarmSite{}
+	if len(matches) > 1 {
+		return "", -1, config.FarmSite{}, fmt.Errorf("%q matches multiple wikis; use an alias or exact API URL", name)
+	}
+	if len(matches) == 1 {
+		m := matches[0]
+		return m.farm, m.idx, m.wiki, nil
+	}
+	return "", -1, config.FarmSite{}, nil
+}
+
+func farmAPI(wiki config.FarmSite) string {
+	if wiki.API != "" {
+		return wiki.API
+	}
+	return config.DefaultAPI(wiki.Host)
+}
+
+func countFarmHost(wikis []config.FarmSite, host string) int {
+	count := 0
+	for _, wiki := range wikis {
+		if strings.EqualFold(wiki.Host, host) {
+			count++
+		}
+	}
+	return count
+}
+
+func displayName(cfg *config.Config, farm string, wikis []config.FarmSite, wiki config.FarmSite, aliases []string, api string) string {
+	candidates := append([]string(nil), aliases...)
+	if len(wikis) == 1 {
+		candidates = append([]string{farm}, candidates...)
+	} else if countFarmHost(wikis, wiki.Host) == 1 {
+		candidates = append(candidates, wiki.Host)
+	}
+	for _, candidate := range candidates {
+		matchedFarm, _, matched, err := findFarmSite(cfg, candidate)
+		if err == nil && matchedFarm != "" && farmAPI(matched) == api {
+			return candidate
+		}
+	}
+	return api
+}
+
+func configuredFarmName(cfg *config.Config, name string) (string, bool) {
+	for farm := range cfg.Farms {
+		if strings.EqualFold(farm, name) {
+			return farm, true
+		}
+	}
+	return "", false
+}
+
+func sortedUnique(names []string) []string {
+	seen := map[string]bool{}
+	var unique []string
+	for _, name := range names {
+		key := strings.ToLower(name)
+		if !seen[key] {
+			seen[key] = true
+			unique = append(unique, name)
+		}
+	}
+	sort.Strings(unique)
+	return unique
 }

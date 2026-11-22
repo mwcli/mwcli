@@ -27,9 +27,15 @@ mw site add docs https://wiki.example.org/docs/api.php --alias handbook
 mw page view --wiki handbook 'Main Page'
 ```
 
-`mw site add [NAME] WIKI` accepts a host, a page URL or an exact `api.php` URL. Given a host or page URL, it looks for the API at standard paths and checks the page's `EditURI` link if needed. Given an API URL, it checks that endpoint directly. A successful first login to an unregistered wiki also discovers and saves the site. Use a separate name for each wiki when several wikis share a host.
+`mw site add [NAME] WIKI` accepts a host, a page URL or an exact `api.php` URL. Given a host or page URL, it looks for the API at standard paths and checks the page's `EditURI` link if needed. Given an API URL, it checks that endpoint directly. A successful first login to an unregistered wiki also discovers and saves the site.
 
-`mw site list` shows added sites and marks the configured default with `*` if it appears in the list. `mw site remove NAME` removes an added site and its local logins. To revoke a token or bot password, use the wiki's settings.
+By default, each added site gets its own farm and login. To explicitly share credentials with an existing farm, pass `--farm`:
+
+```sh
+mw site add handbook https://docs.example.org/w/api.php --farm docs
+```
+
+`mw site list` shows one row per API endpoint. If several endpoints share a host, it uses an alias or the exact API URL to identify each row. `mw site remove NAME` accepts a listed name, alias or API URL; a host that matches multiple endpoints is rejected as ambiguous. Removing one wiki keeps farm logins while other wikis remain. To revoke a token or bot password, use the wiki's settings.
 
 
 Built-in and custom wikis are organized under named farms in `config.yml`. A farm is the login-sharing scope. Every wiki entry in one farm uses the farm’s stored accounts. See [Commands](command.md) for the configuration shape.
