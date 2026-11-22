@@ -9,7 +9,7 @@ mw
 │   ├── switch  [--wiki WIKI] [-u USER]
 │   └── token   [--wiki WIKI] [-u USER]
 ├── page
-│   ├── view    [--wiki WIKI] [--api URL] TITLE
+│   ├── view    [--wiki WIKI] [--api URL] [-w] [--json FIELDS [-q EXPR]] TITLE
 │   └── edit    [--wiki WIKI] [--api URL] [-s SUMMARY] (--text WIKITEXT | -F FILE) TITLE
 ├── api         [--wiki WIKI] [--api URL] [-X METHOD] [-f key=value] [-F key=@file] [key=value ...]
 ├── completion  SHELL
@@ -27,6 +27,7 @@ mw
 | `MW_TOKEN` | OAuth 2 access token used instead of stored credentials |
 | `MW_PASSWORD` | Password for `mw auth login --username` without a prompt |
 | `MW_CONFIG_DIR` | Configuration directory (default `~/.config/mw`) |
+| `MW_BROWSER` | Browser command for `--web`, before `BROWSER` |
 
 ## hosts.yml
 

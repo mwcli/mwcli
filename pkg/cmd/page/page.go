@@ -23,14 +23,40 @@ func NewCmdPage(f *cmdutil.Factory) *cobra.Command {
 	return cmd
 }
 
+// viewFields are the --json fields of `mw page view`, named as in the MediaWiki API.
+var viewFields = []string{
+	"title", "pageid", "ns", "url", "contentmodel", "length", "touched", "redirect",
+	"protection", "categories", "revision", "content",
+}
+
 func newCmdView(f *cmdutil.Factory) *cobra.Command {
 	var wiki, apiURL string
+	var web bool
+	var jsonFlags *cmdutil.JSONFlags
 	cmd := &cobra.Command{
 		Use:   "view <title>",
 		Short: "Print the wikitext of a page",
-		Long:  "Print the wikitext of the latest revision of a page. Public pages need no login.",
-		Args:  cobra.ExactArgs(1),
+		Long: heredoc.Doc(`
+			Print the wikitext of the latest revision of a page. Public pages need no login.
+
+			With --json, print the named fields instead; --jq filters them. --web opens
+			the page in the browser.
+		`),
+		Example: heredoc.Doc(`
+			$ mw page view 'Main Page'
+			$ mw page view 'Main Page' --json pageid,url,revision
+			$ mw page view 'Main Page' --json categories --jq '.categories[]'
+			$ mw page view 'Main Page' --web
+		`),
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := jsonFlags.Validate(); err != nil {
+				return err
+			}
+			if web && jsonFlags.Enabled() {
+				return cmdutil.FlagErrorf("specify only one of --web and --json")
+			}
+			ios := f.IOStreams
 			cfg, err := f.Config()
 			if err != nil {
 				return err
@@ -39,19 +65,35 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if web {
+				u := t.PageURL(args[0])
+				if ios.IsStdoutTTY() {
+					fmt.Fprintf(ios.ErrOut, "Opening %s in your browser.\n", u)
+				}
+				return f.Browse(u)
+			}
 			c, _, err := cmdutil.Client(cfg, t)
 			if err != nil {
 				return err
+			}
+			if jsonFlags.Enabled() {
+				info, err := c.PageInfo(args[0], jsonFlags.Has("content"))
+				if err != nil {
+					return err
+				}
+				return jsonFlags.Write(ios.Out, info, ios.IsStdoutTTY())
 			}
 			text, err := c.Page(args[0])
 			if err != nil {
 				return err
 			}
-			fmt.Fprint(f.IOStreams.Out, text)
+			fmt.Fprint(ios.Out, text)
 			return nil
 		},
 	}
 	cmdutil.AddTargetFlags(cmd, &wiki, &apiURL)
+	cmd.Flags().BoolVarP(&web, "web", "w", false, "Open the page in the browser")
+	jsonFlags = cmdutil.AddJSONFlags(cmd, viewFields)
 	return cmd
 }
 

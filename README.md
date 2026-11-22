@@ -47,7 +47,7 @@ mw page view --wiki commons 'Main Page'
 
 ## Authentication
 
-`mw auth login` prefers an owner-only OAuth 2 access token. Create one on the wiki at `Special:OAuthConsumerRegistration/propose/oauth2` ("This consumer is for use only by …") with the grants the tool needs, such as basic and editpage. Owner-only tokens do not expire. To replace one that may have leaked, open `Special:OAuthConsumerRegistration/list` on the wiki where the consumer was registered, choose the consumer, tick "Reset the secret key to a new value" and submit: the wiki shows a new token and the old one stops working. On a wiki farm that is the central wiki, such as Meta-Wiki (`meta.wikimedia.org`) for Wikimedia projects like Commons. Then log in again to the wiki you use with mw with `mw auth login --wiki <host> --with-token` (or `--api <url>`), or, when a script or CI passes the token in `MW_TOKEN`, update that variable or secret instead. To stop using a consumer entirely, disable it on the same page. `--with-token` reads the token from standard input. `--username` logs in with a password through the `clientlogin` flow instead, read from `MW_PASSWORD` or a no-echo prompt; extra steps such as two-factor authentication are not supported.
+`mw auth login` prefers an owner-only OAuth 2 access token. Create one on the wiki at `Special:OAuthConsumerRegistration/propose/oauth2` ("This consumer is for use only by …") with the grants the tool needs, such as basic and editpage. Owner-only tokens do not expire. To replace one that may have leaked, open `Special:OAuthConsumerRegistration/list` on the wiki where the consumer was registered, choose the consumer, tick "Reset the secret key to a new value" and submit: the wiki shows a new token and the old one stops working. On a wiki farm that is the central wiki, such as Meta-Wiki (`meta.wikimedia.org`) for Wikimedia projects like Commons. To log in again to the wiki you use with mw, run `mw auth login --wiki <host> --with-token` (or `--api <url>`); when a script or CI passes the token in `MW_TOKEN`, update that variable or secret instead. To stop using a consumer entirely, disable it on the same page. `--with-token` reads the token from standard input. `--username` logs in with a password through the `clientlogin` flow instead, read from `MW_PASSWORD` or a no-echo prompt; extra steps such as two-factor authentication are not supported.
 
 Credentials are stored per host and account in `hosts.yml` in the configuration directory, with owner-only permissions. Treat this file as a credential. The directory is `MW_CONFIG_DIR`, else `$XDG_CONFIG_HOME/mw`, else `%AppData%\mw` on Windows, else `~/.config/mw`.
 
@@ -62,6 +62,19 @@ To check one page, including protection and blocks, ask the wiki with `mw api`. 
 ```sh
 mw api action=query prop=info intestactions=edit titles=Sandbox
 ```
+
+## Pages
+
+`mw page view TITLE` prints the wikitext of the latest revision. `--web` (`-w`) opens the page in the browser instead (`MW_BROWSER`, else `BROWSER`, else the system opener).
+
+`--json FIELDS` prints the named fields as JSON, as in `gh`; `--json` alone lists them. Field names follow the MediaWiki API: `title`, `pageid`, `ns`, `url`, `contentmodel`, `length`, `touched`, `redirect`, `protection` (type, level, expiry), `categories` (titles, hidden ones included), `revision` (revid, parentid, timestamp, user, comment, size) and `content` (the wikitext, fetched only when asked for). `--jq` (`-q`) filters the JSON with a jq expression; strings print without quotes.
+
+```sh
+mw page view 'Main Page' --json pageid,url,revision
+mw page view 'Main Page' --json categories --jq '.categories[]'
+```
+
+`mw page edit TITLE` replaces the wikitext from `--text` or `--file` (`-` for standard input).
 
 ## API requests
 

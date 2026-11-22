@@ -24,6 +24,7 @@ const goodToken = "good-token"
 type fakeWiki struct {
 	edits      []map[string]string
 	extraToken string
+	rvprop     string
 }
 
 func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
@@ -50,6 +51,21 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		send(map[string]any{"query": map[string]any{"userinfo": map[string]any{"id": 7, "name": "Jmnote", "rights": []string{"read", "edit", "minoredit"}}}})
 	case p("meta") == "tokens":
 		send(map[string]any{"query": map[string]any{"tokens": map[string]string{p("type") + "token": "tok+\\"}}})
+	case p("prop") == "info|revisions|categories":
+		w.rvprop = p("rvprop")
+		if p("titles") == "Missing" {
+			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": "Missing", "missing": true}}}})
+			return
+		}
+		rev := map[string]any{"revid": 42, "parentid": 41, "timestamp": "2026-11-22T00:00:00Z", "user": "Jmnote", "comment": "fix", "size": 5,
+			"slots": map[string]any{"main": map[string]string{"content": "Hello"}}}
+		send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{
+			"title": p("titles"), "pageid": 7, "ns": 0, "fullurl": "https://fake.test/wiki/" + p("titles"), "contentmodel": "wikitext",
+			"length": 5, "touched": "2026-11-22T00:00:01Z",
+			"protection": []any{map[string]string{"type": "edit", "level": "sysop", "expiry": "infinity"}},
+			"categories": []any{map[string]any{"ns": 14, "title": "Category:A"}, map[string]any{"ns": 14, "title": "Category:B"}},
+			"revisions":  []any{rev},
+		}}}})
 	case p("prop") == "revisions":
 		if p("titles") == "Missing" {
 			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"missing": true}}}})
@@ -76,6 +92,8 @@ type env struct {
 	base  string
 	cache *discovery.Cache
 	wiki  *fakeWiki
+	// browsed is the last URL --web opened.
+	browsed string
 }
 
 func newEnv(t *testing.T) *env {
@@ -95,7 +113,8 @@ func newEnv(t *testing.T) *env {
 func (e *env) run(stdin string, args ...string) (string, string, int) {
 	ios, in, out, errOut := iostreams.Test()
 	in.WriteString(stdin)
-	f := &cmdutil.Factory{IOStreams: ios, Config: func() (*config.Config, error) { return config.LoadDir(e.dir) }, Discovery: e.cache}
+	f := &cmdutil.Factory{IOStreams: ios, Config: func() (*config.Config, error) { return config.LoadDir(e.dir) }, Discovery: e.cache,
+		Browse: func(u string) error { e.browsed = u; return nil }}
 	cmd := NewCmdRoot(f)
 	cmd.SetArgs(args)
 	_, err := cmd.ExecuteC()
@@ -308,4 +327,49 @@ func TestStatusJWTToken(t *testing.T) {
 
 	out, _, _ = e.run("", "auth", "status", "-t")
 	assert.Contains(t, out, "- Token: "+jwt+" (client bedd22b2")
+}
+
+func TestPageViewJSON(t *testing.T) {
+	e := newEnv(t)
+	out, stderr, code := e.run("", "page", "view", "Sandbox", "--api", e.api, "--json", "pageid,url,revision,protection")
+	require.Equal(t, 0, code, stderr)
+	assert.JSONEq(t, `{"pageid":7,"url":"https://fake.test/wiki/Sandbox",
+		"revision":{"revid":42,"parentid":41,"timestamp":"2026-11-22T00:00:00Z","user":"Jmnote","comment":"fix","size":5},
+		"protection":[{"type":"edit","level":"sysop","expiry":"infinity"}]}`, out)
+	assert.NotContains(t, e.wiki.rvprop, "content")
+
+	out, _, code = e.run("", "page", "view", "Sandbox", "--api", e.api, "--json", "categories,content", "--jq", ".categories[]")
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "Category:A\nCategory:B\n", out)
+	assert.Contains(t, e.wiki.rvprop, "content")
+
+	out, _, _ = e.run("", "page", "view", "Sandbox", "--api", e.api, "--json", "content", "--jq", ".content")
+	assert.Equal(t, "Hello\n", out)
+
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--api", e.api, "--json")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "Specify one or more comma-separated fields")
+	assert.Contains(t, stderr, "categories")
+
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--api", e.api, "--json", "nope")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, `Unknown JSON field: "nope"`)
+
+	_, stderr, code = e.run("", "page", "view", "Sandbox", "--api", e.api, "--jq", ".")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "without specifying `--json`")
+
+	_, stderr, code = e.run("", "page", "view", "Missing", "--api", e.api, "--json", "title")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "page does not exist")
+}
+
+func TestPageViewWeb(t *testing.T) {
+	e := newEnv(t)
+	_, stderr, code := e.run("", "page", "view", "Main Page", "--api", e.api, "--web")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, e.base+"/w/index.php?title=Main+Page", e.browsed)
+
+	_, _, code = e.run("", "page", "view", "Main Page", "--api", e.api, "--web", "--json", "title")
+	assert.Equal(t, 2, code)
 }

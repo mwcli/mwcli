@@ -328,3 +328,108 @@ var Actions = []struct{ Name, Right string }{
 	{"delete", "delete"},
 	{"protect", "protect"},
 }
+
+// PageInfo is what `mw page view --json` can show about a page. Field names
+// follow the MediaWiki API.
+type PageInfo struct {
+	Title        string       `json:"title"`
+	PageID       int          `json:"pageid"`
+	NS           int          `json:"ns"`
+	URL          string       `json:"url"`
+	ContentModel string       `json:"contentmodel"`
+	Length       int          `json:"length"`
+	Touched      string       `json:"touched"`
+	Redirect     bool         `json:"redirect"`
+	Protection   []Protection `json:"protection"`
+	Categories   []string     `json:"categories"`
+	Revision     Revision     `json:"revision"`
+	Content      string       `json:"content"`
+}
+
+// Protection is one protection of a page.
+type Protection struct {
+	Type   string `json:"type"`
+	Level  string `json:"level"`
+	Expiry string `json:"expiry"`
+}
+
+// Revision describes the latest revision of a page.
+type Revision struct {
+	RevID     int    `json:"revid"`
+	ParentID  int    `json:"parentid"`
+	Timestamp string `json:"timestamp"`
+	User      string `json:"user"`
+	Comment   string `json:"comment"`
+	Size      int    `json:"size"`
+}
+
+// PageInfo returns information about a page and its latest revision. The
+// wikitext is fetched only when withContent is set; categories, hidden ones
+// included, are fetched up to the API limit.
+func (c *Client) PageInfo(title string, withContent bool) (*PageInfo, error) {
+	rvprop := "ids|timestamp|user|comment|size"
+	if withContent {
+		rvprop += "|content"
+	}
+	params := url.Values{
+		"action": {"query"}, "titles": {title},
+		"prop":   {"info|revisions|categories"},
+		"inprop": {"url|protection"},
+		"rvprop": {rvprop}, "rvslots": {"main"},
+		"cllimit": {"max"},
+	}
+	var result struct {
+		Query struct {
+			Pages []struct {
+				Title        string       `json:"title"`
+				PageID       int          `json:"pageid"`
+				NS           int          `json:"ns"`
+				Missing      bool         `json:"missing"`
+				Invalid      bool         `json:"invalid"`
+				FullURL      string       `json:"fullurl"`
+				ContentModel string       `json:"contentmodel"`
+				Length       int          `json:"length"`
+				Touched      string       `json:"touched"`
+				Redirect     bool         `json:"redirect"`
+				Protection   []Protection `json:"protection"`
+				Categories   []struct {
+					Title string `json:"title"`
+				} `json:"categories"`
+				Revisions []struct {
+					Revision
+					Slots map[string]struct {
+						Content string `json:"content"`
+					} `json:"slots"`
+				} `json:"revisions"`
+			} `json:"pages"`
+		} `json:"query"`
+	}
+	if err := c.request(http.MethodGet, params, &result); err != nil {
+		return nil, err
+	}
+	if len(result.Query.Pages) != 1 {
+		return nil, fmt.Errorf("page %q not found", title)
+	}
+	p := result.Query.Pages[0]
+	switch {
+	case p.Invalid:
+		return nil, fmt.Errorf("invalid title %q", title)
+	case p.Missing:
+		return nil, fmt.Errorf("%w: %s", ErrMissingPage, title)
+	case len(p.Revisions) == 0:
+		return nil, errors.New("page has no readable revision")
+	}
+	info := &PageInfo{
+		Title: p.Title, PageID: p.PageID, NS: p.NS, URL: p.FullURL,
+		ContentModel: p.ContentModel, Length: p.Length, Touched: p.Touched,
+		Redirect: p.Redirect, Protection: p.Protection, Categories: []string{},
+		Revision: p.Revisions[0].Revision, Content: p.Revisions[0].Slots["main"].Content,
+	}
+	if info.Protection == nil {
+		info.Protection = []Protection{}
+	}
+	for _, cat := range p.Categories {
+		info.Categories = append(info.Categories, cat.Title)
+	}
+	return info, nil
+}
