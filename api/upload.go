@@ -29,7 +29,15 @@ type UploadOptions struct {
 	ChunkSize int64
 	// Progress, when not nil, is told how many bytes have been sent.
 	Progress func(sent, total int64)
+	// Smaller, when not nil, is told the new size of the parts after a server
+	// refused a request as too large (413) and the upload goes on in smaller
+	// parts.
+	Smaller func(chunk int64)
 }
+
+// MinChunkSize is the smallest part Upload falls back to when a server in
+// front of the wiki refuses larger requests.
+const MinChunkSize = 64 << 10
 
 // DefaultChunkSize is the size of the parts of a large upload.
 const DefaultChunkSize = 5 << 20
@@ -64,9 +72,11 @@ func (w UploadWarnings) Error() string {
 }
 
 // Upload uploads size bytes from r as filename. A file larger than the chunk
-// size is sent in parts. When the wiki warns and IgnoreWarnings is not set,
-// nothing is published and the error is UploadWarnings.
-func (c *Client) Upload(ctx context.Context, filename string, r io.Reader, size int64, opts UploadOptions) (*UploadResult, error) {
+// size is sent in parts. When a server in front of the wiki refuses a request
+// as too large (413), the part is sent again at half the size, down to
+// MinChunkSize. When the wiki warns and IgnoreWarnings is not set, nothing is
+// published and the error is UploadWarnings.
+func (c *Client) Upload(ctx context.Context, filename string, r io.ReaderAt, size int64, opts UploadOptions) (*UploadResult, error) {
 	if err := c.ensureLogin(ctx); err != nil {
 		return nil, err
 	}
@@ -85,19 +95,33 @@ func (c *Client) Upload(ctx context.Context, filename string, r io.Reader, size 
 	if opts.IgnoreWarnings {
 		final.Set("ignorewarnings", "1")
 	}
+	// shrink halves the parts after a 413 and reports whether they got smaller.
+	shrink := func(err error, sent int64) bool {
+		var he *HTTPError
+		if !errors.As(err, &he) || he.StatusCode != http.StatusRequestEntityTooLarge || sent <= MinChunkSize {
+			return false
+		}
+		chunk = max(min(chunk, sent)/2, MinChunkSize)
+		if opts.Smaller != nil {
+			opts.Smaller(chunk)
+		}
+		return true
+	}
 	if size <= chunk {
-		body, err := c.multipart(ctx, final, "file", filename, r, size)
-		if err != nil {
+		body, err := c.multipart(ctx, final, "file", filename, io.NewSectionReader(r, 0, size), size)
+		if err == nil {
+			if opts.Progress != nil {
+				opts.Progress(size, size)
+			}
+			return c.uploadResult(body)
+		}
+		if !shrink(err, size) {
 			return nil, err
 		}
-		if opts.Progress != nil {
-			opts.Progress(size, size)
-		}
-		return c.uploadResult(body)
 	}
 	// In parts: each goes to the stash, then the stashed file is published.
 	var filekey string
-	for offset := int64(0); offset < size; offset += chunk {
+	for offset := int64(0); offset < size; {
 		n := min(chunk, size-offset)
 		params := url.Values{
 			"action": {"upload"}, "assert": {"user"}, "stash": {"1"}, "filename": {filename},
@@ -107,7 +131,10 @@ func (c *Client) Upload(ctx context.Context, filename string, r io.Reader, size 
 		if filekey != "" {
 			params.Set("filekey", filekey)
 		}
-		body, err := c.multipart(ctx, params, "chunk", filename, io.LimitReader(r, n), n)
+		body, err := c.multipart(ctx, params, "chunk", filename, io.NewSectionReader(r, offset, n), n)
+		if err != nil && shrink(err, n) {
+			continue
+		}
 		if err == nil {
 			err = CheckError(body)
 		}
@@ -131,8 +158,9 @@ func (c *Client) Upload(ctx context.Context, filename string, r io.Reader, size 
 		if res.Upload.FileKey != "" {
 			filekey = res.Upload.FileKey
 		}
+		offset += n
 		if opts.Progress != nil {
-			opts.Progress(offset+n, size)
+			opts.Progress(offset, size)
 		}
 	}
 	if filekey == "" {
@@ -275,8 +303,17 @@ func (c *Client) multipart(ctx context.Context, params url.Values, field, filena
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, &HTTPError{Status: resp.Status, Body: strings.TrimSpace(string(b))}
+		e := &HTTPError{StatusCode: resp.StatusCode, Status: resp.Status}
+		if strings.Contains(resp.Header.Get("Content-Type"), "html") {
+			e.Body = "HTML error page (the site may be blocking this client or network)"
+			if resp.StatusCode == http.StatusRequestEntityTooLarge {
+				e.Body = "HTML error page (a server in front of the wiki limits the size of a request)"
+			}
+		} else {
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+			e.Body = strings.TrimSpace(string(b))
+		}
+		return nil, e
 	}
 	return io.ReadAll(resp.Body)
 }

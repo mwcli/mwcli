@@ -137,6 +137,13 @@ func newCmdUpload(f *cmdutil.Factory) *cobra.Command {
 						}
 					}
 				}
+				opts.Smaller = func(chunk int64) {
+					if open {
+						fmt.Fprintln(ios.ErrOut)
+						open = false
+					}
+					fmt.Fprintf(ios.ErrOut, "The server refused a request that large; sending %s in parts of %s\n", u.name, sizeText(chunk))
+				}
 				res, err := c.Upload(ctx, u.name, fh, u.size, opts)
 				fh.Close()
 				if open {
@@ -173,4 +180,15 @@ func newCmdUpload(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().StringVar(&textFile, "text-file", "", "Read the description page wikitext from `file` (use \"-\" to read from standard input)")
 	cmd.Flags().BoolVar(&ignoreWarnings, "ignore-warnings", false, "Upload even when the wiki warns, such as about an existing file")
 	return cmd
+}
+
+// sizeText shows a size in bytes as KiB or MiB.
+func sizeText(n int64) string {
+	if n >= 1<<20 && n%(1<<20) == 0 {
+		return fmt.Sprintf("%d MiB", n>>20)
+	}
+	if n >= 1<<20 {
+		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+	}
+	return fmt.Sprintf("%d KiB", n>>10)
 }

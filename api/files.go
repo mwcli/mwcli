@@ -196,7 +196,7 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, w io.Writer) (string,
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", &HTTPError{Status: resp.Status}
+		return "", &HTTPError{StatusCode: resp.StatusCode, Status: resp.Status}
 	}
 	h := sha1.New()
 	if _, err := io.Copy(io.MultiWriter(w, h), resp.Body); err != nil {

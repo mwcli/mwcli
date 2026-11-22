@@ -41,6 +41,9 @@ type fakeWiki struct {
 	created   map[string]bool
 	// siteinfos counts general siteinfo requests, which discovery makes.
 	siteinfos int
+	// maxBody, when set, refuses larger requests with 413, counted in tooLarge.
+	maxBody  int64
+	tooLarge int
 	// uploads are the action=upload requests.
 	uploads []uploadRequest
 	// rests are the requests to rest.php.
@@ -76,6 +79,14 @@ type restRequest struct {
 }
 
 func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
+	if w.maxBody > 0 && r.ContentLength > w.maxBody {
+		// As nginx in front of a wiki answers a request over its limit.
+		w.tooLarge++
+		rw.Header().Set("Content-Type", "text/html")
+		rw.WriteHeader(http.StatusRequestEntityTooLarge)
+		fmt.Fprint(rw, "<html><head><title>413 Request Entity Too Large</title></head><body>nginx</body></html>")
+		return
+	}
 	_ = r.ParseForm()
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
 		_ = r.ParseMultipartForm(32 << 20)
@@ -2498,4 +2509,39 @@ func TestFileUpload(t *testing.T) {
 	}
 	_, _, code = e.run("", "file", "upload", "--wiki", e.api, filepath.Join(dir, "nope.jpg"))
 	assert.Equal(t, 1, code)
+}
+
+func TestFileUploadSmallerParts(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "scan.png")
+	require.NoError(t, os.WriteFile(p, make([]byte, 3<<20), 0o644))
+
+	// A server in front of the wiki takes 1 MiB a request: 3 MiB in one
+	// request, then 1.5 MiB parts are refused, and 768 KiB parts go through.
+	e.wiki.maxBody = 1 << 20
+	_, stderr, code := e.run("", "file", "upload", "--wiki", e.api, p)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, 2, e.wiki.tooLarge)
+	assert.Contains(t, stderr, "The server refused a request that large; sending scan.png in parts of 1.5 MiB\n")
+	assert.Contains(t, stderr, "The server refused a request that large; sending scan.png in parts of 768 KiB\n")
+	assert.Contains(t, stderr, "✓ Uploaded File:scan.png")
+	var offsets []string
+	for _, u := range e.wiki.uploads {
+		if u.Stash {
+			offsets = append(offsets, u.Offset)
+			assert.Equal(t, 768<<10, u.Size)
+		}
+	}
+	assert.Equal(t, []string{"0", "786432", "1572864", "2359296"}, offsets)
+	final := e.wiki.uploads[len(e.wiki.uploads)-1]
+	assert.Equal(t, "fk.1", final.FileKey)
+
+	// Below the smallest part, the error says so in one line.
+	e.wiki.maxBody = 10 << 10
+	_, stderr, code = e.run("", "file", "upload", "--wiki", e.api, p)
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "upload part at byte 0: MediaWiki returned 413 Request Entity Too Large: HTML error page (a server in front of the wiki limits the size of a request)")
+	assert.NotContains(t, stderr, "<html>")
 }

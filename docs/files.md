@@ -30,7 +30,7 @@ An existing file stops the command unless `--clobber` overwrites it or `--skip-e
 
 ## Uploading files
 
-`mw file upload PATH...` uploads files, each under its own name; `--name` gives another name to a single file, with or without `File:` or the wiki's own name for the namespace. A file larger than 5 MiB is sent in 5 MiB parts to the upload stash, then published, so a large file does not run into the wiki's limit on one request.
+`mw file upload PATH...` uploads files, each under its own name; `--name` gives another name to a single file, with or without `File:` or the wiki's own name for the namespace. A file larger than 5 MiB is sent in 5 MiB parts to the upload stash, then published, so a large file does not run into the wiki's limit on one request. When a server in front of the wiki refuses a request as too large (HTTP 413), mw says so and sends the file again in parts of half the size, down to 64 KiB.
 
 ```sh
 mw file upload photo.jpg --text '{{Information|description=A photo}}' -s 'New photo'

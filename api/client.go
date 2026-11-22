@@ -158,8 +158,10 @@ func (c *Client) Cookies() map[string]string {
 
 // HTTPError is a non-2xx response.
 type HTTPError struct {
-	Status string
-	Body   string
+	// StatusCode is the HTTP status code, such as 413; Status has its text too.
+	StatusCode int
+	Status     string
+	Body       string
 }
 
 func (e *HTTPError) Error() string {
@@ -300,7 +302,7 @@ func (c *Client) send(ctx context.Context, method string, params url.Values) ([]
 	final.RawQuery, final.Fragment = fq.Encode(), ""
 	c.Resolved = final.String()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		e := &HTTPError{Status: resp.Status}
+		e := &HTTPError{StatusCode: resp.StatusCode, Status: resp.Status}
 		if strings.Contains(resp.Header.Get("Content-Type"), "html") {
 			e.Body = "HTML error page (the site may be blocking this client or network)"
 		} else {
