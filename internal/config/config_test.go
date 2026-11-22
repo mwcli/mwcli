@@ -2,6 +2,8 @@ package config
 
 import (
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,7 +15,7 @@ func TestDir(t *testing.T) {
 	assert.Equal(t, "/tmp/mwconf", Dir())
 	t.Setenv("MW_CONFIG_DIR", "")
 	t.Setenv("XDG_CONFIG_HOME", "/tmp/xdg")
-	assert.Equal(t, "/tmp/xdg/mw", Dir())
+	assert.Equal(t, filepath.Join("/tmp/xdg", "mw"), Dir())
 }
 
 func TestLoginLogoutSwitchSave(t *testing.T) {
@@ -30,7 +32,9 @@ func TestLoginLogoutSwitchSave(t *testing.T) {
 
 	info, err := os.Stat(c.HostsPath())
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	if runtime.GOOS != "windows" { // Windows has no Unix permission bits
+		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+	}
 
 	c, err = LoadDir(dir)
 	require.NoError(t, err)

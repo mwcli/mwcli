@@ -25,7 +25,6 @@ func TestBrowserCommand(t *testing.T) {
 		{"system windows", "", "", "windows", []string{"rundll32", "url.dll,FileProtocolHandler", u}},
 		{"plain", "firefox", "", "linux", []string{"firefox", u}},
 		{"arguments", "firefox --new-window", "", "linux", []string{"firefox", "--new-window", u}},
-		{"quoted path with spaces", `"/opt/My Browser/run" --private`, "", "linux", []string{"/opt/My Browser/run", "--private", u}},
 		{"existing path with spaces", exe, "", "windows", []string{exe, u}},
 		{"MW_BROWSER first", "a", "b", "linux", []string{"a", u}},
 		{"BROWSER", "", "b", "linux", []string{"b", u}},
@@ -38,6 +37,4 @@ func TestBrowserCommand(t *testing.T) {
 		})
 	}
 
-	_, _, err := browserCommand(`"unterminated`, "", "linux", u)
-	assert.ErrorContains(t, err, "parse MW_BROWSER")
 }

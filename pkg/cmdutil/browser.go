@@ -6,8 +6,6 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-
-	"github.com/kballard/go-shellquote"
 )
 
 // BrowserEnv names the browser command for --web; BROWSER is read after it.
@@ -24,8 +22,8 @@ func OpenBrowser(url string) error {
 
 // browserCommand returns the program and arguments that open url. A browser
 // setting that names an existing file is that program, spaces included, as in
-// C:\Program Files\...; otherwise it is split like a shell command line, so
-// quoted paths and extra arguments work.
+// C:\Program Files\...; otherwise it is split like a command line of the
+// platform, so quoted paths and extra arguments work.
 func browserCommand(mwBrowser, browser, goos, url string) (string, []string, error) {
 	for _, env := range []struct{ name, value string }{{BrowserEnv, mwBrowser}, {"BROWSER", browser}} {
 		v := strings.TrimSpace(env.value)
@@ -35,7 +33,7 @@ func browserCommand(mwBrowser, browser, goos, url string) (string, []string, err
 		if st, err := os.Stat(v); err == nil && !st.IsDir() {
 			return v, []string{url}, nil
 		}
-		words, err := shellquote.Split(v)
+		words, err := splitCommand(v)
 		if err != nil {
 			return "", nil, fmt.Errorf("parse %s: %w", env.name, err)
 		}
