@@ -875,22 +875,20 @@ func (c *Client) ListPages(ctx context.Context, opts ListOptions) ([]PageRef, er
 		base.Set(prefix+"namespace", fmt.Sprint(*opts.Namespace))
 	}
 	pages := []PageRef{}
-	cont := map[string]string{}
-	for len(pages) < opts.Limit {
-		params := url.Values{}
-		for k, v := range base {
-			params[k] = v
-		}
-		params.Set(prefix+"limit", fmt.Sprint(min(opts.Limit-len(pages), 500)))
-		for k, v := range cont {
-			params.Set(k, v)
+	if opts.Limit <= 0 {
+		return pages, nil
+	}
+	// Each request asks for no more than the pages still wanted.
+	base.Set(prefix+"limit", fmt.Sprint(min(opts.Limit, 500)))
+	for body, err := range c.Paginate(ctx, http.MethodGet, base) {
+		if err != nil {
+			return nil, err
 		}
 		var result struct {
-			Continue map[string]json.RawMessage `json:"continue"`
-			Query    map[string]json.RawMessage `json:"query"`
+			Query map[string]json.RawMessage `json:"query"`
 		}
-		if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
-			return nil, err
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("decode API response: %w", err)
 		}
 		var batch []PageRef
 		if raw, ok := result.Query[list]; ok {
@@ -899,18 +897,10 @@ func (c *Client) ListPages(ctx context.Context, opts ListOptions) ([]PageRef, er
 			}
 		}
 		pages = append(pages, batch...)
-		if len(result.Continue) == 0 {
+		if len(pages) >= opts.Limit {
 			break
 		}
-		// Continuation values are strings or, like sroffset, numbers.
-		cont = map[string]string{}
-		for k, raw := range result.Continue {
-			var str string
-			if json.Unmarshal(raw, &str) != nil {
-				str = string(raw)
-			}
-			cont[k] = str
-		}
+		base.Set(prefix+"limit", fmt.Sprint(min(opts.Limit-len(pages), 500)))
 	}
 	if len(pages) > opts.Limit {
 		pages = pages[:opts.Limit]
@@ -1000,19 +990,20 @@ type HistoryEntry struct {
 // continuation across requests.
 func (c *Client) History(ctx context.Context, title string, limit int) ([]HistoryEntry, error) {
 	entries := []HistoryEntry{}
-	cont := map[string]string{}
-	for len(entries) < limit {
-		params := url.Values{
-			"action": {"query"}, "prop": {"revisions"}, "titles": {title},
-			"rvprop":  {"ids|timestamp|user|comment|size|flags|tags"},
-			"rvlimit": {fmt.Sprint(min(limit-len(entries), 500))},
-		}
-		for k, v := range cont {
-			params.Set(k, v)
+	if limit <= 0 {
+		return entries, nil
+	}
+	params := url.Values{
+		"action": {"query"}, "prop": {"revisions"}, "titles": {title},
+		"rvprop":  {"ids|timestamp|user|comment|size|flags|tags"},
+		"rvlimit": {fmt.Sprint(min(limit, 500))},
+	}
+	for body, err := range c.Paginate(ctx, http.MethodGet, params) {
+		if err != nil {
+			return nil, err
 		}
 		var result struct {
-			Continue map[string]string `json:"continue"`
-			Query    struct {
+			Query struct {
 				Pages []struct {
 					Missing   bool           `json:"missing"`
 					Invalid   bool           `json:"invalid"`
@@ -1020,8 +1011,8 @@ func (c *Client) History(ctx context.Context, title string, limit int) ([]Histor
 				} `json:"pages"`
 			} `json:"query"`
 		}
-		if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
-			return nil, err
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("decode API response: %w", err)
 		}
 		if len(result.Query.Pages) != 1 {
 			return nil, fmt.Errorf("page %q not found", title)
@@ -1034,10 +1025,10 @@ func (c *Client) History(ctx context.Context, title string, limit int) ([]Histor
 			return nil, fmt.Errorf("%w: %s", ErrMissingPage, title)
 		}
 		entries = append(entries, p.Revisions...)
-		if len(result.Continue) == 0 {
+		if len(entries) >= limit {
 			break
 		}
-		cont = result.Continue
+		params.Set("rvlimit", fmt.Sprint(min(limit-len(entries), 500)))
 	}
 	if len(entries) > limit {
 		entries = entries[:limit]
