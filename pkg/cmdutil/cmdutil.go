@@ -21,6 +21,8 @@ type Factory struct {
 	Config    func() (*config.Config, error)
 	// Discovery finds the api.php of hosts without a configured one; nil means /w/api.php.
 	Discovery *discovery.Cache
+	// Browse opens a URL for --web.
+	Browse func(url string) error
 
 	cached []string
 }
@@ -28,7 +30,7 @@ type Factory struct {
 // New returns the factory for the running process.
 func New() *Factory {
 	var cached *config.Config
-	f := &Factory{IOStreams: iostreams.System(), Discovery: discovery.New()}
+	f := &Factory{IOStreams: iostreams.System(), Discovery: discovery.New(), Browse: OpenBrowser}
 	f.Config = func() (*config.Config, error) {
 		if cached != nil {
 			return cached, nil

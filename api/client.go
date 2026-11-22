@@ -328,3 +328,144 @@ var Actions = []struct{ Name, Right string }{
 	{"delete", "delete"},
 	{"protect", "protect"},
 }
+
+// PageInfo is what `mw page view --json` can show about a page. Field names
+// follow the MediaWiki API.
+type PageInfo struct {
+	Title        string       `json:"title"`
+	PageID       int          `json:"pageid"`
+	NS           int          `json:"ns"`
+	URL          string       `json:"url"`
+	ContentModel string       `json:"contentmodel"`
+	Length       int          `json:"length"`
+	Touched      string       `json:"touched"`
+	Redirect     bool         `json:"redirect"`
+	Protection   []Protection `json:"protection"`
+	Categories   []string     `json:"categories"`
+	Revision     Revision     `json:"revision"`
+	Content      string       `json:"content"`
+}
+
+// Protection is one protection of a page.
+type Protection struct {
+	Type   string `json:"type"`
+	Level  string `json:"level"`
+	Expiry string `json:"expiry"`
+}
+
+// Revision describes the latest revision of a page.
+type Revision struct {
+	RevID     int    `json:"revid"`
+	ParentID  int    `json:"parentid"`
+	Timestamp string `json:"timestamp"`
+	User      string `json:"user"`
+	Comment   string `json:"comment"`
+	Size      int    `json:"size"`
+}
+
+// PageInfoOptions chooses the costly parts of PageInfo.
+type PageInfoOptions struct {
+	// Content fetches the wikitext of the latest revision.
+	Content bool
+	// Categories fetches every category, hidden ones included, following
+	// continuation until the list is complete.
+	Categories bool
+}
+
+// PageInfo returns information about a page and its latest revision.
+func (c *Client) PageInfo(title string, opts PageInfoOptions) (*PageInfo, error) {
+	rvprop := "ids|timestamp|user|comment|size"
+	if opts.Content {
+		rvprop += "|content"
+	}
+	prop := "info|revisions"
+	if opts.Categories {
+		prop += "|categories"
+	}
+	params := url.Values{
+		"action": {"query"}, "titles": {title}, "prop": {prop},
+		"inprop": {"url|protection"},
+		"rvprop": {rvprop}, "rvslots": {"main"},
+	}
+	if opts.Categories {
+		params.Set("cllimit", "max")
+	}
+	var result pageInfoResponse
+	if err := c.request(http.MethodGet, params, &result); err != nil {
+		return nil, err
+	}
+	if len(result.Query.Pages) != 1 {
+		return nil, fmt.Errorf("page %q not found", title)
+	}
+	p := result.Query.Pages[0]
+	switch {
+	case p.Invalid:
+		return nil, fmt.Errorf("invalid title %q", title)
+	case p.Missing:
+		return nil, fmt.Errorf("%w: %s", ErrMissingPage, title)
+	case len(p.Revisions) == 0:
+		return nil, errors.New("page has no readable revision")
+	}
+	info := &PageInfo{
+		Title: p.Title, PageID: p.PageID, NS: p.NS, URL: p.FullURL,
+		ContentModel: p.ContentModel, Length: p.Length, Touched: p.Touched,
+		Redirect: p.Redirect, Protection: p.Protection, Categories: []string{},
+		Revision: p.Revisions[0].Revision, Content: p.Revisions[0].Slots["main"].Content,
+	}
+	if info.Protection == nil {
+		info.Protection = []Protection{}
+	}
+	for _, cat := range p.Categories {
+		info.Categories = append(info.Categories, cat.Title)
+	}
+	// More categories than one response holds come back with clcontinue;
+	// fetch only the categories for the rest.
+	cont := result.Continue
+	for opts.Categories && cont["clcontinue"] != "" {
+		params := url.Values{
+			"action": {"query"}, "pageids": {fmt.Sprint(info.PageID)}, "prop": {"categories"}, "cllimit": {"max"},
+		}
+		for k, v := range cont {
+			params.Set(k, v)
+		}
+		var next pageInfoResponse
+		if err := c.request(http.MethodGet, params, &next); err != nil {
+			return nil, err
+		}
+		for _, np := range next.Query.Pages {
+			for _, cat := range np.Categories {
+				info.Categories = append(info.Categories, cat.Title)
+			}
+		}
+		cont = next.Continue
+	}
+	return info, nil
+}
+
+type pageInfoResponse struct {
+	Continue map[string]string `json:"continue"`
+	Query    struct {
+		Pages []struct {
+			Title        string       `json:"title"`
+			PageID       int          `json:"pageid"`
+			NS           int          `json:"ns"`
+			Missing      bool         `json:"missing"`
+			Invalid      bool         `json:"invalid"`
+			FullURL      string       `json:"fullurl"`
+			ContentModel string       `json:"contentmodel"`
+			Length       int          `json:"length"`
+			Touched      string       `json:"touched"`
+			Redirect     bool         `json:"redirect"`
+			Protection   []Protection `json:"protection"`
+			Categories   []struct {
+				Title string `json:"title"`
+			} `json:"categories"`
+			Revisions []struct {
+				Revision
+				Slots map[string]struct {
+					Content string `json:"content"`
+				} `json:"slots"`
+			} `json:"revisions"`
+		} `json:"pages"`
+	} `json:"query"`
+}
