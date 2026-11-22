@@ -1117,12 +1117,12 @@ func TestPageDiff(t *testing.T) {
 	assert.Equal(t, "--- /dev/null\n+++ Sandbox\trevision 201 (2026-11-22T00:00:00Z, Jmnote)\n@@ -0,0 +1,3 @@\n+a\n+b\n+c\n\\ No newline at end of file\n", out)
 
 	// A change of the final newline alone shows.
-	out, stderr, code = e.run("", "page", "diff", "--api", e.api, "205")
+	out, stderr, code = e.run("", "page", "diff", "--wiki", e.api, "205")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "--- Newline\trevision 204 (2026-11-22T00:00:00Z, Jmnote)\n+++ Newline\trevision 205 (2026-11-22T00:00:00Z, Jmnote)\n@@ -1 +1 @@\n-hello\n\\ No newline at end of file\n+hello\n", out)
 
 	// An empty text is a text; a revision whose text did not come is an error.
-	out, stderr, code = e.run("", "page", "diff", "--api", e.api, "206")
+	out, stderr, code = e.run("", "page", "diff", "--wiki", e.api, "206")
 	require.Equal(t, 0, code, stderr)
 	assert.Empty(t, out)
 
