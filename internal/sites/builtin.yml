@@ -1,5 +1,7 @@
 # Built-in farms and their wiki API endpoints.
-# An omitted api uses https://<host>/w/api.php.
+# An omitted api uses https://<host>/w/api.php. A host such as *.wikipedia.org
+# is a pattern for one more label in front, such as ko.wikipedia.org; its api
+# may use {host}. Wikis named exactly come first, for their aliases.
 farms:
   memoryalpha:
     - host: memory-alpha.fandom.com
@@ -54,3 +56,13 @@ farms:
       aliases: [mediawiki, mediawiki.org, mediawikiwiki, mw]
     - host: www.wikidata.org
       aliases: [wikidata.org, wikidata]
+    # The language editions of the projects. *.wikimedia.org is not a pattern:
+    # some of its hosts, such as phabricator.wikimedia.org, are not wikis.
+    - host: "*.wikipedia.org"
+    - host: "*.wiktionary.org"
+    - host: "*.wikibooks.org"
+    - host: "*.wikiquote.org"
+    - host: "*.wikisource.org"
+    - host: "*.wikinews.org"
+    - host: "*.wikiversity.org"
+    - host: "*.wikivoyage.org"

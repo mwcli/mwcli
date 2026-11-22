@@ -68,7 +68,7 @@ logins:
                 bot_password: ...
 ```
 
-`context` names the default site, farm alias, host or API URL. Each `farms` entry contains wiki endpoints. An endpoint uses `host`, optional `aliases` and optional `api`. When omitted, `api` defaults to `https://<host>/w/api.php`. The farm name is also the login key, so every wiki in a farm shares its accounts. Each login's `user` is its active account. Account-password logins use `auth: session` and store `cookies`. See [Authentication](auth.md) for credential storage details.
+`context` names the default site, farm alias, host or API URL. Each `farms` entry contains wiki endpoints. An endpoint uses `host`, optional `aliases` and optional `api`. When omitted, `api` defaults to `https://<host>/w/api.php`. A `host` such as `*.example.org` is a pattern whose `api` may use `{host}`; see [Host patterns](wikis.md#host-patterns). The farm name is also the login key, so every wiki in a farm shares its accounts. Each login's `user` is its active account. Account-password logins use `auth: session` and store `cookies`. See [Authentication](auth.md) for credential storage details.
 
 ## Exit status
 

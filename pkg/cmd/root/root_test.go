@@ -563,7 +563,8 @@ func TestBuiltinSites(t *testing.T) {
 	}
 	out, _, _ := e.run("", "site", "list", "--builtin")
 	assert.Contains(t, out, "commons.wikimedia.org     https://commons.wikimedia.org/w/api.php  (commons)")
-	assert.Equal(t, len(sites.Builtin()), strings.Count(out, "\n"))
+	assert.Equal(t, len(sites.Builtin())+len(sites.BuiltinPatterns()), strings.Count(out, "\n"))
+	assert.Contains(t, out, "*.wikipedia.org           https://{host}/w/api.php\n")
 }
 
 func TestStatusJWTToken(t *testing.T) {
@@ -1289,4 +1290,18 @@ func TestWikiURLAPIQueryPicksWiki(t *testing.T) {
 		assert.Equal(t, "Wiki "+wiki, out)
 		assert.Equal(t, before, siteinfos, "the cache is used")
 	}
+}
+
+// A user's pattern with another API does not hide the built-in one when the
+// wiki is given by its API URL: the Wikimedia login is found.
+func TestPatternAPIURLFindsBuiltinLogin(t *testing.T) {
+	e := newEnv(t)
+	cfg, err := config.LoadDir(e.dir)
+	require.NoError(t, err)
+	cfg.Farms["mywiki"] = []config.FarmSite{{Host: "*.wikipedia.org", API: "https://{host}/api.php"}}
+	cfg.Login("wikimedia", "Alice", &config.Account{Auth: config.AuthOAuth2, OAuthToken: "wm-token"})
+	require.NoError(t, cfg.Save())
+	out, stderr, code := e.run("", "auth", "token", "--wiki", "https://de.wikipedia.org/w/api.php")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "wm-token\n", out)
 }

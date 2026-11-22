@@ -15,6 +15,16 @@ import (
 //go:embed builtin.yml
 var builtinYAML []byte
 
+var builtinFarms = func() map[string][]config.FarmSite {
+	var f struct {
+		Farms map[string][]config.FarmSite `yaml:"farms"`
+	}
+	if err := yaml.Unmarshal(builtinYAML, &f); err != nil {
+		panic("builtin.yml: " + err.Error())
+	}
+	return f.Farms
+}()
+
 var builtin = func() map[string]*config.Site {
 	var f struct {
 		Farms map[string][]config.FarmSite `yaml:"farms"`
@@ -25,6 +35,9 @@ var builtin = func() map[string]*config.Site {
 	wikis := make(map[string]*config.Site)
 	for _, farm := range f.Farms {
 		for _, wiki := range farm {
+			if IsPattern(wiki.Host) {
+				continue
+			}
 			api := wiki.API
 			if api == "" {
 				api = config.DefaultAPI(wiki.Host)
@@ -45,6 +58,9 @@ var builtinFarm = func() map[string]string {
 	m := map[string]string{}
 	for farm, wikis := range f.Farms {
 		for _, wiki := range wikis {
+			if IsPattern(wiki.Host) {
+				continue
+			}
 			api := wiki.API
 			if api == "" {
 				api = config.DefaultAPI(wiki.Host)
@@ -64,17 +80,26 @@ var builtinFarmAPI = func() map[string]string {
 	}
 	m := map[string]string{}
 	for farm, wikis := range f.Farms {
-		if len(wikis) == 0 {
-			continue
+		if api := firstAPI(wikis); api != "" {
+			m[farm] = api
 		}
-		api := wikis[0].API
-		if api == "" {
-			api = config.DefaultAPI(wikis[0].Host)
-		}
-		m[farm] = api
 	}
 	return m
 }()
+
+// firstAPI is the API of the first wiki of a farm that is not a pattern.
+func firstAPI(wikis []config.FarmSite) string {
+	for _, w := range wikis {
+		if IsPattern(w.Host) {
+			continue
+		}
+		if w.API != "" {
+			return w.API
+		}
+		return config.DefaultAPI(w.Host)
+	}
+	return ""
+}
 
 // Builtin returns the built-in sites by name.
 func Builtin() map[string]*config.Site { return builtin }
@@ -101,12 +126,10 @@ func IsBuiltinFarmName(name string) bool {
 // FarmAPI returns a registered validation API for a farm login key.
 func FarmAPI(cfg *config.Config, name string) string {
 	for farm, wikis := range cfg.Farms {
-		if strings.EqualFold(farm, name) && len(wikis) > 0 {
-			api := wikis[0].API
-			if api == "" {
-				return config.DefaultAPI(wikis[0].Host)
+		if strings.EqualFold(farm, name) {
+			if api := firstAPI(wikis); api != "" {
+				return api
 			}
-			return api
 		}
 	}
 	for farm, api := range builtinFarmAPI {
@@ -160,6 +183,9 @@ func resolved(cfg *config.Config, name string, site *config.Site, kind Kind) Res
 	if cfg != nil {
 		for farm, wikis := range cfg.Farms {
 			for _, wiki := range wikis {
+				if IsPattern(wiki.Host) {
+					continue
+				}
 				api := wiki.API
 				if api == "" {
 					api = config.DefaultAPI(wiki.Host)
@@ -180,6 +206,9 @@ func resolved(cfg *config.Config, name string, site *config.Site, kind Kind) Res
 // or alias, an added or built-in site whose API is on that host, else the host
 // itself when name looks like one.
 func Lookup(cfg *config.Config, name string) (Resolved, error) {
+	if err := checkPatterns(cfg); err != nil {
+		return Resolved{}, err
+	}
 	name = strings.TrimSpace(name)
 	if strings.Contains(name, "://") {
 		return ForAPI(cfg, name)
@@ -200,6 +229,9 @@ func Lookup(cfg *config.Config, name string) (Resolved, error) {
 	if r, ok := byHost(builtin, host, BuiltIn); ok {
 		return resolved(cfg, r.Name, r.Site, r.Kind), nil
 	}
+	if r, ok := byPattern(cfg, host); ok {
+		return r, nil
+	}
 	return resolved(cfg, host, &config.Site{API: config.DefaultAPI(host)}, Unregistered), nil
 }
 
@@ -209,12 +241,18 @@ func Lookup(cfg *config.Config, name string) (Resolved, error) {
 // named by the URL itself, which no login can have, so the logins of the
 // existing site are never sent to it.
 func ForAPI(cfg *config.Config, api string) (Resolved, error) {
+	if err := checkPatterns(cfg); err != nil {
+		return Resolved{}, err
+	}
 	host, err := config.HostOf(api)
 	if err != nil {
 		return Resolved{}, err
 	}
 	for _, farm := range sortedFarmNames(cfg.Farms) {
 		for _, wiki := range cfg.Farms[farm] {
+			if IsPattern(wiki.Host) {
+				continue
+			}
 			endpoint := wiki.API
 			if endpoint == "" {
 				endpoint = config.DefaultAPI(wiki.Host)
@@ -236,6 +274,9 @@ func ForAPI(cfg *config.Config, api string) (Resolved, error) {
 		if builtin[n].API == api {
 			return resolved(cfg, n, builtin[n], BuiltIn), nil
 		}
+	}
+	if r, ok := patternForAPI(cfg, api); ok {
+		return r, nil
 	}
 	name := strings.ToLower(host)
 	if _, taken := builtin[name]; taken {
@@ -304,6 +345,9 @@ func byFarm(cfg *config.Config, name string) (Resolved, bool) {
 	}
 	for farm, wikis := range cfg.Farms {
 		for _, wiki := range wikis {
+			if IsPattern(wiki.Host) {
+				continue
+			}
 			matched := strings.EqualFold(name, wiki.Host) || len(wikis) == 1 && !strings.Contains(name, ".") && strings.EqualFold(name, farm)
 			for _, alias := range wiki.Aliases {
 				matched = matched || strings.EqualFold(name, alias)
