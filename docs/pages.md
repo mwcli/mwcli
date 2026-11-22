@@ -17,7 +17,7 @@ mw page view 'Main Page' --json categories --jq '.categories[]'
 
 | Flag | Lists | API module |
 | --- | --- | --- |
-| `--prefix TEXT` | pages whose titles start with `TEXT` | `list=allpages` |
+| `--prefix TEXT` | pages whose titles start with `TEXT`, without the namespace; use `--namespace` to select another namespace | `list=allpages` |
 | `--category NAME` | members of the category, with or without `Category:`; a name that already starts with a name of the category namespace, local or an alias, is used as it is | `list=categorymembers` |
 | `-S`, `--search QUERY` | full-text search results | `list=search` |
 | `--links-to TITLE` | pages that link to `TITLE` | `list=backlinks` |
