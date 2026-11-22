@@ -22,6 +22,7 @@ type loginOptions struct {
 	withToken   bool
 	username    string
 	botPassword bool
+	oauth1      bool
 }
 
 func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
@@ -30,8 +31,8 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 		Use:   "login",
 		Short: "Log in to a wiki",
 		Long: heredoc.Doc(`
-			Log in to a wiki with an OAuth 2 access token, a bot password, or a username
-			and password.
+			Log in to a wiki with an OAuth 2 access token, an OAuth 1.0a consumer, a bot
+			password, or a username and password.
 
 			An owner-only OAuth 2 access token is preferred where the wiki has the OAuth
 			extension; otherwise a bot password from Special:BotPasswords, which limits mw
@@ -42,6 +43,13 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 			(the central wiki of a farm, such as meta.wikimedia.org); the old token
 			stops working. Log in again with --wiki, or update MW_TOKEN where a script
 			sets it.
+
+			--oauth1 logs in with an owner-only OAuth 1.0a consumer, for a wiki whose OAuth
+			extension predates OAuth 2 or when you already have one: propose it at
+			Special:OAuthConsumerRegistration/propose/oauth1a. mw asks for its consumer
+			token, consumer secret, access token and access secret, or reads the four,
+			in that order and separated by white space, from standard input with
+			--with-token. mw signs each request with them.
 
 			--with-token reads the token from standard input. --username logs in with a
 			password, read from MW_PASSWORD or a prompt; a name such as Alice@mybot, or
@@ -59,6 +67,9 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 			# token from a file
 			$ mw auth login --wiki mediawiki.org --with-token < token.txt
 
+			# OAuth 1.0a keys from a file
+			$ mw auth login --wiki mediawiki.org --oauth1 --with-token < oauth1.txt
+
 			# a wiki whose API is not at /w/api.php
 			$ mw auth login --api https://wiki.example.org/api.php
 		`),
@@ -68,7 +79,8 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 	cmdutil.AddTargetFlags(cmd, &opts.wiki, &opts.apiURL)
-	cmd.Flags().BoolVar(&opts.withToken, "with-token", false, "Read an OAuth 2 access token from standard input")
+	cmd.Flags().BoolVar(&opts.withToken, "with-token", false, "Read an OAuth 2 access token, or the four keys with --oauth1, from standard input")
+	cmd.Flags().BoolVar(&opts.oauth1, "oauth1", false, "Log in with an owner-only OAuth 1.0a consumer")
 	cmd.Flags().StringVarP(&opts.username, "username", "u", "", "Log in with this username and a password, or a bot password login name such as Alice@mybot")
 	cmd.Flags().BoolVar(&opts.botPassword, "bot-password", false, "Treat --username as a bot password login name, for wikis whose delimiter is not @")
 	return cmd
@@ -81,6 +93,9 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	}
 	if opts.withToken && opts.username != "" {
 		return cmdutil.FlagErrorf("specify only one of --with-token and --username")
+	}
+	if opts.oauth1 && opts.username != "" {
+		return cmdutil.FlagErrorf("specify only one of --oauth1 and --username")
 	}
 	if opts.botPassword && opts.username == "" {
 		return cmdutil.FlagErrorf("--bot-password needs --username with the bot login name")
@@ -126,14 +141,15 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	}
 
 	useToken := opts.withToken
-	if !opts.withToken && opts.username == "" {
+	if !opts.withToken && !opts.oauth1 && opts.username == "" {
 		if !io.CanPrompt() {
 			return cmdutil.FlagErrorf("--with-token or --username required when not running interactively")
 		}
 		fmt.Fprintln(io.ErrOut, "? How would you like to authenticate mw?")
 		fmt.Fprintln(io.ErrOut, "  1. Paste an OAuth 2 access token")
-		fmt.Fprintln(io.ErrOut, "  2. Bot password (from Special:BotPasswords)")
-		fmt.Fprintln(io.ErrOut, "  3. Username and password")
+		fmt.Fprintln(io.ErrOut, "  2. OAuth 1.0a consumer keys")
+		fmt.Fprintln(io.ErrOut, "  3. Bot password (from Special:BotPasswords)")
+		fmt.Fprintln(io.ErrOut, "  4. Username and password")
 		choice, err := io.Prompt("Choose [1]: ")
 		if err != nil {
 			return err
@@ -142,12 +158,14 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 		case "", "1":
 			useToken = true
 		case "2":
+			opts.oauth1 = true
+		case "3":
 			fmt.Fprintf(io.ErrOut, "Create a bot password at %s\n", t.PageURL("Special:BotPasswords"))
 			if opts.username, err = io.Prompt("? Bot login name (such as Alice@mybot): "); err != nil {
 				return err
 			}
 			opts.botPassword = true
-		case "3":
+		case "4":
 		default:
 			return cmdutil.FlagErrorf("unknown choice %q", choice)
 		}
@@ -155,7 +173,9 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 
 	var account *config.Account
 	var user string
-	if useToken {
+	if opts.oauth1 {
+		account, user, err = oauth1Login(f, t, opts.withToken)
+	} else if useToken {
 		account, user, err = tokenLogin(f, t, opts.withToken)
 	} else {
 		account, user, err = passwordLogin(f, t, opts.username, opts.botPassword || api.IsBotName(opts.username))
@@ -213,6 +233,53 @@ func tokenLogin(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.A
 	}
 	if err != nil {
 		return nil, "", fmt.Errorf("check token: %w", err)
+	}
+	return account, u.Name, nil
+}
+
+func oauth1Login(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.Account, string, error) {
+	ios := f.IOStreams
+	var keys []string
+	if fromStdin {
+		b, err := io.ReadAll(ios.In)
+		if err != nil {
+			return nil, "", fmt.Errorf("read keys from standard input: %w", err)
+		}
+		keys = strings.Fields(string(b))
+		if len(keys) != 4 {
+			return nil, "", cmdutil.FlagErrorf("standard input has %d values; give the consumer token, consumer secret, access token and access secret", len(keys))
+		}
+	} else {
+		fmt.Fprintf(ios.ErrOut, "Create an owner-only consumer at %s\n", t.PageURL("Special:OAuthConsumerRegistration/propose/oauth1a"))
+		for _, q := range []struct {
+			label  string
+			secret bool
+		}{{"Consumer token", false}, {"Consumer secret", true}, {"Access token", false}, {"Access secret", true}} {
+			prompt := ios.Prompt
+			if q.secret {
+				prompt = ios.PromptSecret
+			}
+			value, err := prompt("? " + q.label + ": ")
+			if err != nil {
+				return nil, "", err
+			}
+			if value = strings.TrimSpace(value); value == "" {
+				return nil, "", cmdutil.FlagErrorf("no %s given", strings.ToLower(q.label))
+			}
+			keys = append(keys, value)
+		}
+	}
+	account := &config.Account{Auth: config.AuthOAuth1, ConsumerKey: keys[0], ConsumerSecret: keys[1], AccessToken: keys[2], AccessSecret: keys[3]}
+	c, err := api.New(t.API, account)
+	if err != nil {
+		return nil, "", err
+	}
+	u, err := c.User()
+	if errors.Is(err, api.ErrNotLoggedIn) {
+		return nil, "", fmt.Errorf("the OAuth 1.0a keys were not accepted by %s", t.Name)
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("check keys: %w", err)
 	}
 	return account, u.Name, nil
 }

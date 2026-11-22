@@ -21,6 +21,7 @@ const (
 	DefaultSite = "en.wikipedia.org"
 
 	AuthOAuth2      = "oauth2"
+	AuthOAuth1      = "oauth1"
 	AuthSession     = "session"
 	AuthBotPassword = "botpassword"
 
@@ -36,6 +37,12 @@ type Account struct {
 	// BotName is the login name, such as Alice@mybot.
 	BotName     string `yaml:"bot_name,omitempty"`
 	BotPassword string `yaml:"bot_password,omitempty"`
+	// ConsumerKey, ConsumerSecret, AccessToken and AccessSecret are the keys of
+	// an owner-only OAuth 1.0a consumer.
+	ConsumerKey    string `yaml:"consumer_key,omitempty"`
+	ConsumerSecret string `yaml:"consumer_secret,omitempty"`
+	AccessToken    string `yaml:"access_token,omitempty"`
+	AccessSecret   string `yaml:"access_secret,omitempty"`
 }
 
 // Site is one wiki: one api.php. Server, Script and ArticlePath come from the
