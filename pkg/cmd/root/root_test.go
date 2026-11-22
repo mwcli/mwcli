@@ -602,3 +602,25 @@ func TestBotPasswordFlag(t *testing.T) {
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, "--bot-password needs --username")
 }
+
+func TestStatusEnvTokenForFarmSite(t *testing.T) {
+	e := newEnv(t)
+	t.Setenv("MW_TOKEN", goodToken)
+	cfg := &config.Config{Sites: config.Sites{Default: "handbook", Wikis: map[string]*config.Site{}},
+		Farms:  map[string][]config.FarmSite{"docs": {{Host: e.host, Aliases: []string{"handbook"}, API: e.api}}},
+		Logins: map[string]*config.Login{}, Dir: e.dir}
+	require.NoError(t, cfg.Save())
+	out, stderr, code := e.run("", "auth", "status", "--wiki", "handbook")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, out, "account ")
+	assert.Contains(t, out, "MW_TOKEN")
+}
+
+func TestSiteAddRejectsFarmName(t *testing.T) {
+	e := newEnv(t)
+	cfg := &config.Config{Farms: map[string][]config.FarmSite{"wikimedia": nil}, Dir: e.dir}
+	require.NoError(t, cfg.Save())
+	_, stderr, code := e.run("", "site", "add", "wikimedia", "https://new.example.org/w/api.php")
+	require.Equal(t, 2, code)
+	assert.Contains(t, stderr, "conflicts with a farm name")
+}

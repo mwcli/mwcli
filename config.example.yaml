@@ -12,4 +12,4 @@ logins:
     users:
       ExampleUser:
         auth: oauth2
-        # Credentials are stored in the OS keyring.
+        # Credentials are stored in config.yml as plaintext with mode 0600.

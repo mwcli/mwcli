@@ -35,3 +35,10 @@ func TestBuiltinFarmLoginKeyRequiresExactAPI(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEqual(t, "wikimedia", r.LoginKey)
 }
+
+func TestFarmNamesAreReserved(t *testing.T) {
+	cfg := &config.Config{Farms: map[string][]config.FarmSite{"custom": nil}}
+	assert.True(t, IsFarmName(cfg, "wikimedia"))
+	assert.True(t, IsFarmName(cfg, "custom"))
+	assert.False(t, IsFarmName(cfg, "standalone"))
+}

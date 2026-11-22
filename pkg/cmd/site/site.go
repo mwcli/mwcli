@@ -61,6 +61,9 @@ func newCmdAdd(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if sites.IsFarmName(cfg, name) {
+				return cmdutil.FlagErrorf("site name %q conflicts with a farm name", name)
+			}
 			for _, a := range aliases {
 				if !config.ValidSiteName(a) {
 					return cmdutil.FlagErrorf("invalid alias %q", a)

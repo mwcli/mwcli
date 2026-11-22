@@ -58,6 +58,33 @@ var builtinFarm = func() map[string]string {
 // Builtin returns the built-in sites by name.
 func Builtin() map[string]*config.Site { return builtin }
 
+// IsFarmName reports whether name is reserved for a built-in or user farm.
+func IsFarmName(cfg *config.Config, name string) bool {
+	if _, ok := builtinFarmName[strings.ToLower(name)]; ok {
+		return true
+	}
+	for farm := range cfg.Farms {
+		if strings.EqualFold(farm, name) {
+			return true
+		}
+	}
+	return false
+}
+
+var builtinFarmName = func() map[string]struct{} {
+	var f struct {
+		Farms map[string][]config.FarmSite `yaml:"farms"`
+	}
+	if err := yaml.Unmarshal(builtinYAML, &f); err != nil {
+		panic("builtin.yml: " + err.Error())
+	}
+	m := map[string]struct{}{}
+	for farm := range f.Farms {
+		m[strings.ToLower(farm)] = struct{}{}
+	}
+	return m
+}()
+
 // Kind says where a resolved site comes from.
 type Kind int
 

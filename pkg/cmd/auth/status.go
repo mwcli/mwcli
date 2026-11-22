@@ -73,7 +73,7 @@ func statusRun(f *cmdutil.Factory, opts *statusOptions) error {
 		if err != nil {
 			return err
 		}
-		add(entry{host: t.Name, api: t.API, account: src.Account, active: true, source: cmdutil.TokenEnv})
+		add(entry{host: t.LoginKey, api: t.API, account: src.Account, active: true, source: cmdutil.TokenEnv})
 		envToken = true
 	}
 	for _, site := range cfg.LoginNames() {
