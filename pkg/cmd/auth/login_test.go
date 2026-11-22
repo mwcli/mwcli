@@ -14,9 +14,10 @@ func TestOAuth1Hint(t *testing.T) {
 	}
 	assert.Contains(t, oauth1Hint(reject("Invalid consumer")), "consumer token")
 	assert.Contains(t, oauth1Hint(reject("Invalid consumer key")), "consumer token")
-	assert.Contains(t, oauth1Hint(reject("Invalid signature")), "consumer secret or the access secret")
+	assert.Contains(t, oauth1Hint(reject("Invalid signature")), "The wiki could not verify the signature. Check the consumer secret and the access secret.")
 	assert.Contains(t, oauth1Hint(reject("No approved grant was found for that authorization token.")), "access token")
-	assert.Contains(t, oauth1Hint(reject("Nonce already used: x")), "in this order")
+	assert.Empty(t, oauth1Hint(reject("Nonce already used: x")))
+	assert.Empty(t, oauth1Hint(reject("Expired timestamp, yours 1, ours 2")))
 	assert.Empty(t, oauth1Hint(&api.APIError{Code: "mwoauth-invalid-authorization-blocked-user"}))
 	assert.Empty(t, oauth1Hint(errors.New("network down")))
 }

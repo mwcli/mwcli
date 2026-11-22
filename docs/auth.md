@@ -35,7 +35,7 @@ mw stores credentials in plaintext per farm and account in `config.yml` in the c
 
 **Create**: on the wiki, open `Special:OAuthConsumerRegistration/propose/oauth1a`, tick "This consumer is for use only by …" and choose the grants. On a wiki farm, register on the central wiki, as for OAuth 2. The wiki shows four values once: the consumer token, consumer secret, access token and access secret.
 
-**Log in**: `mw auth login --wiki <site> --oauth1` asks for the four values, the secrets without echo. With `--with-token`, mw reads them from standard input instead, in that order and separated by spaces or new lines. mw stores the four values and signs every request with them (HMAC-SHA1), so nothing expires. When the wiki rejects them, mw adds which value the wiki's reason points to, such as a consumer token copied in part.
+**Log in**: `mw auth login --wiki <site> --oauth1` asks for the four values, the secrets without echo. With `--with-token`, mw reads them from standard input instead, in that order and separated by spaces or new lines. mw stores the four values and signs every request with them (HMAC-SHA1), so nothing expires. When the wiki rejects the keys, mw adds what the wiki found and which value to check, such as a consumer token copied in part; other OAuth errors, such as an expired timestamp, are shown as the wiki gives them.
 
 **Replace and revoke**: as for OAuth 2, at `Special:OAuthConsumerRegistration/list` on the wiki where the consumer was registered.
 
