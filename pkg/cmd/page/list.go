@@ -14,9 +14,78 @@ import (
 // listFields are the --json fields of `mw page list`, named as in the MediaWiki API.
 var listFields = []string{"title", "pageid", "ns"}
 
+// listFlags are the sources of pages `mw page list` and `mw page download` share.
+type listFlags struct {
+	prefix, category, search, linksTo, embeds string
+	namespace, limit                          int
+}
+
+func (l *listFlags) add(cmd *cobra.Command, limitUsage string) {
+	cmd.Flags().StringVar(&l.prefix, "prefix", "", "Pages whose titles start with `text`")
+	cmd.Flags().StringVar(&l.category, "category", "", "Members of a `category`, with or without its namespace prefix")
+	cmd.Flags().StringVarP(&l.search, "search", "S", "", "Results of a full-text search for `query`")
+	cmd.Flags().StringVar(&l.linksTo, "links-to", "", "Pages that link to `title`")
+	cmd.Flags().StringVar(&l.embeds, "embeds", "", "Pages that transclude `title`, such as a template")
+	cmd.Flags().IntVarP(&l.namespace, "namespace", "n", 0, "Limit the pages to one namespace `ID`")
+	cmd.Flags().IntVarP(&l.limit, "limit", "L", 30, limitUsage)
+}
+
+// options checks the flags and returns the list they ask for; set reports
+// whether a source flag or --namespace was given.
+func (l *listFlags) options(cmd *cobra.Command) (opts api.ListOptions, set bool, err error) {
+	opts = api.ListOptions{Source: api.AllPages, Limit: l.limit}
+	var sources []string
+	for _, s := range []struct {
+		flag   string
+		source api.ListSource
+		value  string
+	}{
+		{"prefix", api.AllPages, l.prefix},
+		{"category", api.CategoryMembers, l.category},
+		{"search", api.Search, l.search},
+		{"links-to", api.LinksTo, l.linksTo},
+		{"embeds", api.EmbeddedIn, l.embeds},
+	} {
+		if cmd.Flags().Changed(s.flag) {
+			sources = append(sources, "--"+s.flag)
+			opts.Source, opts.Value = s.source, s.value
+		}
+	}
+	if len(sources) > 1 {
+		return opts, true, cmdutil.FlagErrorf("specify only one of %s", strings.Join(sources, ", "))
+	}
+	if len(sources) == 1 && opts.Source != api.AllPages && strings.TrimSpace(opts.Value) == "" {
+		return opts, true, cmdutil.FlagErrorf("%s needs a value", sources[0])
+	}
+	if l.limit < 1 {
+		return opts, true, cmdutil.FlagErrorf("invalid limit: %d", l.limit)
+	}
+	if cmd.Flags().Changed("namespace") {
+		opts.Namespace = &l.namespace
+	}
+	return opts, len(sources) > 0 || opts.Namespace != nil, nil
+}
+
+// list fetches the pages of opts, after resolving a namespace in --prefix
+// and the namespace of --category.
+func list(ctx context.Context, c *api.Client, opts api.ListOptions) ([]api.PageRef, error) {
+	if opts.Source == api.AllPages && strings.Contains(opts.Value, ":") {
+		if err := splitPrefix(ctx, c, &opts); err != nil {
+			return nil, err
+		}
+	}
+	if opts.Source == api.CategoryMembers {
+		var err error
+		if opts.Value, err = categoryTitle(ctx, c, opts.Value); err != nil {
+			return nil, err
+		}
+	}
+	return c.ListPages(ctx, opts)
+}
+
 func newCmdList(f *cmdutil.Factory) *cobra.Command {
-	var wiki, prefix, category, search, linksTo, embeds string
-	var namespace, limit int
+	var wiki string
+	lf := &listFlags{}
 	var jsonFlags *cmdutil.JSONFlags
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -40,35 +109,9 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 			if err := jsonFlags.Validate(); err != nil {
 				return err
 			}
-			opts := api.ListOptions{Source: api.AllPages, Limit: limit}
-			var set []string
-			for _, s := range []struct {
-				flag   string
-				source api.ListSource
-				value  string
-			}{
-				{"prefix", api.AllPages, prefix},
-				{"category", api.CategoryMembers, category},
-				{"search", api.Search, search},
-				{"links-to", api.LinksTo, linksTo},
-				{"embeds", api.EmbeddedIn, embeds},
-			} {
-				if cmd.Flags().Changed(s.flag) {
-					set = append(set, "--"+s.flag)
-					opts.Source, opts.Value = s.source, s.value
-				}
-			}
-			if len(set) > 1 {
-				return cmdutil.FlagErrorf("specify only one of %s", strings.Join(set, ", "))
-			}
-			if len(set) == 1 && opts.Source != api.AllPages && strings.TrimSpace(opts.Value) == "" {
-				return cmdutil.FlagErrorf("%s needs a value", set[0])
-			}
-			if limit < 1 {
-				return cmdutil.FlagErrorf("invalid limit: %d", limit)
-			}
-			if cmd.Flags().Changed("namespace") {
-				opts.Namespace = &namespace
+			opts, _, err := lf.options(cmd)
+			if err != nil {
+				return err
 			}
 			ios := f.IOStreams
 			cfg, err := f.Config()
@@ -83,17 +126,7 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if opts.Source == api.AllPages && strings.Contains(opts.Value, ":") {
-				if err := splitPrefix(cmd.Context(), c, &opts); err != nil {
-					return err
-				}
-			}
-			if opts.Source == api.CategoryMembers {
-				if opts.Value, err = categoryTitle(cmd.Context(), c, opts.Value); err != nil {
-					return err
-				}
-			}
-			pages, err := c.ListPages(cmd.Context(), opts)
+			pages, err := list(cmd.Context(), c, opts)
 			if err != nil {
 				return err
 			}
@@ -111,13 +144,7 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 	cmdutil.AddTargetFlags(cmd, &wiki)
-	cmd.Flags().StringVar(&prefix, "prefix", "", "List pages whose titles start with `text`")
-	cmd.Flags().StringVar(&category, "category", "", "List the members of a `category`, with or without its namespace prefix")
-	cmd.Flags().StringVarP(&search, "search", "S", "", "List the results of a full-text search for `query`")
-	cmd.Flags().StringVar(&linksTo, "links-to", "", "List pages that link to `title`")
-	cmd.Flags().StringVar(&embeds, "embeds", "", "List pages that transclude `title`, such as a template")
-	cmd.Flags().IntVarP(&namespace, "namespace", "n", 0, "Limit the list to one namespace `ID`")
-	cmd.Flags().IntVarP(&limit, "limit", "L", 30, "Maximum number of pages to list")
+	lf.add(cmd, "Maximum number of pages to list")
 	jsonFlags = cmdutil.AddJSONFlags(cmd, listFields)
 	return cmd
 }

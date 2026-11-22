@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -36,6 +38,8 @@ type fakeWiki struct {
 	created   map[string]bool
 	// siteinfos counts general siteinfo requests, which discovery makes.
 	siteinfos int
+	// batches are the numbers of titles of each request for many pages.
+	batches []int
 	// siprops are the siprop parameters of general siteinfo requests.
 	siprops []string
 	// pstModels are the contentmodel parameters of pre-save transforms.
@@ -259,6 +263,43 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			"categories": []any{map[string]any{"ns": 14, "title": "Category:A"}, map[string]any{"ns": 14, "title": "Category:B"}},
 			"revisions":  []any{rev},
 		}}}, "continue": map[string]string{"clcontinue": "7|B", "continue": "||info|revisions"}})
+	case p("prop") == "revisions" && p("rvprop") == "ids|timestamp|content":
+		// Many titles at once: normalized, missing and invalid ones, and Big,
+		// whose content comes only in the continued response.
+		titles := strings.Split(p("titles"), "|")
+		w.batches = append(w.batches, len(titles))
+		var normalized, pages []any
+		for _, t := range titles {
+			n := strings.ReplaceAll(t, "_", " ")
+			if n != "" {
+				n = strings.ToUpper(n[:1]) + n[1:]
+			}
+			if n != t {
+				normalized = append(normalized, map[string]string{"from": t, "to": n})
+			}
+			switch {
+			case strings.Contains(n, "<"):
+				pages = append(pages, map[string]any{"title": t, "invalid": true})
+			case strings.HasPrefix(n, "Missing"):
+				pages = append(pages, map[string]any{"title": n, "missing": true})
+			case n == "Big" && p("rvcontinue") == "":
+				pages = append(pages, map[string]any{"title": n})
+			default:
+				model := "wikitext"
+				if strings.HasSuffix(n, ".css") {
+					model = "css"
+				} else if strings.HasPrefix(n, "Module:") {
+					model = "Scribunto"
+				}
+				pages = append(pages, map[string]any{"title": n, "revisions": []any{map[string]any{"revid": 500 + len(n), "timestamp": "2026-11-22T00:00:00Z",
+					"slots": map[string]any{"main": map[string]string{"contentmodel": model, "content": "Text of " + n}}}}})
+			}
+		}
+		resp := map[string]any{"query": map[string]any{"normalized": normalized, "pages": pages}}
+		if strings.Contains(p("titles"), "Big") && p("rvcontinue") == "" {
+			resp["continue"] = map[string]any{"rvcontinue": "1|2", "continue": "||"}
+		}
+		send(resp)
 	case p("prop") == "revisions" && p("rvprop") == "ids|timestamp|user|content|contentmodel":
 		// Diff: Sandbox has revisions 201 and 202; 203 of Hidden has its text hidden.
 		revs := map[int]map[string]any{
@@ -1752,4 +1793,70 @@ func TestPageListPrefixNamespace(t *testing.T) {
 	_, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--prefix", "Help:Edit", "-n", "0")
 	assert.Equal(t, 2, code)
 	assert.Contains(t, stderr, `--prefix "Help:Edit" is in namespace 12, not 0 of --namespace`)
+}
+
+func TestPageDownload(t *testing.T) {
+	e := newEnv(t)
+	dir := t.TempDir()
+	read := func(name string) string {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		require.NoError(t, err, name)
+		return string(b)
+	}
+	_, stderr, code := e.run("", "page", "download", "--wiki", e.api, "-D", dir, "Help:Edit/ko", "sandbox", "Sandbox", "Module:Args", "MediaWiki:Common.css", "Big", "50%")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "Text of Help:Edit/ko", read("Help%3AEdit%2Fko.wiki"))
+	assert.Equal(t, "Text of Sandbox", read("Sandbox.wiki"))
+	assert.Equal(t, "Text of Module:Args", read("Module%3AArgs.lua"))
+	assert.Equal(t, "Text of MediaWiki:Common.css", read("MediaWiki%3ACommon.css"))
+	assert.Equal(t, "Text of Big", read("Big.wiki"))
+	assert.Equal(t, "Text of 50%", read("50%25.wiki"))
+	entries, _ := os.ReadDir(dir)
+	assert.Len(t, entries, 6)
+
+	_, stderr, code = e.run("", "page", "download", "--wiki", e.api, "-D", dir, "Sandbox")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "Sandbox.wiki exists; use --clobber to overwrite it or --skip-existing to keep it")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Sandbox.wiki"), []byte("mine"), 0o644))
+	_, stderr, code = e.run("", "page", "download", "--wiki", e.api, "-D", dir, "Sandbox", "--skip-existing")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "mine", read("Sandbox.wiki"))
+	_, stderr, code = e.run("", "page", "download", "--wiki", e.api, "-D", dir, "Sandbox", "--clobber")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "Text of Sandbox", read("Sandbox.wiki"))
+
+	// Missing and invalid pages are reported after the others are saved.
+	_, stderr, code = e.run("A\n\n Missing page \r\nBad<title\n", "page", "download", "--wiki", e.api, "-D", dir, "-")
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "Text of A", read("A.wiki"))
+	assert.Contains(t, stderr, "page does not exist: Missing page")
+	assert.Contains(t, stderr, `invalid title "Bad<title"`)
+
+	// Fifty titles a request; a list source picks the pages as page list does.
+	e.wiki.batches = nil
+	sub := filepath.Join(dir, "all")
+	_, stderr, code = e.run("", "page", "download", "--wiki", e.api, "-D", sub, "--prefix", "P", "-L", "7")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, []int{7}, e.wiki.batches)
+	assert.Equal(t, "Text of P7", read(filepath.Join("all", "P7.wiki")))
+	e.wiki.batches = nil
+	var many []string
+	for i := range 120 {
+		many = append(many, fmt.Sprintf("Page %d", i))
+	}
+	_, stderr, code = e.run(strings.Join(many, "\n"), "page", "download", "--wiki", e.api, "-D", filepath.Join(dir, "many"), "-")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, []int{50, 50, 20}, e.wiki.batches)
+
+	for _, args := range [][]string{
+		{},
+		{"A", "--category", "X"},
+		{"A", "--clobber", "--skip-existing"},
+		{"-", "-"},
+		{" "},
+		{"--prefix", "P", "-L", "0"},
+	} {
+		_, _, code = e.run("", append([]string{"page", "download", "--wiki", e.api, "-D", dir}, args...)...)
+		assert.Equal(t, 2, code, args)
+	}
 }

@@ -37,6 +37,20 @@ mw page list --prefix 'Help:Edit'
 mw page list --embeds 'Template:Infobox' --namespace 0 --json title --jq '.[].title'
 ```
 
+## Downloading pages
+
+`mw page download` saves the latest revision of pages as files, asking the wiki for fifty pages a request. Name the pages as arguments, give `-` to read titles from standard input one per line, or choose them with the sources of `mw page list` (`--prefix`, `--category`, `--search`, `--links-to`, `--embeds`, with `--namespace` and `-L`, 30 by default).
+
+```sh
+mw page download 'Main Page' 'Help:Contents'
+mw page download --category 'Living people' -L 500 --dir people
+mw user contribs Example --json title --jq '.[].title' | sort -u | mw page download -
+```
+
+Files go to the directory of `-D`, `--dir` (the current one by default), named after the title with an extension for the content model: `.wiki` for wikitext, `.js`, `.css`, `.json`, `.lua` for Scribunto modules, and `.txt` for any other; a title that already ends with it, such as `MediaWiki:Common.css`, gets none. `/ \ : * ? " < > |`, control characters and `%` itself are written as `%XX`, as are a leading dot, a final dot or space, and the first letter of a name Windows reserves such as `CON`, so `Help:Edit/ko` becomes `Help%3AEdit%2Fko.wiki` and the title can be read back from the name.
+
+An existing file stops the command unless `--clobber` overwrites it or `--skip-existing` keeps it. Pages that do not exist and invalid titles are reported on standard error, and the command exits with status 1 after saving the rest.
+
 ## Page history
 
 `mw page history TITLE` lists the revisions of a page, newest first: revision ID, time in UTC, user, size in bytes, `m` for a minor edit, and the edit summary. On a terminal the columns line up, counting Korean, Japanese and Chinese characters as two cells, and long summaries are shortened; in a pipe the columns are separated by tabs, with the full time in ISO 8601 and the full summary, its line breaks and tabs turned into spaces and other spacing kept.
