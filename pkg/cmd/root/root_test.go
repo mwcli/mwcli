@@ -1291,3 +1291,17 @@ func TestWikiURLAPIQueryPicksWiki(t *testing.T) {
 		assert.Equal(t, before, siteinfos, "the cache is used")
 	}
 }
+
+// A user's pattern with another API does not hide the built-in one when the
+// wiki is given by its API URL: the Wikimedia login is found.
+func TestPatternAPIURLFindsBuiltinLogin(t *testing.T) {
+	e := newEnv(t)
+	cfg, err := config.LoadDir(e.dir)
+	require.NoError(t, err)
+	cfg.Farms["mywiki"] = []config.FarmSite{{Host: "*.wikipedia.org", API: "https://{host}/api.php"}}
+	cfg.Login("wikimedia", "Alice", &config.Account{Auth: config.AuthOAuth2, OAuthToken: "wm-token"})
+	require.NoError(t, cfg.Save())
+	out, stderr, code := e.run("", "auth", "token", "--wiki", "https://de.wikipedia.org/w/api.php")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "wm-token\n", out)
+}

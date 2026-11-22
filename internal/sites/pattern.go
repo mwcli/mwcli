@@ -86,17 +86,20 @@ func byPattern(cfg *config.Config, host string) (Resolved, bool) {
 }
 
 // patternForAPI resolves an API URL that is exactly the API a pattern gives
-// its host, so that the farm's logins go only to the API the farm names.
+// its host, so that the farm's logins go only to the API the farm names. The
+// patterns are tried in order, and the first whose API for the host is api
+// wins: a pattern of the user's with another API does not hide a built-in one.
 func patternForAPI(cfg *config.Config, api string) (Resolved, bool) {
 	host, err := config.HostOf(api)
 	if err != nil {
 		return Resolved{}, false
 	}
-	r, ok := byPattern(cfg, host)
-	if !ok || r.Site.API != api {
-		return Resolved{}, false
+	for _, p := range patterns(cfg) {
+		if matches(p.entry.Host, host) && patternAPI(p.entry, host) == api {
+			return Resolved{Name: strings.ToLower(host), LoginKey: p.farm, Site: &config.Site{API: api}, Kind: p.kind}, true
+		}
 	}
-	return r, true
+	return Resolved{}, false
 }
 
 // checkPatterns reports a host pattern of the user's farms that is too wide,

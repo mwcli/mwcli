@@ -75,6 +75,16 @@ func TestUserPatterns(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "mywiki", r.LoginKey)
 
+	// By API URL, the pattern whose API it is wins, though another comes first.
+	cfg.Farms["mywiki"] = []config.FarmSite{{Host: "*.wikipedia.org", API: "https://{host}/api.php"}}
+	r, err = ForAPI(cfg, "https://de.wikipedia.org/w/api.php")
+	require.NoError(t, err)
+	assert.Equal(t, "wikimedia", r.LoginKey)
+	assert.Equal(t, BuiltIn, r.Kind)
+	r, err = ForAPI(cfg, "https://de.wikipedia.org/api.php")
+	require.NoError(t, err)
+	assert.Equal(t, "mywiki", r.LoginKey)
+
 	cfg.Farms["wide"] = []config.FarmSite{{Host: "*.example"}}
 	_, err = Lookup(cfg, "x.example")
 	assert.ErrorContains(t, err, `farm wide in `)
