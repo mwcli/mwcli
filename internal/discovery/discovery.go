@@ -4,6 +4,7 @@
 package discovery
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -22,7 +23,7 @@ import (
 // (https), the URL of any page of the wiki, or the URL of its api.php, which is
 // only checked. A host or page is tried at /w/api.php and /api.php under it,
 // then through the EditURI link of the page.
-func Find(target string) (*config.Site, error) {
+func Find(ctx context.Context, target string) (*config.Site, error) {
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return nil, errors.New("no wiki given")
@@ -37,13 +38,13 @@ func Find(target string) (*config.Site, error) {
 	// The query stays: it can pick the wiki, as in index.php?wiki=a.
 	u.Fragment = ""
 	if strings.HasSuffix(u.Path, "/api.php") {
-		return probe(u.String())
+		return probe(ctx, u.String())
 	}
 	base := u.Scheme + "://" + u.Host
 	var errs []error
 	if (u.Path == "" || u.Path == "/") && u.RawQuery == "" {
 		for _, candidate := range []string{base + "/w/api.php", base + "/api.php"} {
-			s, err := probe(candidate)
+			s, err := probe(ctx, candidate)
 			if err == nil {
 				return s, nil
 			}
@@ -54,9 +55,9 @@ func Find(target string) (*config.Site, error) {
 		u.Path = "/"
 	}
 	page := u.String()
-	if found, err := editURI(page); err != nil {
+	if found, err := editURI(ctx, page); err != nil {
 		errs = append(errs, err)
-	} else if s, err := probe(found); err != nil {
+	} else if s, err := probe(ctx, found); err != nil {
 		errs = append(errs, err)
 	} else {
 		return s, nil
@@ -64,12 +65,12 @@ func Find(target string) (*config.Site, error) {
 	return nil, fmt.Errorf("could not find the MediaWiki API of %s: %w", target, errors.Join(errs...))
 }
 
-func probe(apiURL string) (*config.Site, error) {
+func probe(ctx context.Context, apiURL string) (*config.Site, error) {
 	c, err := api.New(apiURL, api.WithUserAgent(build.UserAgent()))
 	if err != nil {
 		return nil, err
 	}
-	g, err := c.SiteInfo()
+	g, err := c.SiteInfo(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -85,8 +86,8 @@ var (
 )
 
 // editURI reads page and returns the api.php URL of its EditURI link.
-func editURI(page string) (string, error) {
-	req, err := http.NewRequest(http.MethodGet, page, nil)
+func editURI(ctx context.Context, page string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, page, nil)
 	if err != nil {
 		return "", err
 	}

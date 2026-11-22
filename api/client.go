@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -155,11 +156,11 @@ func (e *APIError) Error() string { return "MediaWiki API error " + e.Code + ": 
 
 // Raw sends params with method and returns the response body. A non-2xx status
 // is an *HTTPError; API errors in the body are not checked.
-func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
+func (c *Client) Raw(ctx context.Context, method string, params url.Values) ([]byte, error) {
 	if c.botName != "" && c.botState == 0 {
 		// A bot password session is short lived, so each run logs in afresh.
 		c.botState = 1
-		c.botErr = c.BotLogin(c.botName, c.botPassword, c.loginDomain)
+		c.botErr = c.BotLogin(ctx, c.botName, c.botPassword, c.loginDomain)
 		c.botState = 2
 	}
 	if c.botErr != nil {
@@ -180,10 +181,10 @@ func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
 			q[k] = vs
 		}
 		u.RawQuery = q.Encode()
-		req, err = http.NewRequest(method, u.String(), nil)
+		req, err = http.NewRequestWithContext(ctx, method, u.String(), nil)
 	} else {
 		u.RawQuery = q.Encode()
-		req, err = http.NewRequest(method, u.String(), strings.NewReader(params.Encode()))
+		req, err = http.NewRequestWithContext(ctx, method, u.String(), strings.NewReader(params.Encode()))
 		if req != nil {
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
@@ -249,10 +250,10 @@ func CheckError(body []byte) error {
 	return nil
 }
 
-func (c *Client) request(method string, params url.Values, out any) error {
+func (c *Client) request(ctx context.Context, method string, params url.Values, out any) error {
 	params.Set("format", "json")
 	params.Set("formatversion", "2")
-	body, err := c.Raw(method, params)
+	body, err := c.Raw(ctx, method, params)
 	if err != nil {
 		return err
 	}
@@ -275,13 +276,13 @@ type General struct {
 }
 
 // SiteInfo returns the general site information.
-func (c *Client) SiteInfo() (*General, error) {
+func (c *Client) SiteInfo(ctx context.Context) (*General, error) {
 	var result struct {
 		Query struct {
 			General General `json:"general"`
 		} `json:"query"`
 	}
-	if err := c.request(http.MethodGet, url.Values{"action": {"query"}, "meta": {"siteinfo"}, "siprop": {"general"}}, &result); err != nil {
+	if err := c.request(ctx, http.MethodGet, url.Values{"action": {"query"}, "meta": {"siteinfo"}, "siprop": {"general"}}, &result); err != nil {
 		return nil, err
 	}
 	g := result.Query.General
@@ -292,13 +293,13 @@ func (c *Client) SiteInfo() (*General, error) {
 }
 
 // TokenOf fetches a token of kind (csrf, login, ...).
-func (c *Client) TokenOf(kind string) (string, error) {
+func (c *Client) TokenOf(ctx context.Context, kind string) (string, error) {
 	var result struct {
 		Query struct {
 			Tokens map[string]string `json:"tokens"`
 		} `json:"query"`
 	}
-	if err := c.request(http.MethodGet, url.Values{"action": {"query"}, "meta": {"tokens"}, "type": {kind}}, &result); err != nil {
+	if err := c.request(ctx, http.MethodGet, url.Values{"action": {"query"}, "meta": {"tokens"}, "type": {kind}}, &result); err != nil {
 		return "", err
 	}
 	token := result.Query.Tokens[kind+"token"]
@@ -342,8 +343,8 @@ const maxLoginSteps = 5
 // Login runs the clientlogin flow with a username and password, answering the
 // fields the wiki asks for after the password, such as a two-factor code,
 // through opts.Answer.
-func (c *Client) Login(username, password string, opts LoginOptions) error {
-	token, err := c.TokenOf("login")
+func (c *Client) Login(ctx context.Context, username, password string, opts LoginOptions) error {
+	token, err := c.TokenOf(ctx, "login")
 	if err != nil {
 		return err
 	}
@@ -366,7 +367,7 @@ func (c *Client) Login(username, password string, opts LoginOptions) error {
 				} `json:"requests"`
 			} `json:"clientlogin"`
 		}
-		if err := c.request(http.MethodPost, form, &result); err != nil {
+		if err := c.request(ctx, http.MethodPost, form, &result); err != nil {
 			return err
 		}
 		cl := result.ClientLogin
@@ -405,13 +406,13 @@ func (c *Client) Login(username, password string, opts LoginOptions) error {
 }
 
 // Logout ends the session of the client on the wiki.
-func (c *Client) Logout() error {
-	token, err := c.TokenOf("csrf")
+func (c *Client) Logout(ctx context.Context) error {
+	token, err := c.TokenOf(ctx, "csrf")
 	if err != nil {
 		return err
 	}
 	var result map[string]any
-	return c.request(http.MethodPost, url.Values{"action": {"logout"}, "token": {token}}, &result)
+	return c.request(ctx, http.MethodPost, url.Values{"action": {"logout"}, "token": {token}}, &result)
 }
 
 // ErrNotLoggedIn means the wiki sees the request as anonymous.
@@ -425,8 +426,8 @@ type UserInfo struct {
 }
 
 // User returns the logged-in user and rights, or ErrNotLoggedIn.
-func (c *Client) User() (*UserInfo, error) {
-	u, err := c.CurrentUser()
+func (c *Client) User(ctx context.Context) (*UserInfo, error) {
+	u, err := c.CurrentUser(ctx)
 	if err == nil && u.Anon {
 		return nil, ErrNotLoggedIn
 	}
@@ -434,7 +435,7 @@ func (c *Client) User() (*UserInfo, error) {
 }
 
 // CurrentUser returns the user the wiki sees, which may be anonymous.
-func (c *Client) CurrentUser() (*UserInfo, error) {
+func (c *Client) CurrentUser(ctx context.Context) (*UserInfo, error) {
 	var result struct {
 		Query struct {
 			UserInfo struct {
@@ -445,7 +446,7 @@ func (c *Client) CurrentUser() (*UserInfo, error) {
 			} `json:"userinfo"`
 		} `json:"query"`
 	}
-	if err := c.request(http.MethodGet, url.Values{"action": {"query"}, "meta": {"userinfo"}, "uiprop": {"rights"}}, &result); err != nil {
+	if err := c.request(ctx, http.MethodGet, url.Values{"action": {"query"}, "meta": {"userinfo"}, "uiprop": {"rights"}}, &result); err != nil {
 		return nil, err
 	}
 	ui := result.Query.UserInfo
@@ -456,7 +457,7 @@ func (c *Client) CurrentUser() (*UserInfo, error) {
 var ErrMissingPage = errors.New("page does not exist")
 
 // Page returns the wikitext of the latest revision of title.
-func (c *Client) Page(title string) (string, error) {
+func (c *Client) Page(ctx context.Context, title string) (string, error) {
 	var result struct {
 		Query struct {
 			Pages []struct {
@@ -471,7 +472,7 @@ func (c *Client) Page(title string) (string, error) {
 		} `json:"query"`
 	}
 	params := url.Values{"action": {"query"}, "prop": {"revisions"}, "rvprop": {"content"}, "rvslots": {"main"}, "titles": {title}}
-	if err := c.request(http.MethodGet, params, &result); err != nil {
+	if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
 		return "", err
 	}
 	if len(result.Query.Pages) != 1 {
@@ -524,8 +525,8 @@ type EditResult struct {
 }
 
 // Edit saves text as the new wikitext of title.
-func (c *Client) Edit(title, text string, opts EditOptions) (*EditResult, error) {
-	token, err := c.TokenOf("csrf")
+func (c *Client) Edit(ctx context.Context, title, text string, opts EditOptions) (*EditResult, error) {
+	token, err := c.TokenOf(ctx, "csrf")
 	if err != nil {
 		return nil, err
 	}
@@ -550,7 +551,7 @@ func (c *Client) Edit(title, text string, opts EditOptions) (*EditResult, error)
 			New      bool   `json:"new"`
 		} `json:"edit"`
 	}
-	err = c.request(http.MethodPost, form, &result)
+	err = c.request(ctx, http.MethodPost, form, &result)
 	var ae *APIError
 	if errors.As(err, &ae) {
 		switch ae.Code {
@@ -622,7 +623,7 @@ type PageInfoOptions struct {
 }
 
 // PageInfo returns information about a page and its latest revision.
-func (c *Client) PageInfo(title string, opts PageInfoOptions) (*PageInfo, error) {
+func (c *Client) PageInfo(ctx context.Context, title string, opts PageInfoOptions) (*PageInfo, error) {
 	rvprop := "ids|timestamp|user|comment|size"
 	if opts.Content {
 		rvprop += "|content"
@@ -640,7 +641,7 @@ func (c *Client) PageInfo(title string, opts PageInfoOptions) (*PageInfo, error)
 		params.Set("cllimit", "max")
 	}
 	var result pageInfoResponse
-	if err := c.request(http.MethodGet, params, &result); err != nil {
+	if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
 		return nil, err
 	}
 	if len(result.Query.Pages) != 1 {
@@ -678,7 +679,7 @@ func (c *Client) PageInfo(title string, opts PageInfoOptions) (*PageInfo, error)
 			params.Set(k, v)
 		}
 		var next pageInfoResponse
-		if err := c.request(http.MethodGet, params, &next); err != nil {
+		if err := c.request(ctx, http.MethodGet, params, &next); err != nil {
 			return nil, err
 		}
 		for _, np := range next.Query.Pages {
@@ -755,7 +756,7 @@ type ListOptions struct {
 
 // ListPages returns up to opts.Limit pages from one list module, following
 // continuation across requests.
-func (c *Client) ListPages(opts ListOptions) ([]PageRef, error) {
+func (c *Client) ListPages(ctx context.Context, opts ListOptions) ([]PageRef, error) {
 	var list, prefix string
 	switch opts.Source {
 	case AllPages:
@@ -807,7 +808,7 @@ func (c *Client) ListPages(opts ListOptions) ([]PageRef, error) {
 			Continue map[string]json.RawMessage `json:"continue"`
 			Query    map[string]json.RawMessage `json:"query"`
 		}
-		if err := c.request(http.MethodGet, params, &result); err != nil {
+		if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
 			return nil, err
 		}
 		var batch []PageRef
@@ -838,7 +839,7 @@ func (c *Client) ListPages(opts ListOptions) ([]PageRef, error) {
 
 // NamespaceNames returns the names a namespace can be written with: the local
 // name, the canonical name and the aliases.
-func (c *Client) NamespaceNames(id int) ([]string, error) {
+func (c *Client) NamespaceNames(ctx context.Context, id int) ([]string, error) {
 	var result struct {
 		Query struct {
 			Namespaces map[string]struct {
@@ -853,7 +854,7 @@ func (c *Client) NamespaceNames(id int) ([]string, error) {
 		} `json:"query"`
 	}
 	params := url.Values{"action": {"query"}, "meta": {"siteinfo"}, "siprop": {"namespaces|namespacealiases"}}
-	if err := c.request(http.MethodGet, params, &result); err != nil {
+	if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
 		return nil, err
 	}
 	var names []string
@@ -878,8 +879,8 @@ func IsBotName(name string) bool { return strings.Contains(name, "@") }
 // BotLogin logs in with a bot password from Special:BotPasswords through
 // action=login, the only login module that accepts them. domain is the
 // authentication domain of an LDAP wiki, or empty.
-func (c *Client) BotLogin(name, password, domain string) error {
-	token, err := c.TokenOf("login")
+func (c *Client) BotLogin(ctx context.Context, name, password, domain string) error {
+	token, err := c.TokenOf(ctx, "login")
 	if err != nil {
 		return err
 	}
@@ -893,7 +894,7 @@ func (c *Client) BotLogin(name, password, domain string) error {
 			Reason string `json:"reason"`
 		} `json:"login"`
 	}
-	if err := c.request(http.MethodPost, form, &result); err != nil {
+	if err := c.request(ctx, http.MethodPost, form, &result); err != nil {
 		return err
 	}
 	if result.Login.Result != "Success" {
@@ -916,7 +917,7 @@ type HistoryEntry struct {
 
 // History returns up to limit revisions of title, newest first, following
 // continuation across requests.
-func (c *Client) History(title string, limit int) ([]HistoryEntry, error) {
+func (c *Client) History(ctx context.Context, title string, limit int) ([]HistoryEntry, error) {
 	entries := []HistoryEntry{}
 	cont := map[string]string{}
 	for len(entries) < limit {
@@ -938,7 +939,7 @@ func (c *Client) History(title string, limit int) ([]HistoryEntry, error) {
 				} `json:"pages"`
 			} `json:"query"`
 		}
-		if err := c.request(http.MethodGet, params, &result); err != nil {
+		if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
 			return nil, err
 		}
 		if len(result.Query.Pages) != 1 {
@@ -984,16 +985,16 @@ type RevisionText struct {
 var ErrMissingRevision = errors.New("revision does not exist")
 
 // RevisionByID returns a revision and its wikitext.
-func (c *Client) RevisionByID(revid int) (*RevisionText, error) {
-	return c.revisionText(url.Values{"revids": {strconv.Itoa(revid)}}, fmt.Sprint("revision ", revid))
+func (c *Client) RevisionByID(ctx context.Context, revid int) (*RevisionText, error) {
+	return c.revisionText(ctx, url.Values{"revids": {strconv.Itoa(revid)}}, fmt.Sprint("revision ", revid))
 }
 
 // LatestRevision returns the latest revision of title and its wikitext.
-func (c *Client) LatestRevision(title string) (*RevisionText, error) {
-	return c.revisionText(url.Values{"titles": {title}}, title)
+func (c *Client) LatestRevision(ctx context.Context, title string) (*RevisionText, error) {
+	return c.revisionText(ctx, url.Values{"titles": {title}}, title)
 }
 
-func (c *Client) revisionText(params url.Values, what string) (*RevisionText, error) {
+func (c *Client) revisionText(ctx context.Context, params url.Values, what string) (*RevisionText, error) {
 	params.Set("action", "query")
 	params.Set("prop", "revisions")
 	params.Set("rvprop", "ids|timestamp|user|content|contentmodel")
@@ -1024,7 +1025,7 @@ func (c *Client) revisionText(params url.Values, what string) (*RevisionText, er
 			} `json:"pages"`
 		} `json:"query"`
 	}
-	if err := c.request(http.MethodGet, params, &result); err != nil {
+	if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
 		return nil, err
 	}
 	if len(result.Query.BadRevIDs) > 0 {
@@ -1058,7 +1059,7 @@ func (c *Client) revisionText(params url.Values, what string) (*RevisionText, er
 // trailing white space handled, as the logged-in user when the client has
 // credentials; JSON, for one, is reformatted. An empty model is the model the
 // wiki gives title, as for a new page.
-func (c *Client) PreSaveTransform(title, text, model string) (string, error) {
+func (c *Client) PreSaveTransform(ctx context.Context, title, text, model string) (string, error) {
 	form := url.Values{"action": {"parse"}, "onlypst": {"1"}, "title": {title}, "text": {text}}
 	if model != "" {
 		form.Set("contentmodel", model)
@@ -1068,7 +1069,7 @@ func (c *Client) PreSaveTransform(title, text, model string) (string, error) {
 			Text *string `json:"text"`
 		} `json:"parse"`
 	}
-	if err := c.request(http.MethodPost, form, &result); err != nil {
+	if err := c.request(ctx, http.MethodPost, form, &result); err != nil {
 		return "", err
 	}
 	if result.Parse.Text == nil {

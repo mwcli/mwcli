@@ -49,7 +49,7 @@ func newCmdHistory(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := f.Resolve(cfg, wiki)
+			t, err := f.Resolve(cmd.Context(), cfg, wiki)
 			if err != nil {
 				return err
 			}
@@ -57,7 +57,7 @@ func newCmdHistory(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			revs, err := c.History(args[0], limit)
+			revs, err := c.History(cmd.Context(), args[0], limit)
 			if err != nil {
 				return err
 			}

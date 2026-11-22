@@ -1,6 +1,7 @@
 package cmdutil
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,7 +38,7 @@ func TestNewClient(t *testing.T) {
 	} {
 		cl, err := NewClient(srv.URL+"/w/api.php", c.account)
 		require.NoError(t, err)
-		_, err = cl.CurrentUser()
+		_, err = cl.CurrentUser(context.Background())
 		require.NoError(t, err)
 		assert.True(t, strings.HasPrefix(ua, "mw/"), ua)
 		if c.authPrefixOAuth1 {

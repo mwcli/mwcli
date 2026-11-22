@@ -77,3 +77,4 @@ logins:
 - 1: the command failed, or the API reported an error
 - 2: wrong usage
 - 4: a login is required
+- 130: interrupted with Ctrl-C; requests in flight are cancelled

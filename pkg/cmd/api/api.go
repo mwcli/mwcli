@@ -3,6 +3,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -60,7 +61,7 @@ func NewCmdApi(f *cmdutil.Factory) *cobra.Command {
 		`),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.rawFields = append(args, opts.rawFields...)
-			return run(f, opts)
+			return run(cmd.Context(), f, opts)
 		},
 	}
 	cmdutil.AddTargetFlags(cmd, &opts.wiki)
@@ -73,7 +74,7 @@ func NewCmdApi(f *cmdutil.Factory) *cobra.Command {
 	return cmd
 }
 
-func run(f *cmdutil.Factory, opts *options) error {
+func run(ctx context.Context, f *cmdutil.Factory, opts *options) error {
 	ios := f.IOStreams
 	params := url.Values{}
 	add := func(kv string, typed bool) error {
@@ -136,7 +137,7 @@ func run(f *cmdutil.Factory, opts *options) error {
 	if err != nil {
 		return err
 	}
-	t, err := f.Resolve(cfg, opts.wiki)
+	t, err := f.Resolve(ctx, cfg, opts.wiki)
 	if err != nil {
 		return err
 	}
@@ -145,7 +146,7 @@ func run(f *cmdutil.Factory, opts *options) error {
 		return err
 	}
 	if method != http.MethodGet && !params.Has("token") {
-		tok, err := c.TokenOf("csrf")
+		tok, err := c.TokenOf(ctx, "csrf")
 		if err != nil {
 			return err
 		}
@@ -159,7 +160,7 @@ func run(f *cmdutil.Factory, opts *options) error {
 	}
 	var slurped []json.RawMessage
 	for {
-		body, err := c.Raw(method, params)
+		body, err := c.Raw(ctx, method, params)
 		if err != nil {
 			return err
 		}

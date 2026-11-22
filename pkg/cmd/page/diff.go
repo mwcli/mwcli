@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -49,7 +50,7 @@ func newCmdDiff(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := f.Resolve(cfg, wiki)
+			t, err := f.Resolve(cmd.Context(), cfg, wiki)
 			if err != nil {
 				return err
 			}
@@ -57,18 +58,18 @@ func newCmdDiff(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			newer, err := lookupRevision(c, args[len(args)-1])
+			newer, err := lookupRevision(cmd.Context(), c, args[len(args)-1])
 			if err != nil {
 				return err
 			}
 			var older *api.RevisionText
 			switch {
 			case len(args) == 2:
-				if older, err = lookupRevision(c, args[0]); err != nil {
+				if older, err = lookupRevision(cmd.Context(), c, args[0]); err != nil {
 					return err
 				}
 			case newer.ParentID > 0:
-				if older, err = c.RevisionByID(newer.ParentID); err != nil {
+				if older, err = c.RevisionByID(cmd.Context(), newer.ParentID); err != nil {
 					return err
 				}
 			}
@@ -104,11 +105,11 @@ func newCmdDiff(f *cmdutil.Factory) *cobra.Command {
 }
 
 // lookupRevision reads a revision ID, or the latest revision of a title.
-func lookupRevision(c *api.Client, arg string) (*api.RevisionText, error) {
+func lookupRevision(ctx context.Context, c *api.Client, arg string) (*api.RevisionText, error) {
 	if id, err := strconv.Atoi(arg); err == nil && id > 0 {
-		return c.RevisionByID(id)
+		return c.RevisionByID(ctx, id)
 	}
-	return c.LatestRevision(arg)
+	return c.LatestRevision(ctx, arg)
 }
 
 // label names a side of the diff: the title, then after a tab, as diff -u puts

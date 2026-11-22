@@ -2,6 +2,7 @@
 package cmdutil
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -25,7 +26,7 @@ type Factory struct {
 	Browse func(url string) error
 	// Find discovers a site: for `mw site add`, a first login, and a host or
 	// page URL that was not added, whose result the cache keeps.
-	Find func(target string) (*config.Site, error)
+	Find func(ctx context.Context, target string) (*config.Site, error)
 	// Cache returns the API cache; nil loads it from its directory.
 	Cache func() *apicache.Cache
 
@@ -88,7 +89,7 @@ func SiteName(cfg *config.Config, wiki string) string {
 // en.wikipedia.org: a site name or alias, a host, the URL of a page of the
 // wiki, or the URL of its api.php. The api.php of a host or page that was not
 // added is found once and kept in the cache.
-func (f *Factory) Resolve(cfg *config.Config, wiki string) (Target, error) {
+func (f *Factory) Resolve(ctx context.Context, cfg *config.Config, wiki string) (Target, error) {
 	name := strings.TrimSpace(SiteName(cfg, wiki))
 	if !IsURL(name) || IsAPIURL(name) {
 		r, err := sites.Lookup(cfg, name)
@@ -103,7 +104,7 @@ func (f *Factory) Resolve(cfg *config.Config, wiki string) (Target, error) {
 	if e, key, ok := cache.Get(name); ok {
 		return f.found(cfg, e.Site(), key)
 	}
-	site, err := f.Find(name)
+	site, err := f.Find(ctx, name)
 	if err != nil {
 		return Target{}, fmt.Errorf("could not find the API of %s: %w\ngive the URL of its api.php with --wiki, or add it with `mw site add NAME URL`", name, err)
 	}

@@ -2,6 +2,7 @@
 package page
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -63,7 +64,7 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			t, err := f.Resolve(cfg, wiki)
+			t, err := f.Resolve(cmd.Context(), cfg, wiki)
 			if err != nil {
 				return err
 			}
@@ -79,13 +80,13 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			if jsonFlags.Enabled() {
-				info, err := c.PageInfo(args[0], api.PageInfoOptions{Content: jsonFlags.Has("content"), Categories: jsonFlags.Has("categories")})
+				info, err := c.PageInfo(cmd.Context(), args[0], api.PageInfoOptions{Content: jsonFlags.Has("content"), Categories: jsonFlags.Has("categories")})
 				if err != nil {
 					return err
 				}
 				return jsonFlags.Write(ios.Out, info, ios.IsStdoutTTY())
 			}
-			text, err := c.Page(args[0])
+			text, err := c.Page(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
@@ -189,7 +190,8 @@ func saveRun(f *cmdutil.Factory, cmd *cobra.Command, o *editFlags, title string,
 	if err != nil {
 		return err
 	}
-	t, err := f.Resolve(cfg, o.wiki)
+	ctx := cmd.Context()
+	t, err := f.Resolve(ctx, cfg, o.wiki)
 	if err != nil {
 		return err
 	}
@@ -198,12 +200,12 @@ func saveRun(f *cmdutil.Factory, cmd *cobra.Command, o *editFlags, title string,
 		return err
 	}
 	if o.dryRun {
-		return dryRun(ios, c, t, title, text, mode)
+		return dryRun(ctx, ios, c, t, title, text, mode)
 	}
 	if !ok {
 		return cmdutil.NotLoggedIn(t.Name)
 	}
-	res, err := c.Edit(title, text, api.EditOptions{Summary: o.summary, Mode: mode, Minor: o.minor, Bot: o.bot})
+	res, err := c.Edit(ctx, title, text, api.EditOptions{Summary: o.summary, Mode: mode, Minor: o.minor, Bot: o.bot})
 	var ae *api.APIError
 	if errors.As(err, &ae) && ae.Code == "assertuserfailed" {
 		return cmdutil.NotLoggedIn(t.Name)
@@ -238,8 +240,8 @@ func saveError(err error, t cmdutil.Target) error {
 // dryRun prints what saving text would change, without saving: a diff from the
 // latest revision, or from nothing for a new page, to the text as the wiki
 // would save it.
-func dryRun(ios *iostreams.IOStreams, c *api.Client, t cmdutil.Target, title, text string, mode api.EditMode) error {
-	cur, err := c.LatestRevision(title)
+func dryRun(ctx context.Context, ios *iostreams.IOStreams, c *api.Client, t cmdutil.Target, title, text string, mode api.EditMode) error {
+	cur, err := c.LatestRevision(ctx, title)
 	switch {
 	case errors.Is(err, api.ErrMissingPage) && mode == api.CreateOnly:
 		cur = nil
@@ -254,7 +256,7 @@ func dryRun(ios *iostreams.IOStreams, c *api.Client, t cmdutil.Target, title, te
 	if cur != nil {
 		model = cur.ContentModel
 	}
-	saved, err := c.PreSaveTransform(title, text, model)
+	saved, err := c.PreSaveTransform(ctx, title, text, model)
 	if err != nil {
 		return err
 	}
