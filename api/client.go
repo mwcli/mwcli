@@ -24,6 +24,10 @@ type Client struct {
 	Resolved string
 	http     *http.Client
 	url      *url.URL
+	// botName and botPassword log in with action=login before the first request.
+	botName, botPassword string
+	botState             int // 0 not tried, 1 logging in, 2 done
+	botErr               error
 }
 
 // New returns a client for api, authenticated with account when it is not nil.
@@ -40,6 +44,8 @@ func New(api string, account *config.Account) (*Client, error) {
 	if account != nil {
 		if account.Auth == config.AuthOAuth2 {
 			c.Token = account.OAuthToken
+		} else if account.Auth == config.AuthBotPassword {
+			c.botName, c.botPassword = account.BotName, account.BotPassword
 		} else {
 			var cookies []*http.Cookie
 			for name, value := range account.Cookies {
@@ -84,6 +90,15 @@ func (e *APIError) Error() string { return "MediaWiki API error " + e.Code + ": 
 // Raw sends params with method and returns the response body. A non-2xx status
 // is an *HTTPError; API errors in the body are not checked.
 func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
+	if c.botName != "" && c.botState == 0 {
+		// A bot password session is short lived, so each run logs in afresh.
+		c.botState = 1
+		c.botErr = c.BotLogin(c.botName, c.botPassword)
+		c.botState = 2
+	}
+	if c.botErr != nil {
+		return nil, c.botErr
+	}
 	var req *http.Request
 	var err error
 	if method == http.MethodGet {
@@ -207,7 +222,7 @@ func (c *Client) Login(username, password string) error {
 	if err != nil {
 		return err
 	}
-	form := url.Values{"action": {"clientlogin"}, "loginreturnurl": {c.API}, "logintoken": {token}, "username": {username}, "password": {password}}
+	form := url.Values{"action": {"clientlogin"}, "loginreturnurl": {c.API}, "logintoken": {token}, "username": {username}, "password": {password}, "rememberMe": {"1"}}
 	var result struct {
 		ClientLogin struct {
 			Status  string `json:"status"`
@@ -619,4 +634,35 @@ func (c *Client) NamespaceNames(id int) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// IsBotName reports whether name is the login name of a bot password, such as
+// Alice@mybot; MediaWiki user names cannot contain @.
+func IsBotName(name string) bool { return strings.Contains(name, "@") }
+
+// BotLogin logs in with a bot password from Special:BotPasswords through
+// action=login, the only login module that accepts them.
+func (c *Client) BotLogin(name, password string) error {
+	token, err := c.TokenOf("login")
+	if err != nil {
+		return err
+	}
+	form := url.Values{"action": {"login"}, "lgname": {name}, "lgpassword": {password}, "lgtoken": {token}}
+	var result struct {
+		Login struct {
+			Result string `json:"result"`
+			Reason string `json:"reason"`
+		} `json:"login"`
+	}
+	if err := c.request(http.MethodPost, form, &result); err != nil {
+		return err
+	}
+	if result.Login.Result != "Success" {
+		reason := result.Login.Reason
+		if reason == "" {
+			reason = result.Login.Result
+		}
+		return fmt.Errorf("bot password login failed for %s: %s", name, reason)
+	}
+	return nil
 }

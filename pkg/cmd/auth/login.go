@@ -28,9 +28,12 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 		Use:   "login",
 		Short: "Log in to a wiki",
 		Long: heredoc.Doc(`
-			Log in to a wiki with an OAuth 2 access token or a username and password.
+			Log in to a wiki with an OAuth 2 access token, a bot password, or a username
+			and password.
 
-			An owner-only OAuth 2 access token is preferred. Create one on the wiki at
+			An owner-only OAuth 2 access token is preferred where the wiki has the OAuth
+			extension; otherwise a bot password from Special:BotPasswords, which limits mw
+			to the grants you choose. Create a token on the wiki at
 			Special:OAuthConsumerRegistration/propose/oauth2 with the grants you need.
 			To replace a token, reset the consumer's secret key at
 			Special:OAuthConsumerRegistration/list on the wiki where it was registered
@@ -39,7 +42,9 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 			sets it.
 
 			--with-token reads the token from standard input. --username logs in with a
-			password, read from MW_PASSWORD or a prompt. Without either, mw asks.
+			password, read from MW_PASSWORD or a prompt; a name such as Alice@mybot is a
+			bot password, which mw stores and uses to log in again on each run. An
+			account password is never stored, only its session. Without either, mw asks.
 
 			The host becomes the default for later commands.
 		`),
@@ -60,7 +65,7 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 	}
 	cmdutil.AddTargetFlags(cmd, &opts.wiki, &opts.apiURL)
 	cmd.Flags().BoolVar(&opts.withToken, "with-token", false, "Read an OAuth 2 access token from standard input")
-	cmd.Flags().StringVarP(&opts.username, "username", "u", "", "Log in with this username and a password")
+	cmd.Flags().StringVarP(&opts.username, "username", "u", "", "Log in with this username and a password, or a bot password login name such as Alice@mybot")
 	return cmd
 }
 
@@ -99,7 +104,8 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 		}
 		fmt.Fprintln(io.ErrOut, "? How would you like to authenticate mw?")
 		fmt.Fprintln(io.ErrOut, "  1. Paste an OAuth 2 access token")
-		fmt.Fprintln(io.ErrOut, "  2. Username and password")
+		fmt.Fprintln(io.ErrOut, "  2. Bot password (from Special:BotPasswords)")
+		fmt.Fprintln(io.ErrOut, "  3. Username and password")
 		choice, err := io.Prompt("Choose [1]: ")
 		if err != nil {
 			return err
@@ -108,6 +114,14 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 		case "", "1":
 			useToken = true
 		case "2":
+			fmt.Fprintf(io.ErrOut, "Create a bot password at %s\n", t.PageURL("Special:BotPasswords"))
+			if opts.username, err = io.Prompt("? Bot login name (such as Alice@mybot): "); err != nil {
+				return err
+			}
+			if !api.IsBotName(opts.username) {
+				return cmdutil.FlagErrorf("a bot login name has the form User@botname")
+			}
+		case "3":
 		default:
 			return cmdutil.FlagErrorf("unknown choice %q", choice)
 		}
@@ -188,6 +202,16 @@ func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string) (*conf
 	c, err := api.New(t.API, nil)
 	if err != nil {
 		return nil, "", err
+	}
+	if api.IsBotName(username) {
+		if err := c.BotLogin(username, password); err != nil {
+			return nil, "", err
+		}
+		u, err := c.User()
+		if err != nil {
+			return nil, "", fmt.Errorf("check login: %w", err)
+		}
+		return &config.Account{Auth: config.AuthBotPassword, BotName: username, BotPassword: password}, u.Name, nil
 	}
 	if err := c.Login(username, password); err != nil {
 		return nil, "", err

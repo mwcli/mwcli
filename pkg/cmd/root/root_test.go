@@ -29,12 +29,16 @@ type fakeWiki struct {
 	rvprop     string
 	prop       string
 	lists      []url.Values
+	botLogins  int
 }
 
 func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	_ = r.ParseForm()
 	p := func(k string) string { return r.Form.Get(k) }
 	authed := r.Header.Get("Authorization") == "Bearer "+goodToken || (w.extraToken != "" && r.Header.Get("Authorization") == "Bearer "+w.extraToken)
+	if ck, err := r.Cookie("fakesession"); err == nil && ck.Value == "bot" {
+		authed = true
+	}
 	send := func(v any) { rw.Header().Set("Content-Type", "application/json"); _ = json.NewEncoder(rw).Encode(v) }
 	if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") && !authed {
 		send(map[string]any{"error": map[string]string{"code": "mwoauth-invalid-authorization", "info": "Invalid access token"}})
@@ -50,6 +54,14 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			"namespaces":       map[string]any{"14": map[string]any{"id": 14, "name": "분류", "canonical": "Category"}},
 			"namespacealiases": []any{map[string]any{"id": 14, "alias": "Cat"}},
 		}})
+	case p("action") == "login":
+		w.botLogins++
+		if p("lgname") != "Jmnote@mw" || p("lgpassword") != "botpw" || p("lgtoken") != "tok+\\" {
+			send(map[string]any{"login": map[string]string{"result": "Failed", "reason": "Incorrect username or password entered."}})
+			return
+		}
+		http.SetCookie(rw, &http.Cookie{Name: "fakesession", Value: "bot", Path: "/"})
+		send(map[string]any{"login": map[string]string{"result": "Success", "lgusername": "Jmnote"}})
 	case p("meta") == "siteinfo":
 		send(map[string]any{"query": map[string]any{"general": map[string]string{"sitename": "Fake", "generator": "MediaWiki 1.43.1", "server": "//fake.test", "script": "/w/index.php"}}})
 	case p("meta") == "userinfo":
@@ -490,4 +502,48 @@ func TestPageList(t *testing.T) {
 	assert.Contains(t, stderr, "--category needs a value")
 	_, _, code = e.run("", "page", "list", "--api", e.api, "-L", "0")
 	assert.Equal(t, 2, code)
+}
+
+func TestBotPassword(t *testing.T) {
+	e := newEnv(t)
+	t.Setenv("MW_PASSWORD", "wrong")
+	_, stderr, code := e.run("", "auth", "login", "--api", e.api, "--username", "Jmnote@mw")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "bot password login failed for Jmnote@mw: Incorrect username or password")
+
+	t.Setenv("MW_PASSWORD", "botpw")
+	_, stderr, code = e.run("", "auth", "login", "--api", e.api, "--username", "Jmnote@mw")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "Logged in to "+e.host+" as Jmnote")
+	cfg, err := config.LoadDir(e.dir)
+	require.NoError(t, err)
+	a := cfg.Hosts[e.host].Users["Jmnote"]
+	require.NotNil(t, a)
+	assert.Equal(t, config.AuthBotPassword, a.Auth)
+	assert.Equal(t, "Jmnote@mw", a.BotName)
+	assert.Equal(t, "botpw", a.BotPassword)
+	assert.Empty(t, a.Cookies)
+
+	// Each run logs in again: the stored session would expire.
+	t.Setenv("MW_PASSWORD", "")
+	before := e.wiki.botLogins
+	out, stderr, code := e.run("", "auth", "status")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, out, "- Auth: bot password Jmnote@mw")
+	assert.Contains(t, out, "- Password: ********")
+	assert.NotContains(t, out, "botpw")
+	assert.Equal(t, before+1, e.wiki.botLogins)
+
+	_, stderr, code = e.run("New", "page", "edit", "Sandbox", "-F", "-")
+	require.Equal(t, 0, code, stderr)
+	require.Len(t, e.wiki.edits, 1)
+
+	_, _, code = e.run("", "auth", "token")
+	assert.Equal(t, 1, code)
+
+	cfg.Hosts[e.host].Users["Jmnote"].BotPassword = "deleted"
+	require.NoError(t, cfg.Save())
+	out, _, code = e.run("", "auth", "status")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, out, "The bot password was not accepted")
 }

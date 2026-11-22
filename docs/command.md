@@ -26,7 +26,7 @@ mw
 | --- | --- |
 | `MW_WIKI` | Default wiki when `--wiki` is not given |
 | `MW_TOKEN` | OAuth 2 access token used instead of stored credentials |
-| `MW_PASSWORD` | Password for `mw auth login --username` without a prompt |
+| `MW_PASSWORD` | Password or bot password for `mw auth login --username` without a prompt |
 | `MW_CONFIG_DIR` | Configuration directory (default `~/.config/mw`) |
 | `MW_BROWSER` | Browser command for `--web`, before `BROWSER` |
 
@@ -47,6 +47,10 @@ wiki.example.org:
             auth: session
             cookies:
                 examplewiki_session: ...
+        Bob:
+            auth: botpassword
+            bot_name: Bob@mybot
+            bot_password: ...
 ```
 
 `api` is stored only when it was given with `mw auth login --api` and differs from `https://HOST/w/api.php`; a discovered API stays in the cache. `user` is the active account. `config.yml` in the same directory holds `default_host`, set by the last login.
