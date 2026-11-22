@@ -104,7 +104,7 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 type editFlags struct {
 	wiki, summary, text, file string
 	minor, bot, dryRun        bool
-	baserevid                 int
+	baseRevID                 int
 }
 
 func (o *editFlags) add(cmd *cobra.Command) {
@@ -147,14 +147,14 @@ func newCmdEdit(f *cmdutil.Factory) *cobra.Command {
 		`),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if cmd.Flags().Changed("baserevid") && o.baserevid <= 0 {
+			if cmd.Flags().Changed("baserevid") && o.baseRevID <= 0 {
 				return cmdutil.FlagErrorf("--baserevid must be a revision ID greater than 0")
 			}
 			return saveRun(f, cmd, o, args[0], api.EditOnly)
 		},
 	}
 	o.add(cmd)
-	cmd.Flags().IntVar(&o.baserevid, "baserevid", 0, "Fail with an edit conflict, rather than undo them, when others changed the page since revision `ID`")
+	cmd.Flags().IntVar(&o.baseRevID, "baserevid", 0, "Fail with an edit conflict, rather than undo them, when others changed the page since revision `ID`")
 	return cmd
 }
 
@@ -216,12 +216,12 @@ func saveRun(f *cmdutil.Factory, cmd *cobra.Command, o *editFlags, title string,
 		return err
 	}
 	if o.dryRun {
-		return dryRun(ctx, ios, c, t, title, text, mode, o.baserevid)
+		return dryRun(ctx, ios, c, t, title, text, mode, o.baseRevID)
 	}
 	if !ok {
 		return cmdutil.NotLoggedIn(t.Name)
 	}
-	res, err := c.Edit(ctx, title, text, api.EditOptions{Summary: o.summary, Mode: mode, Minor: o.minor, Bot: o.bot, BaseRevID: o.baserevid})
+	res, err := c.Edit(ctx, title, text, api.EditOptions{Summary: o.summary, Mode: mode, Minor: o.minor, Bot: o.bot, BaseRevID: o.baseRevID})
 	var ae *api.APIError
 	if errors.As(err, &ae) && ae.Code == "assertuserfailed" {
 		return cmdutil.NotLoggedIn(t.Name)
@@ -258,7 +258,7 @@ func saveError(err error, t cmdutil.Target) error {
 // dryRun prints what saving text would change, without saving: a diff from the
 // latest revision, or from nothing for a new page, to the text as the wiki
 // would save it.
-func dryRun(ctx context.Context, ios *iostreams.IOStreams, c *api.Client, t cmdutil.Target, title, text string, mode api.EditMode, baserevid int) error {
+func dryRun(ctx context.Context, ios *iostreams.IOStreams, c *api.Client, t cmdutil.Target, title, text string, mode api.EditMode, baseRevID int) error {
 	cur, err := c.LatestRevision(ctx, title)
 	switch {
 	case errors.Is(err, api.ErrMissingPage) && mode == api.CreateOnly:
@@ -268,8 +268,8 @@ func dryRun(ctx context.Context, ios *iostreams.IOStreams, c *api.Client, t cmdu
 	case mode == api.CreateOnly:
 		return saveError(fmt.Errorf("%w: %s", api.ErrPageExists, cur.Title), t)
 	}
-	if baserevid > 0 && cur != nil && cur.RevID != baserevid {
-		fmt.Fprintf(ios.ErrOut, "%s %s changed since revision %d (now %d); saving would merge those changes or fail with an edit conflict\n", ios.WarningIcon(), cur.Title, baserevid, cur.RevID)
+	if baseRevID > 0 && cur != nil && cur.RevID != baseRevID {
+		fmt.Fprintf(ios.ErrOut, "%s %s changed since revision %d (now %d); saving would merge those changes or fail with an edit conflict\n", ios.WarningIcon(), cur.Title, baseRevID, cur.RevID)
 	}
 	// The text is saved in the page's model, or for a new page the model the
 	// wiki gives the title, such as JSON for a .json page.
