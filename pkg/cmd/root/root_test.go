@@ -1558,6 +1558,9 @@ func TestBrowse(t *testing.T) {
 	out, _, code = e.run("", "browse", "--wiki", e.api, "--no-browser")
 	require.Equal(t, 0, code)
 	assert.Equal(t, e.base+"/w/index.php\n", out)
+	out, _, code = e.run("", "browse", "--wiki", e.api, "", "-n")
+	require.Equal(t, 0, code)
+	assert.Equal(t, e.base+"/w/index.php\n", out)
 
 	e.stdoutTTY = true
 	out, stderr, code = e.run("", "browse", "--wiki", e.api, "Special:RecentChanges")

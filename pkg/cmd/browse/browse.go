@@ -3,6 +3,7 @@ package browse
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/MakeNowJust/heredoc"
 	"github.com/mwcli/mwcli/pkg/cmdutil"
@@ -41,7 +42,7 @@ func NewCmdBrowse(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			u := t.MainPageURL()
-			if len(args) == 1 {
+			if len(args) == 1 && strings.TrimSpace(args[0]) != "" {
 				u = t.PageURL(args[0])
 			}
 			if noBrowser {
