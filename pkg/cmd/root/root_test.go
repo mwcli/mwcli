@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -26,6 +28,7 @@ type fakeWiki struct {
 	extraToken string
 	rvprop     string
 	prop       string
+	lists      []url.Values
 }
 
 func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
@@ -52,6 +55,32 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		send(map[string]any{"query": map[string]any{"userinfo": map[string]any{"id": 7, "name": "Jmnote", "rights": []string{"read", "edit", "minoredit"}}}})
 	case p("meta") == "tokens":
 		send(map[string]any{"query": map[string]any{"tokens": map[string]string{p("type") + "token": "tok+\\"}}})
+	case p("list") != "":
+		w.lists = append(w.lists, r.Form)
+		key := p("list")
+		all := []any{}
+		for i := 1; i <= 7; i++ {
+			all = append(all, map[string]any{"pageid": i, "ns": 0, "title": fmt.Sprintf("P%d", i)})
+		}
+		start := 0
+		if c := r.Form.Get("fakecontinue"); c != "" {
+			fmt.Sscan(c, &start)
+		}
+		n := 3
+		if l := r.Form.Get(map[string]string{"allpages": "ap", "categorymembers": "cm", "search": "sr", "backlinks": "bl", "embeddedin": "ei"}[key] + "limit"); l != "" {
+			fmt.Sscan(l, &n)
+			n = min(n, 3)
+		}
+		end := min(start+n, len(all))
+		q := map[string]any{key: all[start:end]}
+		if key == "search" {
+			q["searchinfo"] = map[string]any{"totalhits": 7}
+		}
+		resp := map[string]any{"query": q}
+		if end < len(all) {
+			resp["continue"] = map[string]string{"fakecontinue": fmt.Sprint(end), "continue": "-||"}
+		}
+		send(resp)
 	case p("prop") == "categories" && p("pageids") == "7":
 		if p("clcontinue") != "7|B" || p("continue") != "||info|revisions" {
 			send(map[string]any{"error": map[string]string{"code": "badcontinue", "info": "bad continue"}})
@@ -388,5 +417,49 @@ func TestPageViewWeb(t *testing.T) {
 	assert.Equal(t, e.base+"/w/index.php?title=Main+Page", e.browsed)
 
 	_, _, code = e.run("", "page", "view", "Main Page", "--api", e.api, "--web", "--json", "title")
+	assert.Equal(t, 2, code)
+}
+
+func TestPageList(t *testing.T) {
+	e := newEnv(t)
+	out, stderr, code := e.run("", "page", "list", "--api", e.api, "-L", "5")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "P1\nP2\nP3\nP4\nP5\n", out)
+	require.Len(t, e.wiki.lists, 2)
+	assert.Equal(t, "allpages", e.wiki.lists[0].Get("list"))
+	assert.Equal(t, "5", e.wiki.lists[0].Get("aplimit"))
+	assert.Equal(t, "3", e.wiki.lists[1].Get("fakecontinue"))
+	assert.Equal(t, "2", e.wiki.lists[1].Get("aplimit"))
+
+	e.wiki.lists = nil
+	out, _, code = e.run("", "page", "list", "--api", e.api, "--category", "Living people", "-n", "0", "--json", "title,pageid", "-L", "2")
+	require.Equal(t, 0, code)
+	assert.JSONEq(t, `[{"title":"P1","pageid":1},{"title":"P2","pageid":2}]`, out)
+	assert.Equal(t, "Category:Living people", e.wiki.lists[0].Get("cmtitle"))
+	assert.Equal(t, "0", e.wiki.lists[0].Get("cmnamespace"))
+
+	e.wiki.lists = nil
+	_, _, code = e.run("", "page", "list", "--api", e.api, "--category", "분류:사람")
+	require.Equal(t, 0, code)
+	assert.Equal(t, "분류:사람", e.wiki.lists[0].Get("cmtitle"))
+
+	out, _, code = e.run("", "page", "list", "--api", e.api, "-S", "jq", "-L", "100", "--json", "title", "--jq", "length")
+	require.Equal(t, 0, code)
+	assert.Equal(t, "7\n", out)
+
+	for flag, list := range map[string]string{"--links-to": "backlinks", "--embeds": "embeddedin", "--prefix": "allpages"} {
+		e.wiki.lists = nil
+		_, stderr, code = e.run("", "page", "list", "--api", e.api, flag, "X", "-L", "1")
+		require.Equal(t, 0, code, stderr)
+		assert.Equal(t, list, e.wiki.lists[0].Get("list"), flag)
+	}
+
+	_, stderr, code = e.run("", "page", "list", "--api", e.api, "--prefix", "A", "--search", "b")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "specify only one of --prefix, --search")
+	_, stderr, code = e.run("", "page", "list", "--api", e.api, "--category", "")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--category needs a value")
+	_, _, code = e.run("", "page", "list", "--api", e.api, "-L", "0")
 	assert.Equal(t, 2, code)
 }

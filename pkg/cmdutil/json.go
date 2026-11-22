@@ -66,20 +66,27 @@ func (j *JSONFlags) fieldsError() error {
 	return FlagErrorf("Specify one or more comma-separated fields for `--json`:\n  %s", strings.Join(j.known, "\n  "))
 }
 
-// Write prints the requested fields of v, a struct whose JSON names are the
-// known fields, filtered by --jq when given. Output is indented on a terminal.
+// Write prints the requested fields of v, filtered by --jq when given. v is a
+// struct whose JSON names are the known fields, or a slice of them, printed as
+// an array. Output is indented on a terminal.
 func (j *JSONFlags) Write(w io.Writer, v any, tty bool) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	var all map[string]any
-	if err := json.Unmarshal(b, &all); err != nil {
+	var out any
+	var one map[string]any
+	var many []map[string]any
+	if json.Unmarshal(b, &one) == nil {
+		out = j.pick(one)
+	} else if err := json.Unmarshal(b, &many); err == nil {
+		list := make([]any, 0, len(many))
+		for _, m := range many {
+			list = append(list, j.pick(m))
+		}
+		out = list
+	} else {
 		return err
-	}
-	out := map[string]any{}
-	for _, f := range j.fields {
-		out[f] = all[f]
 	}
 	if j.jq == "" {
 		return writeJSON(w, out, tty)
@@ -112,6 +119,14 @@ func (j *JSONFlags) Write(w io.Writer, v any, tty bool) error {
 			return err
 		}
 	}
+}
+
+func (j *JSONFlags) pick(all map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, f := range j.fields {
+		out[f] = all[f]
+	}
+	return out
 }
 
 func writeJSON(w io.Writer, v any, tty bool) error {

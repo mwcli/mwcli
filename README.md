@@ -9,6 +9,7 @@ mw auth login --wiki mediawiki.org
 mw auth status
 mw page view 'Main Page'
 mw page view 'Main Page' --json pageid,url,revision
+mw page list --category 'Living people' -L 10
 mw page edit 'Sandbox' --summary 'Fix typo' --file page.wiki
 mw api action=query meta=userinfo uiprop=rights
 ```
@@ -19,7 +20,7 @@ It runs on macOS, Windows and Linux.
 
 - [Choosing a wiki](docs/wikis.md): `--wiki`, interwiki prefixes, API discovery
 - [Authentication](docs/auth.md): OAuth 2 tokens, passwords, replacing a token, `MW_TOKEN`
-- [Pages](docs/pages.md): `mw page view` with `--json`, `--jq` and `--web`, `mw page edit`
+- [Pages](docs/pages.md): `mw page view` with `--json`, `--jq` and `--web`, `mw page list`, `mw page edit`
 - [API requests](docs/api.md): `mw api`
 - [Commands](docs/command.md): the command tree, environment variables and exit status
 
@@ -89,6 +90,6 @@ Libraries and frameworks:
 | --- | --- | --- |
 | [Pywikibot](https://www.mediawiki.org/wiki/Manual:Pywikibot) | Python | any MediaWiki wiki: a bot framework with maintenance scripts (`pwb`) |
 | [mwclient](https://github.com/mwclient/mwclient) | Python | the MediaWiki API |
-| [mwcli on PyPI](https://pypi.org/project/mwcli/) | Python | helpers for MediaWiki command-line utilities, from mediawiki-utilities |
+| [mwcli on PyPI](https://pypi.org/project/mwcli/) | Python | Python helpers for building MediaWiki command-line tools |
 
 a Wikimedia CLI still installs `mw` while it moves to `wm`; if you use both, run that one as `wm`. Sam Wilson's MediaWiki CLI and the PyPI package share the name mwcli but are separate projects. mwcli is not an official MediaWiki or Wikimedia project.

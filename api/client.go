@@ -469,3 +469,112 @@ type pageInfoResponse struct {
 		} `json:"pages"`
 	} `json:"query"`
 }
+
+// PageRef is one page in a list. Field names follow the MediaWiki API.
+type PageRef struct {
+	Title  string `json:"title"`
+	PageID int    `json:"pageid"`
+	NS     int    `json:"ns"`
+}
+
+// ListSource is where ListPages takes pages from.
+type ListSource int
+
+const (
+	// AllPages lists pages in title order, optionally from a prefix.
+	AllPages ListSource = iota
+	// CategoryMembers lists the members of a category.
+	CategoryMembers
+	// Search lists the results of a full-text search.
+	Search
+	// LinksTo lists the pages that link to a title.
+	LinksTo
+	// EmbeddedIn lists the pages that transclude a title, such as a template.
+	EmbeddedIn
+)
+
+// ListOptions selects the pages ListPages returns.
+type ListOptions struct {
+	Source ListSource
+	// Value is the prefix, category, search query or title of the source.
+	Value string
+	// Namespace limits the list to one namespace ID when not nil.
+	Namespace *int
+	// Limit is the most pages to return.
+	Limit int
+}
+
+// ListPages returns up to opts.Limit pages from one list module, following
+// continuation across requests.
+func (c *Client) ListPages(opts ListOptions) ([]PageRef, error) {
+	var list, prefix string
+	switch opts.Source {
+	case AllPages:
+		list, prefix = "allpages", "ap"
+	case CategoryMembers:
+		list, prefix = "categorymembers", "cm"
+	case Search:
+		list, prefix = "search", "sr"
+	case LinksTo:
+		list, prefix = "backlinks", "bl"
+	case EmbeddedIn:
+		list, prefix = "embeddedin", "ei"
+	default:
+		return nil, fmt.Errorf("unknown list source %d", opts.Source)
+	}
+	base := url.Values{"action": {"query"}, "list": {list}}
+	switch opts.Source {
+	case AllPages:
+		if opts.Value != "" {
+			base.Set("apprefix", opts.Value)
+		}
+	case CategoryMembers:
+		base.Set("cmtitle", opts.Value)
+		base.Set("cmprop", "ids|title")
+	case Search:
+		base.Set("srsearch", opts.Value)
+		base.Set("srprop", "")
+		base.Set("srinfo", "")
+	case LinksTo:
+		base.Set("bltitle", opts.Value)
+	case EmbeddedIn:
+		base.Set("eititle", opts.Value)
+	}
+	if opts.Namespace != nil {
+		base.Set(prefix+"namespace", fmt.Sprint(*opts.Namespace))
+	}
+	var pages []PageRef
+	cont := map[string]string{}
+	for len(pages) < opts.Limit {
+		params := url.Values{}
+		for k, v := range base {
+			params[k] = v
+		}
+		params.Set(prefix+"limit", fmt.Sprint(min(opts.Limit-len(pages), 500)))
+		for k, v := range cont {
+			params.Set(k, v)
+		}
+		var result struct {
+			Continue map[string]string          `json:"continue"`
+			Query    map[string]json.RawMessage `json:"query"`
+		}
+		if err := c.request(http.MethodGet, params, &result); err != nil {
+			return nil, err
+		}
+		var batch []PageRef
+		if raw, ok := result.Query[list]; ok {
+			if err := json.Unmarshal(raw, &batch); err != nil {
+				return nil, fmt.Errorf("decode API response: %w", err)
+			}
+		}
+		pages = append(pages, batch...)
+		if len(result.Continue) == 0 {
+			break
+		}
+		cont = result.Continue
+	}
+	if len(pages) > opts.Limit {
+		pages = pages[:opts.Limit]
+	}
+	return pages, nil
+}
