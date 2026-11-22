@@ -13,7 +13,7 @@ var windowsReserved = map[string]bool{
 }
 
 // SafeFileName writes each character of name that a file name cannot hold on
-// Windows, macOS or Linux, and % itself, as %XX, so that name can be read
+// Linux, macOS or Windows, and % itself, as %XX, so that name can be read
 // back: / \ : * ? " < > |, control characters, a leading dot, a final dot or
 // space, and the first letter of a name Windows reserves, such as CON.
 func SafeFileName(name string) string {

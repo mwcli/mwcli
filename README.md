@@ -14,7 +14,7 @@ mw page edit 'Sandbox' --summary 'Fix typo' --file page.wiki
 mw api action=query meta=userinfo uiprop=rights
 ```
 
-It runs on macOS, Windows and Linux.
+It runs on Linux, macOS and Windows.
 
 ## Documentation
 
@@ -41,7 +41,7 @@ See [AGENTS.md](https://github.com/mwcli/mwcli/blob/main/AGENTS.md) for how chan
 winget install mwcli.mwcli
 ```
 
-### macOS and Linux
+### Linux and macOS
 
 Download an archive from the [releases](https://github.com/mwcli/mwcli/releases) page, or install with Go:
 
