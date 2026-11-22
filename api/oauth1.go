@@ -95,10 +95,13 @@ func (o *OAuth1) sign(req *http.Request, form url.Values) {
 }
 
 // baseURL is the base string URI of RFC 5849 3.4.1.2: lowercase scheme and
-// host, no default port, no query or fragment.
+// host, no default port, no query or fragment. An IPv6 host keeps its brackets.
 func baseURL(u *url.URL) string {
 	scheme := strings.ToLower(u.Scheme)
 	host := strings.ToLower(u.Hostname())
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
 	if port := u.Port(); port != "" && !(scheme == "http" && port == "80") && !(scheme == "https" && port == "443") {
 		host += ":" + port
 	}

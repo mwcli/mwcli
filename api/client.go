@@ -129,8 +129,14 @@ func (c *Client) Raw(method string, params url.Values) ([]byte, error) {
 	var req *http.Request
 	var err error
 	if method == http.MethodGet {
+		// Keep the query of the API URL, such as one that picks the wiki, as a
+		// POST to c.API does.
 		u := *c.url
-		u.RawQuery = params.Encode()
+		q := u.Query()
+		for k, vs := range params {
+			q[k] = append(q[k], vs...)
+		}
+		u.RawQuery = q.Encode()
 		req, err = http.NewRequest(method, u.String(), nil)
 	} else {
 		req, err = http.NewRequest(method, c.API, strings.NewReader(params.Encode()))

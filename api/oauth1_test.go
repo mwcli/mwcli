@@ -40,6 +40,8 @@ func TestBaseURL(t *testing.T) {
 		"https://example.com:443/w/api.php":   "https://example.com/w/api.php",
 		"https://example.com:8443/w/api.php":  "https://example.com:8443/w/api.php",
 		"https://example.com":                 "https://example.com/",
+		"https://[::1]:8443/w/api.php":        "https://[::1]:8443/w/api.php",
+		"https://[2001:DB8::1]:443/w/api.php": "https://[2001:db8::1]/w/api.php",
 	} {
 		u, err := url.Parse(in)
 		require.NoError(t, err)
@@ -145,7 +147,8 @@ func TestOAuth1Redirect(t *testing.T) {
 }
 
 // A POST to an API URL with a query signs the query and the form body, with a
-// name that appears in both kept twice.
+// name that appears in both kept twice. The GET for the token keeps the query
+// too, so both reach the same wiki.
 func TestOAuth1PostWithQuery(t *testing.T) {
 	keys := &OAuth1{ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}
 	var forms []url.Values
@@ -170,6 +173,9 @@ func TestOAuth1PostWithQuery(t *testing.T) {
 	_, err = c.Edit("A", "x", "")
 	require.NoError(t, err)
 	require.Len(t, forms, 2)
+	assert.Equal(t, "a", forms[0].Get("wiki"))
+	assert.Equal(t, []string{"Q"}, forms[0]["title"])
+	assert.Equal(t, "tokens", forms[0].Get("meta"))
 	assert.Equal(t, []string{"A", "Q"}, forms[1]["title"])
 	assert.Equal(t, "a", forms[1].Get("wiki"))
 }
