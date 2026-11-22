@@ -90,6 +90,13 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			"namespaces":       map[string]any{"14": map[string]any{"id": 14, "name": "분류", "canonical": "Category"}},
 			"namespacealiases": []any{map[string]any{"id": 14, "alias": "Cat"}},
 		}})
+	case p("action") == "parse" && p("onlypst") != "":
+		// The pre-save transform: trailing white space goes, ~~~ signs.
+		sig := "[[Special:Contributions/127.0.0.1|127.0.0.1]]"
+		if authed {
+			sig = "[[User:Jmnote|Jmnote]]"
+		}
+		send(map[string]any{"parse": map[string]string{"text": strings.ReplaceAll(strings.TrimRight(p("text"), " \n"), "~~~", sig)}})
 	case p("action") == "login":
 		w.botLogins++
 		if (p("lgname") != "Jmnote@mw" && p("lgname") != "Jmnote#mw") || p("lgpassword") != "botpw" || p("lgtoken") != "tok+\\" {
@@ -1304,4 +1311,37 @@ func TestPatternAPIURLFindsBuiltinLogin(t *testing.T) {
 	out, stderr, code := e.run("", "auth", "token", "--wiki", "https://de.wikipedia.org/w/api.php")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, "wm-token\n", out)
+}
+
+// --dry-run prints what the edit would change, as the wiki would save the
+// text, and saves nothing.
+func TestPageEditDryRun(t *testing.T) {
+	e := newEnv(t)
+	// Trailing white space is dropped on save, so this changes nothing.
+	_, stderr, code := e.run("a\nB\nc  \n", "page", "edit", "Sandbox", "--wiki", e.api, "-F", "-", "--dry-run")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, stderr, "No changes to Sandbox on "+e.host)
+
+	// No login needed; a signature is the one the wiki would give.
+	out, stderr, code := e.run("", "page", "edit", "Sandbox", "--wiki", e.api, "--text", "a\nX ~~~\nc", "--dry-run")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "--- Sandbox\trevision 202 (2026-11-22T00:00:00Z, Jmnote)\n+++ Sandbox\t(new text, not saved)\n"+
+		"@@ -1,3 +1,3 @@\n a\n-B\n+X [[Special:Contributions/127.0.0.1|127.0.0.1]]\n c\n\\ No newline at end of file\n", out)
+	e.login()
+	out, stderr, code = e.run("", "page", "edit", "Sandbox", "--wiki", e.api, "--text", "a\nX ~~~\nc", "--dry-run")
+	require.Equal(t, 0, code, stderr)
+	assert.Contains(t, out, "+X [[User:Jmnote|Jmnote]]\n")
+
+	out, stderr, code = e.run("", "page", "create", "New/Draft", "--wiki", e.api, "--text", "Draft", "--dry-run")
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "--- /dev/null\n+++ New/Draft\t(new text, not saved)\n@@ -0,0 +1 @@\n+Draft\n\\ No newline at end of file\n", out)
+
+	_, stderr, code = e.run("", "page", "create", "Sandbox", "--wiki", e.api, "--text", "x", "--dry-run")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "page already exists: Sandbox on "+e.host+"; to change it, run the same command with `mw page edit`")
+	_, stderr, code = e.run("", "page", "edit", "Nowhere", "--wiki", e.api, "--text", "x", "--dry-run")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, "page does not exist: Nowhere on "+e.host+"; to make it, run the same command with `mw page create`")
+
+	assert.Empty(t, e.wiki.edits, "nothing is saved")
 }

@@ -63,6 +63,7 @@ mw page diff "$(mw page history 'Main Page' -L 10 --json revid --jq '.[9].revid'
 - `-s`, `--summary` sets the edit summary.
 - `--minor` marks the edit minor. `--bot` marks it a bot edit, which hides it from recent changes when the account has the bot right.
 - When the text is the same as the page's, the wiki saves no revision and mw says `No changes`.
+- `--dry-run` prints what the command would change as a diff, in the format of `mw page diff`, and saves nothing. The new side is the text as the wiki would save it, which the wiki works out (`action=parse&onlypst`): signatures such as `~~~~`, `subst:` and trailing white space come out as in a real edit, as your account when you are logged in. It needs no login, and refuses a missing page for `edit` and an existing one for `create` as a real run would.
 
 Creating a page needs the right to create pages; for a token or bot password, the createeditmovepage grant.
 

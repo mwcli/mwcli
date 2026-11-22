@@ -923,3 +923,22 @@ func (c *Client) revisionText(params url.Values, what string) (*RevisionText, er
 	}
 	return &RevisionText{Title: p.Title, RevID: r.RevID, ParentID: r.ParentID, Timestamp: r.Timestamp, User: r.User, Content: *main.Content}, nil
 }
+
+// PreSaveTransform returns text as the wiki would save it as title: with
+// signatures, substitutions and trailing white space handled, as the logged-in
+// user when the client has credentials.
+func (c *Client) PreSaveTransform(title, text string) (string, error) {
+	form := url.Values{"action": {"parse"}, "onlypst": {"1"}, "title": {title}, "text": {text}, "contentmodel": {"wikitext"}}
+	var result struct {
+		Parse struct {
+			Text *string `json:"text"`
+		} `json:"parse"`
+	}
+	if err := c.request(http.MethodPost, form, &result); err != nil {
+		return "", err
+	}
+	if result.Parse.Text == nil {
+		return "", errors.New("the API returned no transformed text")
+	}
+	return *result.Parse.Text, nil
+}
