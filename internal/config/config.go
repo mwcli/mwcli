@@ -69,6 +69,13 @@ type Sites struct {
 	Wikis   map[string]*Site `yaml:"wikis,omitempty"`
 }
 
+// FarmSite is a wiki endpoint and the names accepted for it within a farm.
+type FarmSite struct {
+	Host    string   `yaml:"host"`
+	Aliases []string `yaml:"aliases,omitempty"`
+	API     string   `yaml:"api,omitempty"`
+}
+
 // Login holds the accounts of one site and which one is active.
 type Login struct {
 	User  string              `yaml:"user,omitempty"`
@@ -77,9 +84,10 @@ type Login struct {
 
 // Config is config.yml of the configuration directory.
 type Config struct {
-	Dir    string            `yaml:"-"`
-	Sites  Sites             `yaml:"sites,omitempty"`
-	Logins map[string]*Login `yaml:"logins,omitempty"`
+	Dir    string                `yaml:"-"`
+	Sites  Sites                 `yaml:"sites,omitempty"`
+	Farms  map[string][]FarmSite `yaml:"farms,omitempty"`
+	Logins map[string]*Login     `yaml:"logins,omitempty"`
 }
 
 // Dir returns the configuration directory: MW_CONFIG_DIR, $XDG_CONFIG_HOME/mw,

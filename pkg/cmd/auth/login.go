@@ -118,7 +118,7 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 			return err
 		}
 		cfg.Sites.Wikis[t.Name] = site
-		t = cmdutil.Target{Name: t.Name, API: site.API, Site: site, Kind: sites.Added}
+		t = cmdutil.Target{Name: t.Name, LoginKey: t.LoginKey, API: site.API, Site: site, Kind: sites.Added}
 		fmt.Fprintf(io.ErrOut, "%s Added site %s (%s)\n", io.SuccessIcon(), t.Name, site.API)
 	}
 
@@ -160,7 +160,11 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	if err != nil {
 		return err
 	}
-	cfg.Login(t.Name, user, account)
+	wasDefaultUnset := cfg.Sites.Default == ""
+	cfg.Login(t.LoginKey, user, account)
+	if wasDefaultUnset {
+		cfg.Sites.Default = t.Name
+	}
 	if err := cfg.Save(); err != nil {
 		return err
 	}

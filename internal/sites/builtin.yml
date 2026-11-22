@@ -1,78 +1,59 @@
-# Built-in sites: MediaWiki wikis that --wiki knows without `mw site add`.
-# Same format as `sites.wikis` in config.yml; a site there with the same name wins.
-#
-# The aliases are the interwiki prefixes of MediaWiki core maintenance/interwiki.list
-# (master 37b526c152, 2026-07-07) that name an API URL, plus bare domains that
-# redirect to the site. hrwiki is left out: its API did not answer on 2026-11-21.
-# To regenerate the prefixes:
-#
-#   curl -s https://raw.githubusercontent.com/wikimedia/mediawiki/master/maintenance/interwiki.list |
-#     awk -F'|' '!/^#/ && $4 != "" {print $1, $4}'
-#
-# and keep the entries whose API answers `mw api --api URL action=query meta=siteinfo`.
-#
-# Two widely used wikis outside that list are added by choice: ArchWiki and ZetaWiki.
-wikis:
-  commons.wikimedia.org:
-    api: https://commons.wikimedia.org/w/api.php
-    aliases: [commons]
-  en.uncyclopedia.co:
-    api: https://en.uncyclopedia.co/w/api.php
-    aliases: [uncyclopedia]
-  en.wikibooks.org:
-    api: https://en.wikibooks.org/w/api.php
-    aliases: [wikibooks]
-  en.wikipedia.org:
-    api: https://en.wikipedia.org/w/api.php
-    aliases: [wikipedia]
-  en.wikiquote.org:
-    api: https://en.wikiquote.org/w/api.php
-    aliases: [wikiquote]
-  en.wikiversity.org:
-    api: https://en.wikiversity.org/w/api.php
-    aliases: [wikiversity]
-  en.wikivoyage.org:
-    api: https://en.wikivoyage.org/w/api.php
-    aliases: [wikivoyage]
-  en.wiktionary.org:
-    api: https://en.wiktionary.org/w/api.php
-    aliases: [wiktionary, wikt]
-  foundation.wikimedia.org:
-    api: https://foundation.wikimedia.org/w/api.php
-    aliases: [wikimedia]
-  memory-alpha.fandom.com:
-    api: https://memory-alpha.fandom.com/api.php
-    aliases: [memoryalpha]
-  meta.wikimedia.org:
-    api: https://meta.wikimedia.org/w/api.php
-    aliases: [meta, metawikimedia]
-  species.wikimedia.org:
-    api: https://species.wikimedia.org/w/api.php
-    aliases: [species, wikispecies]
-  tmbw.net:
-    api: https://tmbw.net/wiki/api.php
-    aliases: [tmbw]
-  wiki.mozilla.org:
-    api: https://wiki.mozilla.org/api.php
-    aliases: [mozilla, mozillawiki]
-  wikisource.org:
-    api: https://wikisource.org/w/api.php
-    aliases: [wikisource]
-  www.mediawiki.org:
-    api: https://www.mediawiki.org/w/api.php
-    aliases: [mediawiki, mediawiki.org, mediawikiwiki, mw]
-  www.shoutwiki.com:
-    api: https://www.shoutwiki.com/w/api.php
-    aliases: [shout, shoutwiki]
-  www.wikidata.org:
-    api: https://www.wikidata.org/w/api.php
-    aliases: [wikidata.org, wikidata]
-  www.wikihow.com:
-    api: https://www.wikihow.com/api.php
-    aliases: [wikihow]
-  wiki.archlinux.org:
-    api: https://wiki.archlinux.org/api.php
-    aliases: [arch, archwiki]
-  zetawiki.com:
-    api: https://zetawiki.com/w/api.php
-    aliases: [zeta, zetawiki]
+# Built-in farms and their wiki API endpoints.
+# An omitted api uses https://<host>/w/api.php.
+farms:
+  wikimedia:
+    - host: commons.wikimedia.org
+      aliases: [commons]
+    - host: en.wikipedia.org
+      aliases: [wikipedia.org, wikipedia]
+    - host: en.wikibooks.org
+      aliases: [wikibooks]
+    - host: en.wikiquote.org
+      aliases: [wikiquote]
+    - host: en.wikiversity.org
+      aliases: [wikiversity]
+    - host: en.wikivoyage.org
+      aliases: [wikivoyage]
+    - host: en.wiktionary.org
+      aliases: [wiktionary, wikt]
+    - host: foundation.wikimedia.org
+      aliases: [wikimedia]
+    - host: meta.wikimedia.org
+      aliases: [meta, metawikimedia]
+    - host: species.wikimedia.org
+      aliases: [species, wikispecies]
+    - host: wikisource.org
+      aliases: [wikisource]
+    - host: www.mediawiki.org
+      aliases: [mediawiki, mediawiki.org, mediawikiwiki, mw]
+    - host: www.wikidata.org
+      aliases: [wikidata.org, wikidata]
+  uncyclopedia:
+    - host: en.uncyclopedia.co
+      aliases: [uncyclopedia]
+  memoryalpha:
+    - host: memory-alpha.fandom.com
+      aliases: [memoryalpha]
+  tmbw:
+    - host: tmbw.net
+      aliases: [tmbw]
+      api: https://tmbw.net/wiki/api.php
+  mozilla:
+    - host: wiki.mozilla.org
+      aliases: [mozilla, mozillawiki]
+      api: https://wiki.mozilla.org/api.php
+  shoutwiki:
+    - host: www.shoutwiki.com
+      aliases: [shout, shoutwiki]
+      api: https://www.shoutwiki.com/w/api.php
+  archwiki:
+    - host: wiki.archlinux.org
+      aliases: [arch, archwiki]
+      api: https://wiki.archlinux.org/api.php
+  zetawiki:
+    - host: zetawiki.com
+      aliases: [zeta, zetawiki]
+  wikihow:
+    - host: www.wikihow.com
+      aliases: [wikihow]
+      api: https://www.wikihow.com/api.php

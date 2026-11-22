@@ -18,7 +18,7 @@ Run `mw auth login` without flags to choose interactively.
 - Keep the output of `mw auth token` and `mw auth status --show-token` out of chats, issues and logs.
 - In scripts and CI, pass a token in `MW_TOKEN` from a secret store when you want to avoid saving credentials on disk.
 
-mw stores credentials in plaintext per site and account in `config.yml` in the configuration directory. On Unix, mw writes the file with mode `0600`. If you are upgrading from a version that used `hosts.yml`, sign in again to populate `config.yml`. The directory is `MW_CONFIG_DIR`, else `$XDG_CONFIG_HOME/mw`, else `%AppData%\mw` on Windows, else `~/.config/mw`.
+mw stores credentials in plaintext per farm and account in `config.yml` in the configuration directory. On Unix, mw writes the file with mode `0600`. If you are upgrading from a version that used `hosts.yml`, sign in again to populate `config.yml`. The directory is `MW_CONFIG_DIR`, else `$XDG_CONFIG_HOME/mw`, else `%AppData%\mw` on Windows, else `~/.config/mw`.
 
 ## OAuth 2 owner-only token
 

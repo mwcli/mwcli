@@ -40,10 +40,10 @@ func storedSite(cfg *config.Config, wiki string) (string, error) {
 		if err != nil {
 			return "", cmdutil.FlagErrorf("%v", err)
 		}
-		if _, ok := cfg.Logins[r.Name]; !ok {
+		if _, ok := cfg.Logins[r.LoginKey]; !ok {
 			return "", fmt.Errorf("not logged in to %s", r.Name)
 		}
-		return r.Name, nil
+		return r.LoginKey, nil
 	}
 	names := cfg.LoginNames()
 	switch {
@@ -52,8 +52,12 @@ func storedSite(cfg *config.Config, wiki string) (string, error) {
 	case len(names) == 1:
 		return names[0], nil
 	}
-	if _, ok := cfg.Logins[cfg.Sites.Default]; ok {
-		return cfg.Sites.Default, nil
+	if cfg.Sites.Default != "" {
+		if r, err := sites.Lookup(cfg, cfg.Sites.Default); err == nil {
+			if _, ok := cfg.Logins[r.LoginKey]; ok {
+				return r.LoginKey, nil
+			}
+		}
 	}
 	return "", cmdutil.FlagErrorf("--wiki required: logged in to %s", strings.Join(names, ", "))
 }

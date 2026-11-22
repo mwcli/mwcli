@@ -17,12 +17,38 @@ var builtinYAML []byte
 
 var builtin = func() map[string]*config.Site {
 	var f struct {
-		Wikis map[string]*config.Site `yaml:"wikis"`
+		Farms map[string][]config.FarmSite `yaml:"farms"`
 	}
 	if err := yaml.Unmarshal(builtinYAML, &f); err != nil {
 		panic("builtin.yml: " + err.Error())
 	}
-	return f.Wikis
+	wikis := make(map[string]*config.Site)
+	for _, farm := range f.Farms {
+		for _, wiki := range farm {
+			api := wiki.API
+			if api == "" {
+				api = config.DefaultAPI(wiki.Host)
+			}
+			wikis[strings.ToLower(wiki.Host)] = &config.Site{API: api, Aliases: wiki.Aliases}
+		}
+	}
+	return wikis
+}()
+
+var builtinFarm = func() map[string]string {
+	var f struct {
+		Farms map[string][]config.FarmSite `yaml:"farms"`
+	}
+	if err := yaml.Unmarshal(builtinYAML, &f); err != nil {
+		panic("builtin.yml: " + err.Error())
+	}
+	m := map[string]string{}
+	for farm, wikis := range f.Farms {
+		for _, wiki := range wikis {
+			m[strings.ToLower(wiki.Host)] = farm
+		}
+	}
+	return m
 }()
 
 // Builtin returns the built-in sites by name.
@@ -42,9 +68,29 @@ const (
 
 // Resolved is a site and its name. Logins are stored under Name.
 type Resolved struct {
-	Name string
-	Site *config.Site
-	Kind Kind
+	Name     string
+	LoginKey string
+	Site     *config.Site
+	Kind     Kind
+}
+
+func resolved(cfg *config.Config, name string, site *config.Site, kind Kind) Resolved {
+	key := name
+	if host, err := config.HostOf(site.API); err == nil {
+		if cfg != nil {
+			for farm, wikis := range cfg.Farms {
+				for _, wiki := range wikis {
+					if strings.EqualFold(host, wiki.Host) {
+						key = farm
+					}
+				}
+			}
+		}
+		if farm := builtinFarm[strings.ToLower(host)]; farm != "" {
+			key = farm
+		}
+	}
+	return Resolved{Name: name, LoginKey: key, Site: site, Kind: kind}
 }
 
 // Lookup resolves name: an added site by name or alias, a built-in site by name
@@ -53,13 +99,13 @@ type Resolved struct {
 func Lookup(cfg *config.Config, name string) (Resolved, error) {
 	name = strings.TrimSpace(name)
 	if s, ok := cfg.Sites.Wikis[name]; ok {
-		return Resolved{name, s, Added}, nil
+		return resolved(cfg, name, s, Added), nil
 	}
 	if r, ok := byAlias(cfg.Sites.Wikis, name, Added); ok {
 		return r, nil
 	}
 	if s, ok := builtin[strings.ToLower(name)]; ok {
-		return Resolved{strings.ToLower(name), s, BuiltIn}, nil
+		return resolved(cfg, strings.ToLower(name), s, BuiltIn), nil
 	}
 	if r, ok := byAlias(builtin, name, BuiltIn); ok {
 		return r, nil
@@ -74,7 +120,7 @@ func Lookup(cfg *config.Config, name string) (Resolved, error) {
 	if r, ok := byHost(builtin, host, BuiltIn); ok {
 		return r, nil
 	}
-	return Resolved{host, &config.Site{API: config.DefaultAPI(host)}, Unregistered}, nil
+	return resolved(cfg, host, &config.Site{API: config.DefaultAPI(host)}, Unregistered), nil
 }
 
 // ForAPI resolves an API URL: the added or built-in site with that API, else
@@ -93,7 +139,7 @@ func ForAPI(cfg *config.Config, api string) (Resolved, error) {
 	}{{cfg.Sites.Wikis, Added}, {builtin, BuiltIn}} {
 		for _, n := range sortedNames(src.m) {
 			if src.m[n].API == api {
-				return Resolved{n, src.m[n], src.kind}, nil
+				return resolved(cfg, n, src.m[n], src.kind), nil
 			}
 		}
 	}
@@ -103,14 +149,14 @@ func ForAPI(cfg *config.Config, api string) (Resolved, error) {
 	} else if _, taken := builtin[name]; taken {
 		name = api
 	}
-	return Resolved{name, &config.Site{API: api}, Unregistered}, nil
+	return resolved(cfg, name, &config.Site{API: api}, Unregistered), nil
 }
 
 func byAlias(m map[string]*config.Site, name string, kind Kind) (Resolved, bool) {
 	for _, n := range sortedNames(m) {
 		for _, a := range m[n].Aliases {
 			if strings.EqualFold(a, name) {
-				return Resolved{n, m[n], kind}, true
+				return resolved(nil, n, m[n], kind), true
 			}
 		}
 	}
@@ -129,7 +175,7 @@ func byHost(m map[string]*config.Site, host string, kind Kind) (Resolved, bool) 
 	if len(found) != 1 {
 		return Resolved{}, false
 	}
-	return Resolved{found[0], m[found[0]], kind}, true
+	return resolved(nil, found[0], m[found[0]], kind), true
 }
 
 func sortedNames(m map[string]*config.Site) []string {

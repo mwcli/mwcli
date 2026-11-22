@@ -38,26 +38,34 @@ mw
 
 ```yaml
 sites:
-    default: docs
-    wikis:
-        docs:
-            api: https://wiki.example.org/docs/api.php
-            aliases:
-                - handbook
-logins:
+    default: wikipedia
+farms:
+    wikimedia:
+        - host: en.wikipedia.org
+          aliases: [wikipedia.org, wikipedia]
+        - host: commons.wikimedia.org
+          aliases: [commons]
     docs:
+        - host: wiki.example.org
+          aliases: [handbook]
+          api: https://wiki.example.org/docs/api.php
+logins:
+    wikimedia:
         user: Alice
         users:
             Alice:
                 auth: oauth2
                 oauth_token: ...
+    docs:
+        user: Bob
+        users:
             Bob:
                 auth: botpassword
                 bot_name: Bob@mybot
                 bot_password: ...
 ```
 
-`sites.wikis` holds added sites. An entry can also include `server`, `script` and `articlepath` from the wiki's site information. `sites.default` names the configured default. `logins` holds accounts by site name, including accounts for built-in sites. Each site's `user` is its active account. Account-password logins use `auth: session` and store `cookies`. See [Authentication](auth.md) for credential storage details.
+`sites.default` names the default site. Each `farms` entry contains wiki endpoints. An endpoint uses `host`, optional `aliases` and optional `api`. When omitted, `api` defaults to `https://<host>/w/api.php`. The farm name is also the login key, so every wiki in a farm shares its accounts. Each login's `user` is its active account. Account-password logins use `auth: session` and store `cookies`. See [Authentication](auth.md) for credential storage details.
 
 ## Exit status
 

@@ -392,7 +392,7 @@ func TestBuiltinSites(t *testing.T) {
 		assert.Contains(t, stderr, "Default site is now "+name, alias)
 	}
 	cfg, _ := config.LoadDir(e.dir)
-	cfg.Login("www.mediawiki.org", "Alice", &config.Account{Auth: config.AuthOAuth2, OAuthToken: "mw-token"})
+	cfg.Login("wikimedia", "Alice", &config.Account{Auth: config.AuthOAuth2, OAuthToken: "mw-token"})
 	require.NoError(t, cfg.Save())
 	for _, h := range []string{"mw", "mediawikiwiki", "www.mediawiki.org", "mediawiki.org"} {
 		out, stderr, code := e.run("", "auth", "token", "--wiki", h)

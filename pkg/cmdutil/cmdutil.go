@@ -51,10 +51,11 @@ const TokenEnv = "MW_TOKEN"
 // Target is the site a command talks to.
 type Target struct {
 	// Name is the site name; logins are stored under it.
-	Name string
-	API  string
-	Site *config.Site
-	Kind sites.Kind
+	Name     string
+	LoginKey string
+	API      string
+	Site     *config.Site
+	Kind     sites.Kind
 }
 
 // PageURL returns the URL of an index.php page of the target.
@@ -102,7 +103,7 @@ func (f *Factory) Resolve(cfg *config.Config, wiki, apiURL string) (Target, erro
 }
 
 func (f *Factory) target(r sites.Resolved) Target {
-	t := Target{Name: r.Name, API: r.Site.API, Site: r.Site, Kind: r.Kind}
+	t := Target{Name: r.Name, LoginKey: r.LoginKey, API: r.Site.API, Site: r.Site, Kind: r.Kind}
 	f.last = &t
 	return t
 }
@@ -133,7 +134,7 @@ func Credentials(cfg *config.Config, t Target) (AuthSource, bool) {
 	if tok := os.Getenv(TokenEnv); tok != "" {
 		return AuthSource{Account: &config.Account{Auth: config.AuthOAuth2, OAuthToken: tok}, FromEnv: true}, true
 	}
-	user, a, ok := cfg.ActiveAccount(t.Name)
+	user, a, ok := cfg.ActiveAccount(loginKey(t))
 	if !ok {
 		return AuthSource{}, false
 	}
@@ -213,4 +214,11 @@ func ExitCode(err error) int {
 		return 4
 	}
 	return 1
+}
+
+func loginKey(t Target) string {
+	if t.LoginKey != "" {
+		return t.LoginKey
+	}
+	return t.Name
 }
