@@ -54,7 +54,7 @@ wikis:
     aliases: [tmbw]
   wiki.mozilla.org:
     api: https://wiki.mozilla.org/api.php
-    aliases: [mozillawiki]
+    aliases: [mozilla, mozillawiki]
   wikisource.org:
     api: https://wikisource.org/w/api.php
     aliases: [wikisource]
