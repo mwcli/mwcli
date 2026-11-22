@@ -120,7 +120,7 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 		if err != nil {
 			return err
 		}
-		cfg.Sites.Wikis[t.Name] = site
+		cfg.Farms[t.Name] = []config.FarmSite{{Host: hostFromAPI(site.API), API: site.API, Aliases: site.Aliases, Server: site.Server, Script: site.Script, ArticlePath: site.ArticlePath}}
 		t = cmdutil.Target{Name: t.Name, LoginKey: t.Name, API: site.API, Site: site, Kind: sites.Added}
 		fmt.Fprintf(io.ErrOut, "%s Added site %s (%s)\n", io.SuccessIcon(), t.Name, site.API)
 	}
@@ -163,12 +163,12 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	if err != nil {
 		return err
 	}
-	wasDefaultUnset := cfg.Sites.Default == ""
+	wasDefaultUnset := cfg.Context == ""
 	cfg.Login(t.LoginKey, user, account)
 	if wasDefaultUnset {
-		cfg.Sites.Default = t.Name
+		cfg.Context = t.Name
 		if opts.apiURL != "" {
-			cfg.Sites.Default = t.API
+			cfg.Context = t.API
 		}
 	}
 	if err := cfg.Save(); err != nil {
@@ -176,6 +176,11 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	}
 	fmt.Fprintf(io.ErrOut, "%s Logged in to %s as %s\n", io.SuccessIcon(), t.Name, io.Bold(user))
 	return nil
+}
+
+func hostFromAPI(apiURL string) string {
+	host, _ := config.HostOf(apiURL)
+	return host
 }
 
 func tokenLogin(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.Account, string, error) {

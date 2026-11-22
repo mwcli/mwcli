@@ -1,6 +1,5 @@
 // Package config reads and writes config.yml in the mw configuration directory.
-// It holds two parts: sites, the wikis mw knows (where), and logins, the
-// accounts for them (who).
+// It holds wiki farms and their endpoints, the default context, and logins.
 package config
 
 import (
@@ -63,17 +62,14 @@ func (s *Site) PageURL(title string) string {
 	return server + s.Script + "?title=" + url.QueryEscape(title)
 }
 
-// Sites are the wikis the user added and the default one.
-type Sites struct {
-	Default string           `yaml:"default,omitempty"`
-	Wikis   map[string]*Site `yaml:"wikis,omitempty"`
-}
-
 // FarmSite is a wiki endpoint and the names accepted for it within a farm.
 type FarmSite struct {
-	Host    string   `yaml:"host"`
-	Aliases []string `yaml:"aliases,omitempty"`
-	API     string   `yaml:"api,omitempty"`
+	Host        string   `yaml:"host"`
+	Aliases     []string `yaml:"aliases,omitempty"`
+	API         string   `yaml:"api,omitempty"`
+	Server      string   `yaml:"server,omitempty"`
+	Script      string   `yaml:"script,omitempty"`
+	ArticlePath string   `yaml:"articlepath,omitempty"`
 }
 
 // Login holds the accounts of one site and which one is active.
@@ -84,10 +80,10 @@ type Login struct {
 
 // Config is config.yml of the configuration directory.
 type Config struct {
-	Dir    string                `yaml:"-"`
-	Sites  Sites                 `yaml:"sites,omitempty"`
-	Farms  map[string][]FarmSite `yaml:"farms,omitempty"`
-	Logins map[string]*Login     `yaml:"logins,omitempty"`
+	Dir     string                `yaml:"-"`
+	Context string                `yaml:"context,omitempty"`
+	Farms   map[string][]FarmSite `yaml:"farms,omitempty"`
+	Logins  map[string]*Login     `yaml:"logins,omitempty"`
 }
 
 // Dir returns the configuration directory: MW_CONFIG_DIR, $XDG_CONFIG_HOME/mw,
@@ -130,8 +126,8 @@ func LoadDir(dir string) (*Config, error) {
 			return nil, fmt.Errorf("parse %s: %w", c.Path(), err)
 		}
 	}
-	if c.Sites.Wikis == nil {
-		c.Sites.Wikis = map[string]*Site{}
+	if c.Farms == nil {
+		c.Farms = map[string][]FarmSite{}
 	}
 	if c.Logins == nil {
 		c.Logins = map[string]*Login{}
@@ -183,11 +179,6 @@ func writeFile(path string, data []byte) error {
 // "/" or whitespace, which other names use.
 func ValidSiteName(name string) bool {
 	return name != "" && !strings.ContainsAny(name, "/ \t\n")
-}
-
-// SiteNames returns the added sites in sorted order.
-func (c *Config) SiteNames() []string {
-	return sortedKeys(c.Sites.Wikis)
 }
 
 // LoginNames returns the sites with logins in sorted order.
@@ -253,8 +244,8 @@ func (c *Config) Login(site, user string, a *Account) {
 	}
 	l.Users[user] = a
 	l.User = user
-	if c.Sites.Default == "" {
-		c.Sites.Default = site
+	if c.Context == "" {
+		c.Context = site
 	}
 }
 

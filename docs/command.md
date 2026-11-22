@@ -9,7 +9,7 @@ mw
 │   ├── switch  [--wiki WIKI] [-u USER]
 │   └── token   [--wiki WIKI] [-u USER]
 ├── site
-│   ├── add     [NAME] WIKI [--alias ALIAS]
+│   ├── add     [NAME] WIKI [--alias ALIAS] [--farm FARM]
 │   ├── list    [--builtin]
 │   ├── remove  NAME
 │   └── default [NAME]
@@ -37,8 +37,7 @@ mw
 ## config.yml
 
 ```yaml
-sites:
-    default: wikipedia
+context: wikipedia
 farms:
     wikimedia:
         - host: en.wikipedia.org
@@ -65,7 +64,7 @@ logins:
                 bot_password: ...
 ```
 
-`sites.default` names the default site. Each `farms` entry contains wiki endpoints. An endpoint uses `host`, optional `aliases` and optional `api`. When omitted, `api` defaults to `https://<host>/w/api.php`. The farm name is also the login key, so every wiki in a farm shares its accounts. Each login's `user` is its active account. Account-password logins use `auth: session` and store `cookies`. See [Authentication](auth.md) for credential storage details.
+`context` names the default site, farm alias, host or API URL. Each `farms` entry contains wiki endpoints. An endpoint uses `host`, optional `aliases` and optional `api`. When omitted, `api` defaults to `https://<host>/w/api.php`. The farm name is also the login key, so every wiki in a farm shares its accounts. Each login's `user` is its active account. Account-password logins use `auth: session` and store `cookies`. See [Authentication](auth.md) for credential storage details.
 
 ## Exit status
 

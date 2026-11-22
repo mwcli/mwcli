@@ -68,7 +68,7 @@ func (t Target) PageURL(title string) string {
 
 // SiteName picks the site name: --wiki, MW_WIKI, the default site, en.wikipedia.org.
 func SiteName(cfg *config.Config, wiki string) string {
-	for _, n := range []string{wiki, os.Getenv("MW_WIKI"), cfg.Sites.Default} {
+	for _, n := range []string{wiki, os.Getenv("MW_WIKI"), cfg.Context} {
 		if n != "" {
 			return n
 		}

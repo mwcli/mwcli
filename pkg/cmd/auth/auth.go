@@ -52,8 +52,8 @@ func storedSite(cfg *config.Config, wiki string) (string, error) {
 	case len(names) == 1:
 		return names[0], nil
 	}
-	if cfg.Sites.Default != "" {
-		if r, err := sites.Lookup(cfg, cfg.Sites.Default); err == nil {
+	if cfg.Context != "" {
+		if r, err := sites.Lookup(cfg, cfg.Context); err == nil {
 			if _, ok := cfg.Logins[r.LoginKey]; ok {
 				return r.LoginKey, nil
 			}
