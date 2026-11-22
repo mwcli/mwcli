@@ -36,7 +36,7 @@ wikis:
     aliases: [wikivoyage]
   en.wiktionary.org:
     api: https://en.wiktionary.org/w/api.php
-    aliases: [wikt, wiktionary]
+    aliases: [wiktionary, wikt]
   foundation.wikimedia.org:
     api: https://foundation.wikimedia.org/w/api.php
     aliases: [wikimedia]
@@ -60,19 +60,19 @@ wikis:
     aliases: [wikisource]
   www.mediawiki.org:
     api: https://www.mediawiki.org/w/api.php
-    aliases: [mediawikiwiki, mw, mediawiki.org]
+    aliases: [mediawiki.org, mediawikiwiki, mw]
   www.shoutwiki.com:
     api: https://www.shoutwiki.com/w/api.php
     aliases: [shoutwiki]
   www.wikidata.org:
     api: https://www.wikidata.org/w/api.php
-    aliases: [wikidata, wikidata.org]
+    aliases: [wikidata.org, wikidata]
   www.wikihow.com:
     api: https://www.wikihow.com/api.php
     aliases: [wikihow]
   wiki.archlinux.org:
     api: https://wiki.archlinux.org/api.php
-    aliases: [archwiki, arch]
+    aliases: [arch, archwiki]
   zetawiki.com:
     api: https://zetawiki.com/w/api.php
     aliases: [zeta, zetawiki]

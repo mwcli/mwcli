@@ -71,6 +71,7 @@ func newCmdAdd(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			s.Aliases = aliases
+			sort.Strings(s.Aliases)
 			_, replaced := cfg.Sites.Wikis[name]
 			cfg.Sites.Wikis[name] = s
 			if err := cfg.Save(); err != nil {
@@ -123,7 +124,9 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 				}
 				line := fmt.Sprintf("%s %-*s  %s", mark, width, n, m[n].API)
 				if len(m[n].Aliases) > 0 {
-					line += "  (" + strings.Join(m[n].Aliases, ", ") + ")"
+					aliases := append([]string(nil), m[n].Aliases...)
+					sort.Strings(aliases)
+					line += "  (" + strings.Join(aliases, ", ") + ")"
 				}
 				fmt.Fprintln(ios.Out, strings.TrimRight(line, " "))
 			}
