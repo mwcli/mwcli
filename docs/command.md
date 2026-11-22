@@ -3,7 +3,7 @@
 ```text
 mw
 ├── auth
-│   ├── login   [--wiki WIKI] [--api URL] [--with-token | -u USER]
+│   ├── login   [--wiki WIKI] [--api URL] [--with-token | -u USER [--bot-password]]
 │   ├── logout  [--wiki WIKI] [-u USER]
 │   ├── status  [--wiki WIKI] [-a] [-t]
 │   ├── switch  [--wiki WIKI] [-u USER]
@@ -51,6 +51,7 @@ wiki.example.org:
             auth: botpassword
             bot_name: Bob@mybot
             bot_password: ...
+            bot_api: https://wiki.example.org/api.php
 ```
 
 `api` is stored only when it was given with `mw auth login --api` and differs from `https://HOST/w/api.php`; a discovered API stays in the cache. `user` is the active account. `config.yml` in the same directory holds `default_host`, set by the last login.

@@ -16,10 +16,11 @@ import (
 )
 
 type loginOptions struct {
-	wiki      string
-	apiURL    string
-	withToken bool
-	username  string
+	wiki        string
+	apiURL      string
+	withToken   bool
+	username    string
+	botPassword bool
 }
 
 func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
@@ -42,8 +43,9 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 			sets it.
 
 			--with-token reads the token from standard input. --username logs in with a
-			password, read from MW_PASSWORD or a prompt; a name such as Alice@mybot is a
-			bot password, which mw stores and uses to log in again on each run. An
+			password, read from MW_PASSWORD or a prompt; a name such as Alice@mybot, or
+			any name with --bot-password, is a bot password, which mw stores and uses to
+			log in again on each run, only at the api.php it was created for. An
 			account password is never stored, only its session. Without either, mw asks.
 
 			The host becomes the default for later commands.
@@ -66,6 +68,7 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 	cmdutil.AddTargetFlags(cmd, &opts.wiki, &opts.apiURL)
 	cmd.Flags().BoolVar(&opts.withToken, "with-token", false, "Read an OAuth 2 access token from standard input")
 	cmd.Flags().StringVarP(&opts.username, "username", "u", "", "Log in with this username and a password, or a bot password login name such as Alice@mybot")
+	cmd.Flags().BoolVar(&opts.botPassword, "bot-password", false, "Treat --username as a bot password login name, for wikis whose delimiter is not @")
 	return cmd
 }
 
@@ -76,6 +79,9 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	}
 	if opts.withToken && opts.username != "" {
 		return cmdutil.FlagErrorf("specify only one of --with-token and --username")
+	}
+	if opts.botPassword && opts.username == "" {
+		return cmdutil.FlagErrorf("--bot-password needs --username with the bot login name")
 	}
 	cfg, err := f.Config()
 	if err != nil {
@@ -118,9 +124,7 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 			if opts.username, err = io.Prompt("? Bot login name (such as Alice@mybot): "); err != nil {
 				return err
 			}
-			if !api.IsBotName(opts.username) {
-				return cmdutil.FlagErrorf("a bot login name has the form User@botname")
-			}
+			opts.botPassword = true
 		case "3":
 		default:
 			return cmdutil.FlagErrorf("unknown choice %q", choice)
@@ -132,7 +136,7 @@ func loginRun(f *cmdutil.Factory, opts *loginOptions) error {
 	if useToken {
 		account, user, err = tokenLogin(f, t, opts.withToken)
 	} else {
-		account, user, err = passwordLogin(f, t, opts.username)
+		account, user, err = passwordLogin(f, t, opts.username, opts.botPassword || api.IsBotName(opts.username))
 	}
 	if err != nil {
 		return err
@@ -179,7 +183,7 @@ func tokenLogin(f *cmdutil.Factory, t cmdutil.Target, fromStdin bool) (*config.A
 	return account, u.Name, nil
 }
 
-func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string) (*config.Account, string, error) {
+func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string, bot bool) (*config.Account, string, error) {
 	ios := f.IOStreams
 	var err error
 	if username == "" {
@@ -203,7 +207,7 @@ func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string) (*conf
 	if err != nil {
 		return nil, "", err
 	}
-	if api.IsBotName(username) {
+	if bot {
 		if err := c.BotLogin(username, password); err != nil {
 			return nil, "", err
 		}
@@ -211,7 +215,7 @@ func passwordLogin(f *cmdutil.Factory, t cmdutil.Target, username string) (*conf
 		if err != nil {
 			return nil, "", fmt.Errorf("check login: %w", err)
 		}
-		return &config.Account{Auth: config.AuthBotPassword, BotName: username, BotPassword: password}, u.Name, nil
+		return &config.Account{Auth: config.AuthBotPassword, BotName: username, BotPassword: password, BotAPI: t.API}, u.Name, nil
 	}
 	if err := c.Login(username, password); err != nil {
 		return nil, "", err

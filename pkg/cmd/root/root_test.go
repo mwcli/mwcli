@@ -56,7 +56,7 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}})
 	case p("action") == "login":
 		w.botLogins++
-		if p("lgname") != "Jmnote@mw" || p("lgpassword") != "botpw" || p("lgtoken") != "tok+\\" {
+		if (p("lgname") != "Jmnote@mw" && p("lgname") != "Jmnote#mw") || p("lgpassword") != "botpw" || p("lgtoken") != "tok+\\" {
 			send(map[string]any{"login": map[string]string{"result": "Failed", "reason": "Incorrect username or password entered."}})
 			return
 		}
@@ -522,6 +522,7 @@ func TestBotPassword(t *testing.T) {
 	assert.Equal(t, config.AuthBotPassword, a.Auth)
 	assert.Equal(t, "Jmnote@mw", a.BotName)
 	assert.Equal(t, "botpw", a.BotPassword)
+	assert.Equal(t, e.api, a.BotAPI)
 	assert.Empty(t, a.Cookies)
 
 	// Each run logs in again: the stored session would expire.
@@ -541,9 +542,35 @@ func TestBotPassword(t *testing.T) {
 	_, _, code = e.run("", "auth", "token")
 	assert.Equal(t, 1, code)
 
+	// Another wiki on the same host never gets the bot password.
+	other := e.base + "/other/api.php"
+	before = e.wiki.botLogins
+	out, stderr, code = e.run("", "page", "view", "Sandbox", "--api", other)
+	require.Equal(t, 0, code, stderr)
+	assert.Equal(t, "Hello", out)
+	_, _, code = e.run("x", "page", "edit", "Sandbox", "--api", other, "-F", "-")
+	assert.Equal(t, 4, code)
+	assert.Equal(t, before, e.wiki.botLogins)
+	require.Len(t, e.wiki.edits, 1)
+
 	cfg.Hosts[e.host].Users["Jmnote"].BotPassword = "deleted"
 	require.NoError(t, cfg.Save())
 	out, _, code = e.run("", "auth", "status")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, out, "The bot password was not accepted")
+}
+
+func TestBotPasswordFlag(t *testing.T) {
+	e := newEnv(t)
+	t.Setenv("MW_PASSWORD", "botpw")
+	_, stderr, code := e.run("", "auth", "login", "--api", e.api, "--username", "Jmnote#mw", "--bot-password")
+	require.Equal(t, 0, code, stderr)
+	cfg, err := config.LoadDir(e.dir)
+	require.NoError(t, err)
+	assert.Equal(t, config.AuthBotPassword, cfg.Hosts[e.host].Users["Jmnote"].Auth)
+	assert.Equal(t, "Jmnote#mw", cfg.Hosts[e.host].Users["Jmnote"].BotName)
+
+	_, stderr, code = e.run("", "auth", "login", "--api", e.api, "--bot-password")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--bot-password needs --username")
 }

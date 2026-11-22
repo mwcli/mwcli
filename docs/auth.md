@@ -34,7 +34,7 @@ Credentials are stored per host and account in `hosts.yml` in the configuration 
 
 **Create**: on the wiki, open `Special:BotPasswords`, give the bot password a name such as `mybot` and choose the grants. The wiki shows the login name, such as `Alice@mybot`, and the password once.
 
-**Log in**: `mw auth login --wiki <host> --username Alice@mybot` reads the password from `MW_PASSWORD` or a no-echo prompt. mw stores the bot password and logs in with it again on each run, since a bot password session is short lived.
+**Log in**: `mw auth login --wiki <host> --username Alice@mybot` reads the password from `MW_PASSWORD` or a no-echo prompt. On a wiki that separates the user and bot names with something other than `@` (`$wgUserrightsInterwikiDelimiter`), add `--bot-password`. mw stores the bot password and logs in with it again on each run, since a bot password session is short lived. It sends the bot password only to the `api.php` it logged in to, not to other wikis on the same host.
 
 **Revoke**: delete or reset it at `Special:BotPasswords`.
 

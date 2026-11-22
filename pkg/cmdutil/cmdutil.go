@@ -178,7 +178,7 @@ func Credentials(cfg *config.Config, t Target) (AuthSource, bool) {
 		return AuthSource{Account: &config.Account{Auth: config.AuthOAuth2, OAuthToken: tok}, FromEnv: true}, true
 	}
 	user, a, ok := cfg.ActiveAccount(t.Host)
-	if !ok {
+	if !ok || !a.UsableAt(t.API) {
 		return AuthSource{}, false
 	}
 	return AuthSource{User: user, Account: a}, true

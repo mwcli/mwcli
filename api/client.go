@@ -45,7 +45,9 @@ func New(api string, account *config.Account) (*Client, error) {
 		if account.Auth == config.AuthOAuth2 {
 			c.Token = account.OAuthToken
 		} else if account.Auth == config.AuthBotPassword {
-			c.botName, c.botPassword = account.BotName, account.BotPassword
+			if account.UsableAt(api) {
+				c.botName, c.botPassword = account.BotName, account.BotPassword
+			}
 		} else {
 			var cookies []*http.Cookie
 			for name, value := range account.Cookies {
@@ -636,8 +638,9 @@ func (c *Client) NamespaceNames(id int) ([]string, error) {
 	return names, nil
 }
 
-// IsBotName reports whether name is the login name of a bot password, such as
-// Alice@mybot; MediaWiki user names cannot contain @.
+// IsBotName reports whether name looks like the login name of a bot password,
+// such as Alice@mybot: @ is MediaWiki's default delimiter, and user names
+// cannot contain it by default.
 func IsBotName(name string) bool { return strings.Contains(name, "@") }
 
 // BotLogin logs in with a bot password from Special:BotPasswords through

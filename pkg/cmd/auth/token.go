@@ -2,6 +2,7 @@ package auth
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/mwcli/mwcli/internal/config"
 	"github.com/mwcli/mwcli/pkg/cmdutil"
@@ -23,19 +24,26 @@ func newCmdToken(f *cmdutil.Factory) *cobra.Command {
 			}
 			t := cmdutil.Target{Host: f.HostKey(cfg, cmdutil.HostName(cfg, wiki))}
 			var a *config.Account
+			if tok := os.Getenv(cmdutil.TokenEnv); user == "" && tok != "" {
+				fmt.Fprintln(f.IOStreams.Out, tok)
+				return nil
+			}
 			if user == "" {
-				src, ok := cmdutil.Credentials(cfg, t)
-				if !ok {
+				var ok bool
+				if user, a, ok = cfg.ActiveAccount(t.Host); !ok {
 					return cmdutil.NotLoggedIn(t.Host)
 				}
-				a, user = src.Account, src.User
 			} else if h, ok := cfg.Hosts[t.Host]; ok {
 				a = h.Users[user]
 			}
 			if a == nil {
 				return fmt.Errorf("not logged in to %s account %s", t.Host, user)
 			}
-			if a.Auth != config.AuthOAuth2 {
+			switch a.Auth {
+			case config.AuthOAuth2:
+			case config.AuthBotPassword:
+				return fmt.Errorf("%s account %s uses a bot password, not a token", t.Host, user)
+			default:
 				return fmt.Errorf("%s account %s uses a password session, not a token", t.Host, user)
 			}
 			fmt.Fprintln(f.IOStreams.Out, a.OAuthToken)

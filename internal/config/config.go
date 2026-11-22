@@ -33,9 +33,17 @@ type Account struct {
 	OAuthToken string            `yaml:"oauth_token,omitempty"`
 	Cookies    map[string]string `yaml:"cookies,omitempty"`
 	// BotName and BotPassword are a bot password from Special:BotPasswords:
-	// BotName is the login name, such as Alice@mybot.
+	// BotName is the login name, such as Alice@mybot. BotAPI is the api.php it
+	// was created for; it is sent nowhere else, even on the same host.
 	BotName     string `yaml:"bot_name,omitempty"`
 	BotPassword string `yaml:"bot_password,omitempty"`
+	BotAPI      string `yaml:"bot_api,omitempty"`
+}
+
+// UsableAt reports whether the account may be sent to api. A bot password is
+// tied to the api.php it was created for.
+func (a *Account) UsableAt(api string) bool {
+	return a.Auth != AuthBotPassword || a.BotAPI == api
 }
 
 // Host is one wiki, keyed by its host name in hosts.yml.
