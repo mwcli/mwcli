@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// JSONFlags are --json and --jq, as in gh.
+// JSONFlags are --json FIELDS and --jq EXPR.
 type JSONFlags struct {
 	fields []string
 	jq     string
@@ -24,7 +24,7 @@ func AddJSONFlags(cmd *cobra.Command, known []string) *JSONFlags {
 	j := &JSONFlags{known: known}
 	cmd.Flags().StringSliceVar(&j.fields, "json", nil, "Output JSON with the specified `fields`")
 	cmd.Flags().StringVarP(&j.jq, "jq", "q", "", "Filter JSON output using a jq `expression`")
-	// Like gh, a bare --json lists the fields instead of failing on the missing value.
+	// A bare --json lists the fields instead of failing on the missing value.
 	parent := cmd.FlagErrorFunc()
 	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
 		if strings.Contains(err.Error(), "flag needs an argument: --json") {
