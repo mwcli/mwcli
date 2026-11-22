@@ -63,8 +63,9 @@ type fakeWiki struct {
 // start of the file or chunk.
 type uploadRequest struct {
 	Filename, Offset, FileSize, FileKey, Comment, Text, Token, Field, Content string
-	Stash, Ignore                                                             bool
-	Size                                                                      int
+	// Chunked is set for a body sent without Content-Length.
+	Stash, Ignore, Chunked bool
+	Size                   int
 }
 
 // restRequest is a request to the fake wiki's rest.php.
@@ -550,7 +551,7 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"revisions": []any{map[string]any{"slots": map[string]any{"main": map[string]string{"content": "Hello"}}}}}}}})
 	case p("action") == "upload":
 		req := uploadRequest{Filename: p("filename"), Stash: p("stash") != "", Offset: p("offset"), FileSize: p("filesize"), FileKey: p("filekey"),
-			Ignore: p("ignorewarnings") != "", Comment: p("comment"), Text: p("text"), Token: p("token")}
+			Ignore: p("ignorewarnings") != "", Comment: p("comment"), Text: p("text"), Token: p("token"), Chunked: len(r.TransferEncoding) > 0}
 		for _, field := range []string{"file", "chunk"} {
 			if fh, _, err := r.FormFile(field); err == nil {
 				b, _ := io.ReadAll(fh)
@@ -2468,6 +2469,9 @@ func TestFileUpload(t *testing.T) {
 	assert.Equal(t, "content of big.b", e.wiki.uploads[0].Content)
 	assert.Empty(t, e.wiki.uploads[0].FileKey)
 	assert.Equal(t, "fk.1", e.wiki.uploads[1].FileKey)
+	for _, u := range e.wiki.uploads {
+		assert.False(t, u.Chunked, "every body has a Content-Length")
+	}
 	final := e.wiki.uploads[3]
 	assert.Equal(t, uploadRequest{Filename: "big.bin", FileKey: "fk.1", Comment: "Big", Token: "tok+\\"}, final)
 

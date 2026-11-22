@@ -86,7 +86,7 @@ func (c *Client) Upload(ctx context.Context, filename string, r io.Reader, size 
 		final.Set("ignorewarnings", "1")
 	}
 	if size <= chunk {
-		body, err := c.multipart(ctx, final, "file", filename, r)
+		body, err := c.multipart(ctx, final, "file", filename, r, size)
 		if err != nil {
 			return nil, err
 		}
@@ -107,7 +107,7 @@ func (c *Client) Upload(ctx context.Context, filename string, r io.Reader, size 
 		if filekey != "" {
 			params.Set("filekey", filekey)
 		}
-		body, err := c.multipart(ctx, params, "chunk", filename, io.LimitReader(r, n))
+		body, err := c.multipart(ctx, params, "chunk", filename, io.LimitReader(r, n), n)
 		if err == nil {
 			err = CheckError(body)
 		}
@@ -220,47 +220,44 @@ func (c *Client) ensureLogin(ctx context.Context) error {
 	return c.botErr
 }
 
-// multipart POSTs params with the content of r as the file field and returns
-// the response body. An API error is returned in the body, not as an error.
-// It sends no maxlag: a request refused for lag could not be sent again, as
-// r is read as it goes. The final publish of a stashed file goes through Raw
-// and has maxlag.
-func (c *Client) multipart(ctx context.Context, params url.Values, field, filename string, r io.Reader) ([]byte, error) {
-	pr, pw := io.Pipe()
-	// Closing the reader stops the writer below on any early return.
-	defer pr.Close()
-	mw := multipart.NewWriter(pw)
-	go func() {
-		err := func() error {
-			fields := withJSON(params)
-			keys := make([]string, 0, len(fields))
-			for k := range fields {
-				keys = append(keys, k)
+// multipart POSTs params with n bytes of r as the file field and returns the
+// response body. An API error is returned in the body, not as an error. The
+// body is streamed with its Content-Length, as some servers in front of PHP
+// do not pass on a chunked request body. It sends no maxlag: a request
+// refused for lag could not be sent again, as r is read as it goes; the final
+// publish of a stashed file goes through Raw and has maxlag.
+func (c *Client) multipart(ctx context.Context, params url.Values, field, filename string, r io.Reader, n int64) ([]byte, error) {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fields := withJSON(params)
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		for _, v := range fields[k] {
+			if err := mw.WriteField(k, v); err != nil {
+				return nil, err
 			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				for _, v := range fields[k] {
-					if err := mw.WriteField(k, v); err != nil {
-						return err
-					}
-				}
-			}
-			part, err := mw.CreateFormFile(field, filename)
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(part, r); err != nil {
-				return err
-			}
-			return mw.Close()
-		}()
-		pw.CloseWithError(err)
-	}()
+		}
+	}
+	if _, err := mw.CreateFormFile(field, filename); err != nil {
+		return nil, err
+	}
+	headLen := buf.Len()
+	if err := mw.Close(); err != nil {
+		return nil, err
+	}
+	all := buf.Bytes()
+	head, tail := all[:headLen], all[headLen:]
+	body := io.MultiReader(bytes.NewReader(head), &exactReader{r: r, n: n}, bytes.NewReader(tail))
 	u := *c.url
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), pr)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), body)
 	if err != nil {
 		return nil, err
 	}
+	req.ContentLength = int64(len(head)) + n + int64(len(tail))
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	req.Header.Set("User-Agent", c.UserAgent)
 	if c.Token != "" {
@@ -282,4 +279,29 @@ func (c *Client) multipart(ctx context.Context, params url.Values, field, filena
 		return nil, &HTTPError{Status: resp.Status, Body: strings.TrimSpace(string(b))}
 	}
 	return io.ReadAll(resp.Body)
+}
+
+// exactReader reads n bytes of r and fails if r ends sooner, such as a file
+// that shrank after its size was taken.
+type exactReader struct {
+	r io.Reader
+	n int64
+}
+
+func (e *exactReader) Read(p []byte) (int, error) {
+	if e.n <= 0 {
+		return 0, io.EOF
+	}
+	if int64(len(p)) > e.n {
+		p = p[:e.n]
+	}
+	k, err := e.r.Read(p)
+	e.n -= int64(k)
+	if err == io.EOF && e.n > 0 {
+		return k, io.ErrUnexpectedEOF
+	}
+	if e.n == 0 && err == io.EOF {
+		err = nil
+	}
+	return k, err
 }
