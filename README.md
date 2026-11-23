@@ -46,8 +46,10 @@ go install github.com/mwcli/mwcli/cmd/mw@latest
 ### Windows
 
 ```sh
-winget install mwcli.mwcli
+winget install mw
 ```
+
+`mw` is the moniker of the package `mwcli.mwcli`; `winget install mwcli.mwcli` works too.
 
 ### Build from source
 

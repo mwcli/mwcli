@@ -13,7 +13,7 @@ go install github.com/mwcli/mwcli/cmd/mw@latest
 On Windows:
 
 ```sh
-winget install mwcli.mwcli
+winget install mw
 ```
 
 Check that it runs:
