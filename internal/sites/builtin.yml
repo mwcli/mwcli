@@ -31,7 +31,7 @@ farms:
     - host: en.wikibooks.org
       aliases: [wikibooks]
     - host: en.wikipedia.org
-      aliases: [wikipedia.org, wikipedia]
+      aliases: [wikipedia.org, wikipedia, enwiki]
     - host: ja.wikipedia.org
       aliases: [jawiki]
     - host: ko.wikipedia.org

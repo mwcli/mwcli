@@ -50,6 +50,10 @@ func TestBuiltinPatterns(t *testing.T) {
 	r, err = Lookup(cfg, "wikipedia")
 	require.NoError(t, err)
 	assert.Equal(t, "https://en.wikipedia.org/w/api.php", r.Site.API)
+	r, err = Lookup(cfg, "enwiki")
+	require.NoError(t, err)
+	assert.Equal(t, "https://en.wikipedia.org/w/api.php", r.Site.API)
+	assert.Equal(t, "wikimedia", r.LoginKey)
 	_, ok := Builtin()["*.wikipedia.org"]
 	assert.False(t, ok)
 }

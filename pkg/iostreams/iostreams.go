@@ -3,6 +3,7 @@ package iostreams
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -57,16 +58,42 @@ var ErrNoPrompt = errors.New("cannot prompt: stdin is not a terminal")
 
 // Prompt reads one line after printing label to stderr.
 func (s *IOStreams) Prompt(label string) (string, error) {
+	return s.PromptContext(context.Background(), label)
+}
+
+// PromptContext reads one line after printing label, returning when ctx is canceled.
+func (s *IOStreams) PromptContext(ctx context.Context, label string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if !s.CanPrompt() {
 		return "", ErrNoPrompt
 	}
 	fmt.Fprint(s.ErrOut, label)
+	type result struct {
+		line string
+		err  error
+	}
+	read := make(chan result, 1)
+	go func() {
+		line, err := readLine(s.In)
+		read <- result{line: line, err: err}
+	}()
+	select {
+	case result := <-read:
+		return result.line, result.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func readLine(input io.Reader) (string, error) {
 	// One byte at a time, so that nothing after the line is read ahead and
 	// lost to a later prompt.
 	var line []byte
 	b := make([]byte, 1)
 	for {
-		n, err := s.In.Read(b)
+		n, err := input.Read(b)
 		if n == 1 {
 			if b[0] == '\n' {
 				break
