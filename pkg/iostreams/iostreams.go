@@ -62,6 +62,8 @@ func (s *IOStreams) Prompt(label string) (string, error) {
 }
 
 // PromptContext reads one line after printing label, returning when ctx is canceled.
+// Cancellation does not interrupt the underlying read, so callers must exit or
+// close the input stream before reusing this IOStreams.
 func (s *IOStreams) PromptContext(ctx context.Context, label string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -81,8 +83,13 @@ func (s *IOStreams) PromptContext(ctx context.Context, label string) (string, er
 	}()
 	select {
 	case result := <-read:
+		if err := ctx.Err(); err != nil {
+			fmt.Fprintln(s.ErrOut)
+			return "", err
+		}
 		return result.line, result.err
 	case <-ctx.Done():
+		fmt.Fprintln(s.ErrOut)
 		return "", ctx.Err()
 	}
 }
@@ -112,16 +119,68 @@ func readLine(input io.Reader) (string, error) {
 
 // PromptSecret reads one line without echo after printing label to stderr.
 func (s *IOStreams) PromptSecret(label string) (string, error) {
+	return s.PromptSecretContext(context.Background(), label)
+}
+
+// PromptSecretContext reads a secret without echo and returns when ctx is canceled.
+// It restores terminal state before returning, but the underlying terminal read
+// may remain blocked; callers must exit before reusing this terminal after cancel.
+func (s *IOStreams) PromptSecretContext(ctx context.Context, label string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if !s.CanPrompt() || s.inFd < 0 {
 		return "", ErrNoPrompt
 	}
-	fmt.Fprint(s.ErrOut, label)
-	b, err := term.ReadPassword(s.inFd)
-	fmt.Fprintln(s.ErrOut)
+	return promptSecretContext(ctx, s.ErrOut, label, s.inFd, term.GetState, term.ReadPassword, term.Restore)
+}
+
+func promptSecretContext(
+	ctx context.Context,
+	out io.Writer,
+	label string,
+	fd int,
+	getState func(int) (*term.State, error),
+	readPassword func(int) ([]byte, error),
+	restore func(int, *term.State) error,
+) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	state, err := getState(fd)
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(string(b)), nil
+	fmt.Fprint(out, label)
+	type result struct {
+		secret []byte
+		err    error
+	}
+	read := make(chan result, 1)
+	go func() {
+		secret, err := readPassword(fd)
+		read <- result{secret: secret, err: err}
+	}()
+	canceled := func() (string, error) {
+		if err := restore(fd, state); err != nil {
+			fmt.Fprintf(out, "\nwarning: could not restore terminal: %v", err)
+		}
+		fmt.Fprintln(out)
+		return "", ctx.Err()
+	}
+	select {
+	case result := <-read:
+		if ctx.Err() != nil {
+			return canceled()
+		}
+		fmt.Fprintln(out)
+		if result.err != nil {
+			return "", result.err
+		}
+		return strings.TrimSpace(string(result.secret)), nil
+	case <-ctx.Done():
+		return canceled()
+	}
 }
 
 func (s *IOStreams) color(code, text string) string {

@@ -222,7 +222,7 @@ func tokenLogin(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, fromS
 	} else {
 		fmt.Fprintf(ios.ErrOut, "Create an owner-only token at %s\n", t.PageURL("Special:OAuthConsumerRegistration/propose/oauth2"))
 		var err error
-		if token, err = ios.PromptSecret("? Paste your access token: "); err != nil {
+		if token, err = ios.PromptSecretContext(ctx, "? Paste your access token: "); err != nil {
 			return nil, "", err
 		}
 	}
@@ -265,7 +265,7 @@ func oauth1Login(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, from
 			var value string
 			var err error
 			if q.secret {
-				value, err = ios.PromptSecret("? " + q.label + ": ")
+				value, err = ios.PromptSecretContext(ctx, "? "+q.label+": ")
 			} else {
 				value, err = ios.PromptContext(ctx, "? "+q.label+": ")
 			}
@@ -326,7 +326,7 @@ func passwordLogin(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, us
 	}
 	password := os.Getenv("MW_PASSWORD")
 	if password == "" {
-		if password, err = ios.PromptSecret("? Password: "); err != nil {
+		if password, err = ios.PromptSecretContext(ctx, "? Password: "); err != nil {
 			if errors.Is(err, iostreams.ErrNoPrompt) {
 				return nil, "", cmdutil.FlagErrorf("set MW_PASSWORD when not running interactively")
 			}
@@ -392,7 +392,7 @@ func answerLogin(ctx context.Context, ios *iostreams.IOStreams) func(string, []a
 			var v string
 			var err error
 			if fl.Sensitive {
-				v, err = ios.PromptSecret(label + ": ")
+				v, err = ios.PromptSecretContext(ctx, label+": ")
 			} else {
 				v, err = ios.PromptContext(ctx, label+": ")
 			}
