@@ -262,13 +262,11 @@ func oauth1Login(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, from
 			label  string
 			secret bool
 		}{{"Consumer token", false}, {"Consumer secret", true}, {"Access token", false}, {"Access secret", true}} {
-			var value string
-			var err error
+			prompt := ios.PromptContext
 			if q.secret {
-				value, err = ios.PromptSecretContext(ctx, "? "+q.label+": ")
-			} else {
-				value, err = ios.PromptContext(ctx, "? "+q.label+": ")
+				prompt = ios.PromptSecretContext
 			}
+			value, err := prompt(ctx, "? "+q.label+": ")
 			if err != nil {
 				return nil, "", err
 			}
@@ -389,13 +387,11 @@ func answerLogin(ctx context.Context, ios *iostreams.IOStreams) func(string, []a
 			if len(fl.Options) > 0 {
 				label += " (" + strings.Join(optionKeys(fl.Options), ", ") + ")"
 			}
-			var v string
-			var err error
+			prompt := ios.PromptContext
 			if fl.Sensitive {
-				v, err = ios.PromptSecretContext(ctx, label+": ")
-			} else {
-				v, err = ios.PromptContext(ctx, label+": ")
+				prompt = ios.PromptSecretContext
 			}
+			v, err := prompt(ctx, label+": ")
 			if err != nil {
 				return nil, err
 			}
