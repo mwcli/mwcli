@@ -115,7 +115,7 @@ func loginRun(ctx context.Context, f *cmdutil.Factory, opts *loginOptions) error
 		return err
 	}
 	if opts.wiki == "" && io.CanPrompt() {
-		h, err := io.Prompt(fmt.Sprintf("? Wiki (site name, host or URL) [%s]: ", t.Name))
+		h, err := io.PromptContext(ctx, fmt.Sprintf("? Wiki (site name, host or URL) [%s]: ", t.Name))
 		if err != nil {
 			return err
 		}
@@ -156,7 +156,7 @@ func loginRun(ctx context.Context, f *cmdutil.Factory, opts *loginOptions) error
 		fmt.Fprintln(io.ErrOut, "  2. OAuth 1.0a consumer keys")
 		fmt.Fprintln(io.ErrOut, "  3. Bot password (from Special:BotPasswords)")
 		fmt.Fprintln(io.ErrOut, "  4. Username and password")
-		choice, err := io.Prompt("Choose [1]: ")
+		choice, err := io.PromptContext(ctx, "Choose [1]: ")
 		if err != nil {
 			return err
 		}
@@ -167,7 +167,7 @@ func loginRun(ctx context.Context, f *cmdutil.Factory, opts *loginOptions) error
 			opts.oauth1 = true
 		case "3":
 			fmt.Fprintf(io.ErrOut, "Create a bot password at %s\n", t.PageURL("Special:BotPasswords"))
-			if opts.username, err = io.Prompt("? Bot login name (such as Alice@mybot): "); err != nil {
+			if opts.username, err = io.PromptContext(ctx, "? Bot login name (such as Alice@mybot): "); err != nil {
 				return err
 			}
 			opts.botPassword = true
@@ -222,7 +222,7 @@ func tokenLogin(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, fromS
 	} else {
 		fmt.Fprintf(ios.ErrOut, "Create an owner-only token at %s\n", t.PageURL("Special:OAuthConsumerRegistration/propose/oauth2"))
 		var err error
-		if token, err = ios.PromptSecret("? Paste your access token: "); err != nil {
+		if token, err = ios.PromptSecretContext(ctx, "? Paste your access token: "); err != nil {
 			return nil, "", err
 		}
 	}
@@ -262,11 +262,11 @@ func oauth1Login(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, from
 			label  string
 			secret bool
 		}{{"Consumer token", false}, {"Consumer secret", true}, {"Access token", false}, {"Access secret", true}} {
-			prompt := ios.Prompt
+			prompt := ios.PromptContext
 			if q.secret {
-				prompt = ios.PromptSecret
+				prompt = ios.PromptSecretContext
 			}
-			value, err := prompt("? " + q.label + ": ")
+			value, err := prompt(ctx, "? "+q.label+": ")
 			if err != nil {
 				return nil, "", err
 			}
@@ -318,13 +318,13 @@ func passwordLogin(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, us
 	ios := f.IOStreams
 	var err error
 	if username == "" {
-		if username, err = ios.Prompt("? Username: "); err != nil {
+		if username, err = ios.PromptContext(ctx, "? Username: "); err != nil {
 			return nil, "", err
 		}
 	}
 	password := os.Getenv("MW_PASSWORD")
 	if password == "" {
-		if password, err = ios.PromptSecret("? Password: "); err != nil {
+		if password, err = ios.PromptSecretContext(ctx, "? Password: "); err != nil {
 			if errors.Is(err, iostreams.ErrNoPrompt) {
 				return nil, "", cmdutil.FlagErrorf("set MW_PASSWORD when not running interactively")
 			}
@@ -348,7 +348,7 @@ func passwordLogin(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, us
 		}
 		return &config.Account{Auth: config.AuthBotPassword, BotName: username, BotPassword: password, Domain: domain}, u.Name, nil
 	}
-	if err := c.Login(ctx, username, password, api.LoginOptions{Domain: domain, Answer: answerLogin(ios)}); err != nil {
+	if err := c.Login(ctx, username, password, api.LoginOptions{Domain: domain, Answer: answerLogin(ctx, ios)}); err != nil {
 		return nil, "", err
 	}
 	u, err := c.User(ctx)
@@ -363,7 +363,7 @@ const OTPEnv = "MW_OTP"
 
 // answerLogin answers the fields a wiki asks for after the password, such as
 // a two-factor code: the OATHToken field from MW_OTP, others from prompts.
-func answerLogin(ios *iostreams.IOStreams) func(string, []api.LoginField) (map[string]string, error) {
+func answerLogin(ctx context.Context, ios *iostreams.IOStreams) func(string, []api.LoginField) (map[string]string, error) {
 	return func(message string, fields []api.LoginField) (map[string]string, error) {
 		answers := map[string]string{}
 		var missing []string
@@ -387,11 +387,11 @@ func answerLogin(ios *iostreams.IOStreams) func(string, []api.LoginField) (map[s
 			if len(fl.Options) > 0 {
 				label += " (" + strings.Join(optionKeys(fl.Options), ", ") + ")"
 			}
-			prompt := ios.Prompt
+			prompt := ios.PromptContext
 			if fl.Sensitive {
-				prompt = ios.PromptSecret
+				prompt = ios.PromptSecretContext
 			}
-			v, err := prompt(label + ": ")
+			v, err := prompt(ctx, label+": ")
 			if err != nil {
 				return nil, err
 			}

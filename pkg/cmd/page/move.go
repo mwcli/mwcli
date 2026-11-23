@@ -127,7 +127,7 @@ func newCmdDelete(f *cmdutil.Factory) *cobra.Command {
 				return cmdutil.NotLoggedIn(t.Name)
 			}
 			if !yes {
-				answer, err := ios.Prompt(fmt.Sprintf("Type %s to delete it from %s: ", title, t.Name))
+				answer, err := ios.PromptContext(ctx, fmt.Sprintf("Type %s to delete it from %s: ", title, t.Name))
 				if err != nil {
 					return err
 				}
