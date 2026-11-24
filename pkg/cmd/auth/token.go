@@ -48,6 +48,9 @@ func newCmdToken(f *cmdutil.Factory) *cobra.Command {
 			default:
 				return fmt.Errorf("%s account %s uses a password session, not a token", site, user)
 			}
+			if err := cmdutil.RefreshOAuth2IfNeeded(cmd.Context(), cfg, cmdutil.Target{Name: site, API: siteAPI(cfg, site)}, a); err != nil {
+				return err
+			}
 			fmt.Fprintln(f.IOStreams.Out, a.OAuthToken)
 			return nil
 		},

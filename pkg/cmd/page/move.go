@@ -44,7 +44,7 @@ func newCmdMove(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, ok, err := cmdutil.Client(cfg, t)
+			c, ok, err := cmdutil.Client(cmd.Context(), cfg, t)
 			if err != nil {
 				return err
 			}
@@ -119,7 +119,7 @@ func newCmdDelete(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, ok, err := cmdutil.Client(cfg, t)
+			c, ok, err := cmdutil.Client(cmd.Context(), cfg, t)
 			if err != nil {
 				return err
 			}

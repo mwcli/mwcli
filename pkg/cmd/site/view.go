@@ -80,7 +80,7 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 				}
 				return f.Browse(u)
 			}
-			c, _, err := cmdutil.Client(cfg, t)
+			c, _, err := cmdutil.Client(cmd.Context(), cfg, t)
 			if err != nil {
 				return err
 			}

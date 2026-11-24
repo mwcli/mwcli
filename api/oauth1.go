@@ -21,16 +21,23 @@ type OAuth1 struct {
 	ConsumerKey, ConsumerSecret, AccessToken, AccessSecret string
 }
 
+// Sign adds an OAuth 1.0a Authorization header to req. It signs the URL query
+// and uses the access token and secret in o, which may be empty for the
+// request-token step of an authorization flow.
+func (o *OAuth1) Sign(req *http.Request) { o.sign(req, nil) }
+
 // header returns the Authorization header for a request to endpoint, a URL
 // without query, with params from the query or the form body.
 func (o *OAuth1) header(method, endpoint string, params url.Values, timestamp, nonce string) string {
 	oauth := map[string]string{
 		"oauth_consumer_key":     o.ConsumerKey,
-		"oauth_token":            o.AccessToken,
 		"oauth_signature_method": "HMAC-SHA1",
 		"oauth_timestamp":        timestamp,
 		"oauth_nonce":            nonce,
 		"oauth_version":          "1.0",
+	}
+	if o.AccessToken != "" {
+		oauth["oauth_token"] = o.AccessToken
 	}
 	all := url.Values{}
 	for k, vs := range params {

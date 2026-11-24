@@ -71,7 +71,7 @@ func runREST(ctx context.Context, f *cmdutil.Factory, path string, opts *options
 	if err != nil {
 		return err
 	}
-	c, _, err := cmdutil.Client(cfg, t)
+	c, _, err := cmdutil.Client(ctx, cfg, t)
 	if err != nil {
 		return err
 	}

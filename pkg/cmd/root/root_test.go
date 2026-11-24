@@ -25,9 +25,15 @@ import (
 	"github.com/mwcli/mwcli/pkg/iostreams"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zalando/go-keyring"
 )
 
 const goodToken = "good-token"
+
+func TestMain(m *testing.M) {
+	keyring.MockInit()
+	os.Exit(m.Run())
+}
 
 type fakeWiki struct {
 	edits      []map[string]string
@@ -1356,7 +1362,9 @@ func TestOAuth1Login(t *testing.T) {
 	require.NoError(t, err)
 	a := cfg.Logins[e.host].Users["Jmnote"]
 	require.NotNil(t, a)
-	assert.Equal(t, config.Account{Auth: config.AuthOAuth1, ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}, *a)
+	loaded := *a
+	loaded.CredentialRef = ""
+	assert.Equal(t, config.Account{Auth: config.AuthOAuth1, ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}, loaded)
 
 	out, stderr, code := e.run("", "auth", "status")
 	require.Equal(t, 0, code, stderr)

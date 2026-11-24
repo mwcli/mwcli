@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/mwcli/mwcli/internal/sites"
 	"github.com/mwcli/mwcli/pkg/iostreams"
 	"github.com/spf13/cobra"
+	"golang.org/x/oauth2"
 )
 
 // Factory provides commands with streams and configuration.
@@ -205,10 +208,80 @@ func Credentials(cfg *config.Config, t Target) (AuthSource, bool) {
 }
 
 // Client returns an API client for t, authenticated when credentials exist.
-func Client(cfg *config.Config, t Target) (*api.Client, bool, error) {
+func Client(ctx context.Context, cfg *config.Config, t Target) (*api.Client, bool, error) {
 	src, ok := Credentials(cfg, t)
+	if ok && !src.FromEnv {
+		if err := RefreshOAuth2IfNeeded(ctx, cfg, t, src.Account); err != nil {
+			return nil, false, err
+		}
+	}
 	c, err := NewClient(t.API, src.Account)
 	return c, ok, err
+}
+
+// RefreshOAuth2IfNeeded renews an OAuth 2 token when it expires within one
+// minute. Call this before using the token or checking the account.
+func RefreshOAuth2IfNeeded(ctx context.Context, cfg *config.Config, t Target, account *config.Account) error {
+	if account == nil || account.Auth != config.AuthOAuth2 || account.OAuthRefreshToken == "" || account.OAuthExpiry.IsZero() || time.Until(account.OAuthExpiry) >= time.Minute {
+		return nil
+	}
+	endpoint, err := OAuth2Endpoint(t.API)
+	if err != nil {
+		return err
+	}
+	conf := oauth2.Config{ClientID: account.OAuthClientID, Endpoint: endpoint}
+	expired := &oauth2.Token{
+		AccessToken:  account.OAuthToken,
+		RefreshToken: account.OAuthRefreshToken,
+		Expiry:       time.Now().Add(-time.Minute),
+	}
+	refreshed, err := conf.TokenSource(WithUserAgent(ctx), expired).Token()
+	if err != nil {
+		return fmt.Errorf("refresh OAuth token for %s: %w\nrun `mw auth login --web --wiki %s` to sign in again", t.Name, err, t.Name)
+	}
+	account.OAuthToken = refreshed.AccessToken
+	account.OAuthRefreshToken = refreshed.RefreshToken
+	account.OAuthExpiry = refreshed.Expiry
+	if err := cfg.Save(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not save refreshed OAuth credentials for %s: %v; this command can continue, but run `mw auth login --web --wiki %s` if the refreshed token is lost\n", t.Name, err, t.Name)
+	}
+	return nil
+}
+
+// OAuth2Endpoint derives MediaWiki's OAuth 2 REST endpoints from api.php.
+func OAuth2Endpoint(apiURL string) (oauth2.Endpoint, error) {
+	u, err := url.Parse(apiURL)
+	if err != nil || u.Scheme != "https" || u.Host == "" || !strings.HasSuffix(u.Path, "api.php") {
+		return oauth2.Endpoint{}, fmt.Errorf("cannot derive OAuth endpoints from HTTPS API URL %q", apiURL)
+	}
+	root := *u
+	root.RawQuery = ""
+	root.Fragment = ""
+	root.Path = strings.TrimSuffix(u.Path, "api.php") + "rest.php/oauth2/"
+	root.RawPath = ""
+	authURL := root
+	authURL.Path += "authorize"
+	tokenURL := root
+	tokenURL.Path += "access_token"
+	return oauth2.Endpoint{AuthURL: authURL.String(), TokenURL: tokenURL.String(), AuthStyle: oauth2.AuthStyleInParams}, nil
+}
+
+// WithUserAgent gives OAuth token endpoints the same User-Agent as mw API calls.
+func WithUserAgent(ctx context.Context) context.Context {
+	var base http.RoundTripper = http.DefaultTransport
+	if client, ok := ctx.Value(oauth2.HTTPClient).(*http.Client); ok && client.Transport != nil {
+		base = client.Transport
+	}
+	client := &http.Client{Transport: userAgentTransport{base: base}}
+	return context.WithValue(ctx, oauth2.HTTPClient, client)
+}
+
+type userAgentTransport struct{ base http.RoundTripper }
+
+func (t userAgentTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	clone := req.Clone(req.Context())
+	clone.Header.Set("User-Agent", build.UserAgent())
+	return t.base.RoundTrip(clone)
 }
 
 // AddWikiFlag adds --wiki to cmd.

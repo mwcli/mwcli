@@ -120,7 +120,7 @@ func statusRun(ctx context.Context, f *cmdutil.Factory, opts *statusOptions) err
 			if opts.active && !e.active {
 				continue
 			}
-			if !printEntry(ctx, ios.Out, ios, e, opts.showToken) {
+			if !printEntry(ctx, cfg, ios.Out, ios, e, opts.showToken) {
 				failed = true
 			}
 		}
@@ -131,7 +131,12 @@ func statusRun(ctx context.Context, f *cmdutil.Factory, opts *statusOptions) err
 	return nil
 }
 
-func printEntry(ctx context.Context, w io.Writer, ios *iostreams.IOStreams, e entry, showToken bool) bool {
+func printEntry(ctx context.Context, cfg *config.Config, w io.Writer, ios *iostreams.IOStreams, e entry, showToken bool) bool {
+	if err := cmdutil.RefreshOAuth2IfNeeded(ctx, cfg, cmdutil.Target{Name: e.host, API: e.api}, e.account); err != nil {
+		fmt.Fprintf(w, "  %s Failed to refresh OAuth 2 token for %s account %s (%s)\n", ios.FailureIcon(), e.host, e.user, e.source)
+		fmt.Fprintf(w, "  - Check failed: %v\n", err)
+		return false
+	}
 	c, err := cmdutil.NewClient(e.api, e.account)
 	var u *api.UserInfo
 	if err == nil {
