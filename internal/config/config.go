@@ -324,7 +324,7 @@ func (c *Config) withStoredCredentials() *Config {
 					} else {
 						a.CredentialRef = ""
 						keyringFallbackWarning.Do(func() {
-							fmt.Fprintf(os.Stderr, "warning: could not save credentials in the system keyring; saving them in config.yml instead: %v\n", err)
+							fmt.Fprintf(os.Stderr, "warning: could not save credentials in the system keyring; saving them in config.yml instead: %v; log in again after the keyring is available to move them there\n", err)
 						})
 					}
 				}

@@ -22,21 +22,29 @@ type oauth1Reply struct {
 
 func (r *oauth1Reply) UnmarshalJSON(data []byte) error {
 	var response struct {
-		Key              string `json:"key"`
-		Secret           string `json:"secret"`
-		Token            string `json:"token"`
-		OAuthToken       string `json:"oauth_token"`
-		OAuthTokenSecret string `json:"oauth_token_secret"`
-		Error            *struct {
-			Code string `json:"code"`
-			Info string `json:"info"`
-		} `json:"error"`
+		Key              string          `json:"key"`
+		Secret           string          `json:"secret"`
+		Token            string          `json:"token"`
+		OAuthToken       string          `json:"oauth_token"`
+		OAuthTokenSecret string          `json:"oauth_token_secret"`
+		Error            json.RawMessage `json:"error"`
 	}
 	if err := json.Unmarshal(data, &response); err != nil {
 		return err
 	}
-	if response.Error != nil {
-		return fmt.Errorf("wiki rejected OAuth request (%s): %s", response.Error.Code, response.Error.Info)
+	if len(response.Error) > 0 && string(response.Error) != "null" {
+		var detail struct {
+			Code string `json:"code"`
+			Info string `json:"info"`
+		}
+		if err := json.Unmarshal(response.Error, &detail); err == nil && (detail.Code != "" || detail.Info != "") {
+			return fmt.Errorf("wiki rejected OAuth request (%s): %s", detail.Code, detail.Info)
+		}
+		var message string
+		if err := json.Unmarshal(response.Error, &message); err == nil {
+			return fmt.Errorf("wiki rejected OAuth request: %s", message)
+		}
+		return fmt.Errorf("wiki rejected OAuth request: %s", response.Error)
 	}
 	r.Token = response.OAuthToken
 	if r.Token == "" {

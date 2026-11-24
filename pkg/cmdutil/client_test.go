@@ -89,7 +89,7 @@ func TestRefreshOAuth2PersistsRotatedTokens(t *testing.T) {
 	cfg.Login("wiki", "Alice", account)
 	target := Target{Name: "wiki", LoginKey: "wiki", API: srv.URL + "/w/api.php"}
 	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, srv.Client())
-	require.NoError(t, refreshOAuth2(ctx, cfg, target, account))
+	require.NoError(t, RefreshOAuth2IfNeeded(ctx, cfg, target, account))
 	assert.Equal(t, "fresh-access", account.OAuthToken)
 	assert.Equal(t, "fresh-refresh", account.OAuthRefreshToken)
 	assert.True(t, account.OAuthExpiry.After(time.Now()))

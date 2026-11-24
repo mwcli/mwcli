@@ -42,4 +42,5 @@ func TestOAuth1JSONTokenResponse(t *testing.T) {
 
 	var rejected oauth1Reply
 	assert.Error(t, json.Unmarshal([]byte(`{"error":{"code":"bad","info":"no"}}`), &rejected))
+	assert.EqualError(t, json.Unmarshal([]byte(`{"error":"consumer not found"}`), &rejected), "wiki rejected OAuth request: consumer not found")
 }
