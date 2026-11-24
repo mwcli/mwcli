@@ -167,7 +167,7 @@ func run(ctx context.Context, f *cmdutil.Factory, opts *options) error {
 	if err != nil {
 		return err
 	}
-	c, _, err := cmdutil.Client(cfg, t)
+	c, _, err := cmdutil.Client(ctx, cfg, t)
 	if err != nil {
 		return err
 	}

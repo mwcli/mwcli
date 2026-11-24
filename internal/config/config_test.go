@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -94,11 +93,8 @@ func TestSaveStoresCredentialsInKeyring(t *testing.T) {
 	data, err := os.ReadFile(c.Path())
 	require.NoError(t, err)
 	ref := credentialRef("wiki.example.org", "Alice")
-	if strings.Contains(string(data), ref) {
-		assert.NotContains(t, string(data), "private-token")
-	} else {
-		assert.Contains(t, string(data), "private-token", "fall back to config.yml when the OS keyring is unavailable")
-	}
+	assert.NotContains(t, string(data), "private-token")
+	assert.Contains(t, string(data), ref)
 
 	loaded, err := LoadDir(dir)
 	require.NoError(t, err)
@@ -119,9 +115,29 @@ func TestInsecureStorageKeepsCredentialsInConfig(t *testing.T) {
 	require.NoError(t, err)
 	c.Login("wiki.example.org", "Alice", &Account{Auth: AuthOAuth2, OAuthToken: "private-token", InsecureStorage: true})
 	require.NoError(t, c.Save())
+	require.NoError(t, c.Save())
 
 	data, err := os.ReadFile(c.Path())
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "private-token")
+	assert.NotContains(t, string(data), "credential_ref")
+}
+
+func TestLegacyPlaintextCredentialsStayInConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, configFile)
+	require.NoError(t, os.WriteFile(path, []byte("logins:\n  wiki.example.org:\n    user: Alice\n    users:\n      Alice:\n        auth: oauth2\n        oauth_token: legacy-token\n"), 0o600))
+
+	c, err := LoadDir(dir)
+	require.NoError(t, err)
+	_, account, ok := c.ActiveAccount("wiki.example.org")
+	require.True(t, ok)
+	assert.True(t, account.InsecureStorage)
+	require.NoError(t, c.Save())
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "legacy-token")
+	assert.Contains(t, string(data), "insecure_storage: true")
 	assert.NotContains(t, string(data), "credential_ref")
 }

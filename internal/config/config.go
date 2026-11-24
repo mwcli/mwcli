@@ -81,10 +81,12 @@ const (
 
 // Account is one logged-in user of a site.
 type Account struct {
-	Auth            string `yaml:"auth"`
-	OAuthToken      string `yaml:"oauth_token,omitempty"`
-	CredentialRef   string `yaml:"credential_ref,omitempty"`
-	InsecureStorage bool   `yaml:"-"`
+	Auth              string    `yaml:"auth"`
+	OAuthToken        string    `yaml:"oauth_token,omitempty"`
+	OAuthRefreshToken string    `yaml:"oauth_refresh_token,omitempty"`
+	OAuthExpiry       time.Time `yaml:"oauth_expiry,omitempty"`
+	CredentialRef     string    `yaml:"credential_ref,omitempty"`
+	InsecureStorage   bool      `yaml:"insecure_storage,omitempty"`
 	// OAuthClientID identifies the public OAuth consumer used to obtain the
 	// account's token. It is stored per wiki account, never read from env.
 	OAuthClientID string            `yaml:"oauth_client_id,omitempty"`
@@ -202,6 +204,15 @@ func LoadDir(dir string) (*Config, error) {
 			l.Users = map[string]*Account{}
 		}
 	}
+	for _, login := range c.Logins {
+		for _, account := range login.Users {
+			// Preserve credentials from older plaintext config files. A later save
+			// must not silently move them to a keyring the user did not choose.
+			if account.CredentialRef == "" && hasSecrets(account.secrets()) {
+				account.InsecureStorage = true
+			}
+		}
+	}
 	if err := c.loadCredentials(); err != nil {
 		return nil, err
 	}
@@ -238,27 +249,28 @@ func (c *Config) Save() error {
 }
 
 type accountSecrets struct {
-	OAuthToken     string            `json:"oauth_token,omitempty"`
-	Cookies        map[string]string `json:"cookies,omitempty"`
-	BotPassword    string            `json:"bot_password,omitempty"`
-	ConsumerSecret string            `json:"consumer_secret,omitempty"`
-	AccessToken    string            `json:"access_token,omitempty"`
-	AccessSecret   string            `json:"access_secret,omitempty"`
+	OAuthToken        string            `json:"oauth_token,omitempty"`
+	OAuthRefreshToken string            `json:"oauth_refresh_token,omitempty"`
+	Cookies           map[string]string `json:"cookies,omitempty"`
+	BotPassword       string            `json:"bot_password,omitempty"`
+	ConsumerSecret    string            `json:"consumer_secret,omitempty"`
+	AccessToken       string            `json:"access_token,omitempty"`
+	AccessSecret      string            `json:"access_secret,omitempty"`
 }
 
 func (a *Account) secrets() accountSecrets {
-	return accountSecrets{OAuthToken: a.OAuthToken, Cookies: a.Cookies, BotPassword: a.BotPassword, ConsumerSecret: a.ConsumerSecret, AccessToken: a.AccessToken, AccessSecret: a.AccessSecret}
+	return accountSecrets{OAuthToken: a.OAuthToken, OAuthRefreshToken: a.OAuthRefreshToken, Cookies: a.Cookies, BotPassword: a.BotPassword, ConsumerSecret: a.ConsumerSecret, AccessToken: a.AccessToken, AccessSecret: a.AccessSecret}
 }
 
 func (a *Account) setSecrets(s accountSecrets) {
-	a.OAuthToken, a.Cookies, a.BotPassword = s.OAuthToken, s.Cookies, s.BotPassword
+	a.OAuthToken, a.OAuthRefreshToken, a.Cookies, a.BotPassword = s.OAuthToken, s.OAuthRefreshToken, s.Cookies, s.BotPassword
 	a.ConsumerSecret, a.AccessToken, a.AccessSecret = s.ConsumerSecret, s.AccessToken, s.AccessSecret
 }
 
 func (a *Account) clearSecrets() { a.setSecrets(accountSecrets{}) }
 
 func hasSecrets(s accountSecrets) bool {
-	return s.OAuthToken != "" || len(s.Cookies) != 0 || s.BotPassword != "" || s.ConsumerSecret != "" || s.AccessToken != "" || s.AccessSecret != ""
+	return s.OAuthToken != "" || s.OAuthRefreshToken != "" || len(s.Cookies) != 0 || s.BotPassword != "" || s.ConsumerSecret != "" || s.AccessToken != "" || s.AccessSecret != ""
 }
 
 func credentialRef(site, user string) string {

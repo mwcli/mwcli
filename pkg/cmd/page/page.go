@@ -75,7 +75,7 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 				}
 				return f.Browse(u)
 			}
-			c, _, err := cmdutil.Client(cfg, t)
+			c, _, err := cmdutil.Client(cmd.Context(), cfg, t)
 			if err != nil {
 				return err
 			}
@@ -211,7 +211,7 @@ func saveRun(f *cmdutil.Factory, cmd *cobra.Command, o *editFlags, title string,
 	if err != nil {
 		return err
 	}
-	c, ok, err := cmdutil.Client(cfg, t)
+	c, ok, err := cmdutil.Client(cmd.Context(), cfg, t)
 	if err != nil {
 		return err
 	}

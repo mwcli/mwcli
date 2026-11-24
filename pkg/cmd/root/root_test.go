@@ -25,9 +25,15 @@ import (
 	"github.com/mwcli/mwcli/pkg/iostreams"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zalando/go-keyring"
 )
 
 const goodToken = "good-token"
+
+func TestMain(m *testing.M) {
+	keyring.MockInit()
+	os.Exit(m.Run())
+}
 
 type fakeWiki struct {
 	edits      []map[string]string

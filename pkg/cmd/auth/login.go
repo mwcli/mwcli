@@ -200,21 +200,17 @@ func loginRun(ctx context.Context, f *cmdutil.Factory, opts *loginOptions) error
 	var user string
 	if opts.web {
 		if opts.oauth1 {
-			var consumerKey, consumerSecret string
-			if _, a, ok := cfg.ActiveAccount(t.LoginKey); ok && a.Auth == config.AuthOAuth1 {
-				consumerKey, consumerSecret = a.ConsumerKey, a.ConsumerSecret
+			if !io.CanPrompt() {
+				return cmdutil.FlagErrorf("--oauth1 --web needs an interactive prompt for the consumer credentials and authorization code")
 			}
-			if consumerKey == "" || consumerSecret == "" {
-				if !io.CanPrompt() {
-					return cmdutil.FlagErrorf("--oauth1 --web requires an interactive prompt for the consumer credentials")
-				}
-				fmt.Fprintf(io.ErrOut, "Create an OAuth 1.0a consumer at %s\n", t.PageURL("Special:OAuthConsumerRegistration/propose/oauth1a"))
-				if consumerKey, err = io.PromptContext(ctx, "? Consumer token: "); err != nil {
-					return err
-				}
-				if consumerSecret, err = io.PromptSecretContext(ctx, "? Consumer secret: "); err != nil {
-					return err
-				}
+			fmt.Fprintf(io.ErrOut, "Create or choose an OAuth 1.0a consumer at %s\n", t.PageURL("Special:OAuthConsumerRegistration/propose/oauth1a"))
+			consumerKey, err := io.PromptContext(ctx, "? Consumer token: ")
+			if err != nil {
+				return err
+			}
+			consumerSecret, err := io.PromptSecretContext(ctx, "? Consumer secret: ")
+			if err != nil {
+				return err
 			}
 			account, user, err = oauth1WebLogin(ctx, f, t, consumerKey, consumerSecret)
 		} else {

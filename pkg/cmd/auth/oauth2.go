@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -40,7 +38,7 @@ func oauth2WebLogin(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, c
 	}
 	state := base64.RawURLEncoding.EncodeToString(stateBytes)
 	verifier := oauth2.GenerateVerifier()
-	endpoints, err := oauth2Endpoints(t.API)
+	endpoints, err := cmdutil.OAuth2Endpoint(t.API)
 	if err != nil {
 		return nil, "", err
 	}
@@ -110,11 +108,11 @@ func oauth2WebLogin(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, c
 }
 
 func oauth2Exchange(ctx context.Context, conf *oauth2.Config, verifier, code string, t cmdutil.Target) (*config.Account, string, error) {
-	token, err := conf.Exchange(ctx, code, oauth2.VerifierOption(verifier))
+	token, err := conf.Exchange(cmdutil.WithUserAgent(ctx), code, oauth2.VerifierOption(verifier))
 	if err != nil {
 		return nil, "", fmt.Errorf("exchange OAuth code: %w", err)
 	}
-	account := &config.Account{Auth: config.AuthOAuth2, OAuthToken: token.AccessToken}
+	account := &config.Account{Auth: config.AuthOAuth2, OAuthToken: token.AccessToken, OAuthRefreshToken: token.RefreshToken, OAuthExpiry: token.Expiry}
 	c, err := cmdutil.NewClient(t.API, account)
 	if err != nil {
 		return nil, "", err
@@ -127,22 +125,4 @@ func oauth2Exchange(ctx context.Context, conf *oauth2.Config, verifier, code str
 		return nil, "", fmt.Errorf("check OAuth token: %w", err)
 	}
 	return account, u.Name, nil
-}
-
-func oauth2Endpoints(apiURL string) (oauth2.Endpoint, error) {
-	u, err := url.Parse(apiURL)
-	if err != nil || u.Scheme != "https" || u.Host == "" || !strings.HasSuffix(u.Path, "api.php") {
-		return oauth2.Endpoint{}, fmt.Errorf("cannot derive OAuth endpoints from API URL %q", apiURL)
-	}
-	base := strings.TrimSuffix(u.Path, "api.php") + "rest.php/oauth2/"
-	root := *u
-	root.RawQuery = ""
-	root.Fragment = ""
-	root.Path = base
-	root.RawPath = ""
-	authURL := root
-	authURL.Path += "authorize"
-	tokenURL := root
-	tokenURL.Path += "access_token"
-	return oauth2.Endpoint{AuthURL: authURL.String(), TokenURL: tokenURL.String()}, nil
 }

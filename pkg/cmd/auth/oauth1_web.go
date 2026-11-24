@@ -10,13 +10,46 @@ import (
 	"strings"
 
 	"github.com/mwcli/mwcli/api"
+	"github.com/mwcli/mwcli/internal/build"
 	"github.com/mwcli/mwcli/internal/config"
 	"github.com/mwcli/mwcli/pkg/cmdutil"
 )
 
 type oauth1Reply struct {
-	Token  string `json:"token"`
-	Secret string `json:"key"`
+	Token  string
+	Secret string
+}
+
+func (r *oauth1Reply) UnmarshalJSON(data []byte) error {
+	var response struct {
+		Key              string `json:"key"`
+		Secret           string `json:"secret"`
+		Token            string `json:"token"`
+		OAuthToken       string `json:"oauth_token"`
+		OAuthTokenSecret string `json:"oauth_token_secret"`
+		Error            *struct {
+			Code string `json:"code"`
+			Info string `json:"info"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(data, &response); err != nil {
+		return err
+	}
+	if response.Error != nil {
+		return fmt.Errorf("wiki rejected OAuth request (%s): %s", response.Error.Code, response.Error.Info)
+	}
+	r.Token = response.OAuthToken
+	if r.Token == "" {
+		r.Token = response.Key
+	}
+	if r.Token == "" {
+		r.Token = response.Token
+	}
+	r.Secret = response.OAuthTokenSecret
+	if r.Secret == "" {
+		r.Secret = response.Secret
+	}
+	return nil
 }
 
 func oauth1WebLogin(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, consumerKey, consumerSecret string) (*config.Account, string, error) {
@@ -45,7 +78,7 @@ func oauth1WebLogin(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, c
 		return nil, "", errors.New("wiki returned an incomplete OAuth request token")
 	}
 
-	authorizeURL, err := oauth1URL(t.PageURL("Special:OAuth/authorize"), url.Values{"oauth_token": {requestToken.Token}})
+	authorizeURL, err := oauth1AuthorizeURL(t.PageURL("Special:OAuth/authorize"), consumerKey, requestToken.Token)
 	if err != nil {
 		return nil, "", err
 	}
@@ -95,6 +128,13 @@ func oauth1WebLogin(ctx context.Context, f *cmdutil.Factory, t cmdutil.Target, c
 	return account, u.Name, nil
 }
 
+func oauth1AuthorizeURL(raw, consumerKey, requestToken string) (string, error) {
+	return oauth1URL(raw, url.Values{
+		"oauth_consumer_key": {consumerKey},
+		"oauth_token":        {requestToken},
+	})
+}
+
 func oauth1URL(raw string, params url.Values) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -115,6 +155,7 @@ func oauth1Request(ctx context.Context, method, rawURL string, auth *api.OAuth1)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("User-Agent", build.UserAgent())
 	auth.Sign(req)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
