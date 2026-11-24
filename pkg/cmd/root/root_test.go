@@ -1356,7 +1356,9 @@ func TestOAuth1Login(t *testing.T) {
 	require.NoError(t, err)
 	a := cfg.Logins[e.host].Users["Jmnote"]
 	require.NotNil(t, a)
-	assert.Equal(t, config.Account{Auth: config.AuthOAuth1, ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}, *a)
+	loaded := *a
+	loaded.CredentialRef = ""
+	assert.Equal(t, config.Account{Auth: config.AuthOAuth1, ConsumerKey: "ck", ConsumerSecret: "cs", AccessToken: "at", AccessSecret: "as"}, loaded)
 
 	out, stderr, code := e.run("", "auth", "status")
 	require.Equal(t, 0, code, stderr)

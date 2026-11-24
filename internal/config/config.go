@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/zalando/go-keyring"
@@ -22,6 +23,8 @@ import (
 )
 
 const keyringService = "mwcli"
+
+var keyringFallbackWarning sync.Once
 
 type keyringResult struct {
 	value string
@@ -308,7 +311,9 @@ func (c *Config) withStoredCredentials() *Config {
 						a.CredentialRef = ref
 					} else {
 						a.CredentialRef = ""
-						fmt.Fprintf(os.Stderr, "warning: could not save credentials in the system keyring; saving them in config.yml instead: %v\n", err)
+						keyringFallbackWarning.Do(func() {
+							fmt.Fprintf(os.Stderr, "warning: could not save credentials in the system keyring; saving them in config.yml instead: %v\n", err)
+						})
 					}
 				}
 			}
