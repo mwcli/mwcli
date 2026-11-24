@@ -19,12 +19,15 @@ import (
 )
 
 type loginOptions struct {
-	wiki        string
-	withToken   bool
-	username    string
-	botPassword bool
-	oauth1      bool
-	domain      string
+	wiki            string
+	withToken       bool
+	web             bool
+	clientID        string
+	insecureStorage bool
+	username        string
+	botPassword     bool
+	oauth1          bool
+	domain          string
 }
 
 func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
@@ -40,6 +43,12 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 			extension; otherwise a bot password from Special:BotPasswords, which limits mw
 			to the grants you choose. Create a token on the wiki at
 			Special:OAuthConsumerRegistration/propose/oauth2 with the grants you need.
+			For OAuth 2 browser login with --web, register a public client with the callback
+			URL http://localhost:8765/ and enter its client ID. mw remembers the client ID
+			with that wiki account; it is not read from an environment variable. Add --oauth1
+			to --web to authorize an OAuth 1.0a consumer in the browser instead.
+			Credentials go in the system keyring when available. --insecure-storage writes
+			them in plain text to config.yml.
 			To replace a token, reset the consumer's secret key at
 			Special:OAuthConsumerRegistration/list on the wiki where it was registered
 			(the central wiki of a farm, such as meta.wikimedia.org); the old token
@@ -65,6 +74,7 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 		Example: heredoc.Doc(`
 			# interactive
 			$ mw auth login --wiki mediawiki.org
+			$ mw auth login --wiki mediawiki.org --web --client-id CLIENT_ID
 
 			# token from a file
 			$ mw auth login --wiki mediawiki.org --with-token < token.txt
@@ -82,6 +92,9 @@ func newCmdLogin(f *cmdutil.Factory) *cobra.Command {
 	}
 	cmdutil.AddTargetFlags(cmd, &opts.wiki)
 	cmd.Flags().BoolVar(&opts.withToken, "with-token", false, "Read an OAuth 2 access token, or the four keys with --oauth1, from standard input")
+	cmd.Flags().BoolVarP(&opts.web, "web", "w", false, "Open a browser to log in with OAuth")
+	cmd.Flags().StringVar(&opts.clientID, "client-id", "", "The OAuth 2 public client ID for this wiki")
+	cmd.Flags().BoolVar(&opts.insecureStorage, "insecure-storage", false, "Save credentials in plain text in config.yml instead of the system keyring")
 	cmd.Flags().BoolVar(&opts.oauth1, "oauth1", false, "Log in with an owner-only OAuth 1.0a consumer")
 	cmd.Flags().StringVar(&opts.domain, "domain", "", "The authentication `domain` of a wiki that logs in through LDAP, with --username")
 	cmd.Flags().StringVarP(&opts.username, "username", "u", "", "Log in with this `username` and a password, or a bot password login name such as Alice@mybot")
@@ -96,6 +109,12 @@ func loginRun(ctx context.Context, f *cmdutil.Factory, opts *loginOptions) error
 	}
 	if opts.withToken && opts.username != "" {
 		return cmdutil.FlagErrorf("specify only one of --with-token and --username")
+	}
+	if opts.web && (opts.withToken || opts.username != "") {
+		return cmdutil.FlagErrorf("--web cannot be combined with --with-token or --username")
+	}
+	if opts.clientID != "" && (!opts.web || opts.oauth1) {
+		return cmdutil.FlagErrorf("--client-id needs --web without --oauth1")
 	}
 	if opts.oauth1 && opts.username != "" {
 		return cmdutil.FlagErrorf("specify only one of --oauth1 and --username")
@@ -147,7 +166,7 @@ func loginRun(ctx context.Context, f *cmdutil.Factory, opts *loginOptions) error
 	}
 
 	useToken := opts.withToken
-	if !opts.withToken && !opts.oauth1 && opts.username == "" {
+	if !opts.withToken && !opts.web && !opts.oauth1 && opts.username == "" {
 		if !io.CanPrompt() {
 			return cmdutil.FlagErrorf("--with-token or --username required when not running interactively")
 		}
@@ -179,7 +198,52 @@ func loginRun(ctx context.Context, f *cmdutil.Factory, opts *loginOptions) error
 
 	var account *config.Account
 	var user string
-	if opts.oauth1 {
+	if opts.web {
+		if opts.oauth1 {
+			var consumerKey, consumerSecret string
+			if _, a, ok := cfg.ActiveAccount(t.LoginKey); ok && a.Auth == config.AuthOAuth1 {
+				consumerKey, consumerSecret = a.ConsumerKey, a.ConsumerSecret
+			}
+			if consumerKey == "" || consumerSecret == "" {
+				if !io.CanPrompt() {
+					return cmdutil.FlagErrorf("--oauth1 --web requires an interactive prompt for the consumer credentials")
+				}
+				fmt.Fprintf(io.ErrOut, "Create an OAuth 1.0a consumer at %s\n", t.PageURL("Special:OAuthConsumerRegistration/propose/oauth1a"))
+				if consumerKey, err = io.PromptContext(ctx, "? Consumer token: "); err != nil {
+					return err
+				}
+				if consumerSecret, err = io.PromptSecretContext(ctx, "? Consumer secret: "); err != nil {
+					return err
+				}
+			}
+			account, user, err = oauth1WebLogin(ctx, f, t, consumerKey, consumerSecret)
+		} else {
+			clientID := strings.TrimSpace(opts.clientID)
+			if clientID == "" {
+				if _, a, ok := cfg.ActiveAccount(t.LoginKey); ok {
+					clientID = a.OAuthClientID
+				}
+			}
+			if clientID == "" {
+				if !io.CanPrompt() {
+					return cmdutil.FlagErrorf("--client-id required when not running interactively")
+				}
+				fmt.Fprintf(io.ErrOut, "Register the callback URL http://localhost:8765/ for this OAuth 2 consumer.\n")
+				clientID, err = io.PromptContext(ctx, "? OAuth 2 client ID: ")
+				if err != nil {
+					return err
+				}
+				clientID = strings.TrimSpace(clientID)
+			}
+			if clientID == "" {
+				return cmdutil.FlagErrorf("no OAuth 2 client ID given")
+			}
+			account, user, err = oauth2WebLogin(ctx, f, t, clientID)
+			if account != nil {
+				account.OAuthClientID = clientID
+			}
+		}
+	} else if opts.oauth1 {
 		account, user, err = oauth1Login(ctx, f, t, opts.withToken)
 	} else if useToken {
 		account, user, err = tokenLogin(ctx, f, t, opts.withToken)
@@ -189,6 +253,7 @@ func loginRun(ctx context.Context, f *cmdutil.Factory, opts *loginOptions) error
 	if err != nil {
 		return err
 	}
+	account.InsecureStorage = opts.insecureStorage
 	wasDefaultUnset := cfg.Context == ""
 	cfg.Login(t.LoginKey, user, account)
 	if wasDefaultUnset {

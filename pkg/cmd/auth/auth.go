@@ -20,7 +20,7 @@ func NewCmdAuth(f *cmdutil.Factory) *cobra.Command {
 		Long: heredoc.Doc(`
 			Log in to wikis, switch between accounts and see what each login may do.
 
-			Logins are stored per site in config.yml in the mw configuration directory.
+			Logins are stored per site, with credentials in the system keyring when available.
 			Setting MW_TOKEN uses that OAuth 2 access token instead of stored credentials.
 		`),
 	}

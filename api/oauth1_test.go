@@ -21,6 +21,13 @@ func TestOAuth1SpecExample(t *testing.T) {
 	assert.True(t, strings.HasPrefix(h, "OAuth "))
 }
 
+func TestOAuth1RequestTokenSignatureOmitsToken(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "https://wiki.example.org/index.php?title=Special%3AOAuth%2Finitiate&format=json", nil)
+	require.NoError(t, err)
+	(&OAuth1{ConsumerKey: "consumer", ConsumerSecret: "secret"}).Sign(req)
+	assert.NotContains(t, req.Header.Get("Authorization"), "oauth_token")
+}
+
 // Names that are prefixes of others sort by name first: a before a-b, though
 // "a-b=" sorts before "a=" as a string. Values of one name sort by value.
 func TestBaseStringOrder(t *testing.T) {

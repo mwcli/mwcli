@@ -9,7 +9,7 @@ mwcli recommends an OAuth 2 owner-only token where the wiki has the OAuth extens
 | Bot password | most wikis (on by default) | the grants you chose | delete it at `Special:BotPasswords` |
 | Account password | any wiki | all rights of your account | log out, or change the password |
 
-> Treat tokens, consumer secrets and bot passwords like passwords. mw keeps them in `config.yml`. For account-password logins, mw saves only the session cookies.
+> Treat tokens, consumer secrets and bot passwords like passwords. mw stores them in the system keyring when available, or in `config.yml` when keyring storage is unavailable or `--insecure-storage` is used. For account-password logins, mw saves only the session cookies.
 
 Run `mw auth login` without flags to choose interactively.
 
@@ -19,7 +19,7 @@ Run `mw auth login` without flags to choose interactively.
 - Keep the output of `mw auth token` and `mw auth status --show-token` out of chats, issues and logs.
 - In scripts and CI, pass a token in `MW_TOKEN` from a secret store when you want to avoid saving credentials on disk.
 
-mw stores credentials in plaintext per farm and account in `config.yml` in the configuration directory. On Unix, mw writes the file with mode `0600`. If you are upgrading from a version that used `hosts.yml`, sign in again to populate `config.yml`. The directory is `MW_CONFIG_DIR`, else `$XDG_CONFIG_HOME/mw`, else `%AppData%\mw` on Windows, else `~/.config/mw`.
+mw stores credentials in the system keyring when available. If it cannot use the keyring, it saves credentials in `config.yml` and prints a warning. On Unix, mw writes the file with mode `0600`. Use `mw auth login --insecure-storage` to explicitly save the new login in `config.yml`. If you are upgrading from a version that used `hosts.yml`, sign in again to populate `config.yml`. The directory is `MW_CONFIG_DIR`, else `$XDG_CONFIG_HOME/mw`, else `%AppData%\mw` on Windows, else `~/.config/mw`.
 
 ## OAuth 2 owner-only token
 
@@ -30,6 +30,12 @@ mw stores credentials in plaintext per farm and account in `config.yml` in the c
 **Replace**: open `Special:OAuthConsumerRegistration/list` on the wiki where the consumer was registered, choose the consumer, tick "Reset the secret key to a new value" and submit: the wiki shows a new token and the old one stops working. To log in again to the wiki you use with mw, run `mw auth login --wiki <site> --with-token`; when a script or CI passes the token in `MW_TOKEN`, update that variable or secret instead.
 
 **Revoke**: disable the consumer on the same page.
+
+## OAuth 2 browser login
+
+For an OAuth 2 public client, register the application on the wiki and set its callback URL to `http://localhost:8765/`. Run `mw auth login --wiki <site> --web`; enter the client ID when prompted, or pass it with `--client-id`. mw opens the wiki's authorization page and receives the callback on localhost. The client ID is saved with the account for that site, so it is not shared with other wiki logins or taken from an environment variable. This flow uses PKCE.
+
+For OAuth 1.0a, run `mw auth login --wiki <site> --oauth1 --web`. mw asks for the registered consumer token and secret, opens the wiki's authorization page, then asks for the authorization code shown by the wiki.
 
 ## OAuth 1.0a owner-only consumer
 

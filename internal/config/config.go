@@ -3,6 +3,9 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -12,9 +15,54 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/zalando/go-keyring"
 	"gopkg.in/yaml.v3"
 )
+
+const keyringService = "mwcli"
+
+type keyringResult struct {
+	value string
+	err   error
+}
+
+func keyringGet(service, user string) (string, error) {
+	result := make(chan keyringResult, 1)
+	go func() {
+		value, err := keyring.Get(service, user)
+		result <- keyringResult{value: value, err: err}
+	}()
+	select {
+	case r := <-result:
+		return r.value, r.err
+	case <-time.After(time.Minute):
+		return "", errors.New("timeout while reading system keyring")
+	}
+}
+
+func keyringSet(service, user, secret string) error {
+	result := make(chan error, 1)
+	go func() { result <- keyring.Set(service, user, secret) }()
+	select {
+	case err := <-result:
+		return err
+	case <-time.After(time.Minute):
+		return errors.New("timeout while writing system keyring")
+	}
+}
+
+func keyringDelete(service, user string) error {
+	result := make(chan error, 1)
+	go func() { result <- keyring.Delete(service, user) }()
+	select {
+	case err := <-result:
+		return err
+	case <-time.After(time.Minute):
+		return errors.New("timeout while deleting from system keyring")
+	}
+}
 
 const (
 	// DefaultSite is used when no site is given and none is configured.
@@ -30,9 +78,14 @@ const (
 
 // Account is one logged-in user of a site.
 type Account struct {
-	Auth       string            `yaml:"auth"`
-	OAuthToken string            `yaml:"oauth_token,omitempty"`
-	Cookies    map[string]string `yaml:"cookies,omitempty"`
+	Auth            string `yaml:"auth"`
+	OAuthToken      string `yaml:"oauth_token,omitempty"`
+	CredentialRef   string `yaml:"credential_ref,omitempty"`
+	InsecureStorage bool   `yaml:"-"`
+	// OAuthClientID identifies the public OAuth consumer used to obtain the
+	// account's token. It is stored per wiki account, never read from env.
+	OAuthClientID string            `yaml:"oauth_client_id,omitempty"`
+	Cookies       map[string]string `yaml:"cookies,omitempty"`
 	// BotName and BotPassword are a bot password from Special:BotPasswords:
 	// BotName is the login name, such as Alice@mybot.
 	BotName     string `yaml:"bot_name,omitempty"`
@@ -146,22 +199,149 @@ func LoadDir(dir string) (*Config, error) {
 			l.Users = map[string]*Account{}
 		}
 	}
+	if err := c.loadCredentials(); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
-// Save writes config.yml with owner-only permissions: it holds credentials.
+// Save writes config.yml with owner-only permissions. Credentials go in the
+// system keyring unless an account explicitly requests insecure storage.
 func (c *Config) Save() error {
 	if err := os.MkdirAll(c.Dir, 0o700); err != nil {
 		return err
 	}
-	b, err := yaml.Marshal(c)
+	persisted := c.withStoredCredentials()
+	b, err := yaml.Marshal(persisted)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(string(b)) == "{}" {
 		b = nil
 	}
-	return writeFile(c.Path(), b)
+	oldRefs := readCredentialRefs(c.Path())
+	if err := writeFile(c.Path(), b); err != nil {
+		return err
+	}
+	newRefs := credentialRefs(persisted)
+	for ref := range oldRefs {
+		if !newRefs[ref] {
+			if err := keyringDelete(keyringService, ref); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+				fmt.Fprintf(os.Stderr, "warning: could not remove an unused credential from the system keyring: %v\n", err)
+			}
+		}
+	}
+	return nil
+}
+
+type accountSecrets struct {
+	OAuthToken     string            `json:"oauth_token,omitempty"`
+	Cookies        map[string]string `json:"cookies,omitempty"`
+	BotPassword    string            `json:"bot_password,omitempty"`
+	ConsumerSecret string            `json:"consumer_secret,omitempty"`
+	AccessToken    string            `json:"access_token,omitempty"`
+	AccessSecret   string            `json:"access_secret,omitempty"`
+}
+
+func (a *Account) secrets() accountSecrets {
+	return accountSecrets{OAuthToken: a.OAuthToken, Cookies: a.Cookies, BotPassword: a.BotPassword, ConsumerSecret: a.ConsumerSecret, AccessToken: a.AccessToken, AccessSecret: a.AccessSecret}
+}
+
+func (a *Account) setSecrets(s accountSecrets) {
+	a.OAuthToken, a.Cookies, a.BotPassword = s.OAuthToken, s.Cookies, s.BotPassword
+	a.ConsumerSecret, a.AccessToken, a.AccessSecret = s.ConsumerSecret, s.AccessToken, s.AccessSecret
+}
+
+func (a *Account) clearSecrets() { a.setSecrets(accountSecrets{}) }
+
+func hasSecrets(s accountSecrets) bool {
+	return s.OAuthToken != "" || len(s.Cookies) != 0 || s.BotPassword != "" || s.ConsumerSecret != "" || s.AccessToken != "" || s.AccessSecret != ""
+}
+
+func credentialRef(site, user string) string {
+	h := sha256.Sum256([]byte(site + "\x00" + user))
+	return hex.EncodeToString(h[:])
+}
+
+func (c *Config) loadCredentials() error {
+	for site, login := range c.Logins {
+		for user, account := range login.Users {
+			if account.CredentialRef == "" {
+				continue
+			}
+			data, err := keyringGet(keyringService, account.CredentialRef)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: credentials for %s account %s are unavailable in the system keyring; log in again: %v\n", site, user, err)
+				continue
+			}
+			var secrets accountSecrets
+			if err := json.Unmarshal([]byte(data), &secrets); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not decode credentials for %s account %s from the system keyring; log in again: %v\n", site, user, err)
+				continue
+			}
+			account.setSecrets(secrets)
+		}
+	}
+	return nil
+}
+
+func (c *Config) withStoredCredentials() *Config {
+	stored := *c
+	stored.Logins = make(map[string]*Login, len(c.Logins))
+	for site, login := range c.Logins {
+		l := *login
+		l.Users = make(map[string]*Account, len(login.Users))
+		for user, account := range login.Users {
+			a := *account
+			secrets := a.secrets()
+			if hasSecrets(secrets) {
+				if a.InsecureStorage {
+					a.CredentialRef = ""
+				} else {
+					ref := credentialRef(site, user)
+					data, err := json.Marshal(secrets)
+					if err == nil {
+						err = keyringSet(keyringService, ref, string(data))
+					}
+					if err == nil {
+						a.clearSecrets()
+						a.CredentialRef = ref
+					} else {
+						a.CredentialRef = ""
+						fmt.Fprintf(os.Stderr, "warning: could not save credentials in the system keyring; saving them in config.yml instead: %v\n", err)
+					}
+				}
+			}
+			l.Users[user] = &a
+		}
+		stored.Logins[site] = &l
+	}
+	return &stored
+}
+
+func readCredentialRefs(path string) map[string]bool {
+	refs := map[string]bool{}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return refs
+	}
+	var c Config
+	if yaml.Unmarshal(b, &c) != nil {
+		return refs
+	}
+	return credentialRefs(&c)
+}
+
+func credentialRefs(c *Config) map[string]bool {
+	refs := map[string]bool{}
+	for _, login := range c.Logins {
+		for _, account := range login.Users {
+			if account.CredentialRef != "" {
+				refs[account.CredentialRef] = true
+			}
+		}
+	}
+	return refs
 }
 
 func writeFile(path string, data []byte) error {

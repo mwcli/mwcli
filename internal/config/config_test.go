@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zalando/go-keyring"
 )
 
 func TestDir(t *testing.T) {
@@ -78,4 +80,44 @@ func TestValidSiteName(t *testing.T) {
 	assert.False(t, ValidSiteName(""))
 	assert.False(t, ValidSiteName("farm/x"))
 	assert.False(t, ValidSiteName("a b"))
+}
+
+func TestSaveStoresCredentialsInKeyring(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	c, err := LoadDir(dir)
+	require.NoError(t, err)
+	c.Login("wiki.example.org", "Alice", &Account{Auth: AuthOAuth2, OAuthToken: "private-token"})
+	require.NoError(t, c.Save())
+
+	data, err := os.ReadFile(c.Path())
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "private-token")
+	ref := credentialRef("wiki.example.org", "Alice")
+	assert.Contains(t, string(data), ref)
+
+	loaded, err := LoadDir(dir)
+	require.NoError(t, err)
+	_, account, ok := loaded.ActiveAccount("wiki.example.org")
+	require.True(t, ok)
+	assert.Equal(t, "private-token", account.OAuthToken)
+
+	_, err = loaded.Logout("wiki.example.org", "Alice")
+	require.NoError(t, err)
+	require.NoError(t, loaded.Save())
+	_, err = keyring.Get(keyringService, ref)
+	assert.ErrorIs(t, err, keyring.ErrNotFound)
+}
+
+func TestInsecureStorageKeepsCredentialsInConfig(t *testing.T) {
+	keyring.MockInitWithError(errors.New("keyring unavailable"))
+	c, err := LoadDir(t.TempDir())
+	require.NoError(t, err)
+	c.Login("wiki.example.org", "Alice", &Account{Auth: AuthOAuth2, OAuthToken: "private-token", InsecureStorage: true})
+	require.NoError(t, c.Save())
+
+	data, err := os.ReadFile(c.Path())
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "private-token")
+	assert.NotContains(t, string(data), "credential_ref")
 }
