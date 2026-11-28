@@ -16,7 +16,7 @@ import (
 
 func newCmdDiff(f *cmdutil.Factory) *cobra.Command {
 	var wiki, color string
-	var web bool
+	var web, followRedirects bool
 	cmd := &cobra.Command{
 		Use:   "diff <revision | title> [<revision | title>]",
 		Short: "Show the changes between two revisions",
@@ -28,7 +28,8 @@ func newCmdDiff(f *cmdutil.Factory) *cobra.Command {
 			two, from the first to the second, which may be different pages. A page's
 			first revision is compared with empty text.
 
-			--web opens the wiki's own diff page instead.
+			--follow-redirects resolves page titles through redirects. --web opens the
+			wiki's own diff page instead.
 		`),
 		Example: heredoc.Doc(`
 			# the latest edit of a page
@@ -39,6 +40,9 @@ func newCmdDiff(f *cmdutil.Factory) *cobra.Command {
 
 			# a revision against the current text
 			$ mw page diff 1001 'Main Page'
+
+			# follow a redirect title to its target page
+			$ mw page diff 'Alias' --follow-redirects
 		`),
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -58,14 +62,14 @@ func newCmdDiff(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			newer, err := lookupRevision(cmd.Context(), c, args[len(args)-1])
+			newer, err := lookupRevision(cmd.Context(), c, args[len(args)-1], followRedirects)
 			if err != nil {
 				return err
 			}
 			var older *api.RevisionText
 			switch {
 			case len(args) == 2:
-				if older, err = lookupRevision(cmd.Context(), c, args[0]); err != nil {
+				if older, err = lookupRevision(cmd.Context(), c, args[0], followRedirects); err != nil {
 					return err
 				}
 			case newer.ParentID > 0:
@@ -101,15 +105,16 @@ func newCmdDiff(f *cmdutil.Factory) *cobra.Command {
 	cmdutil.AddTargetFlags(cmd, &wiki)
 	cmd.Flags().BoolVarP(&web, "web", "w", false, "Open the diff in the browser")
 	cmd.Flags().StringVar(&color, "color", "auto", "Use color in diff output: `when` is always, never or auto")
+	cmd.Flags().BoolVar(&followRedirects, "follow-redirects", false, "Follow redirects for title arguments")
 	return cmd
 }
 
 // lookupRevision reads a revision ID, or the latest revision of a title.
-func lookupRevision(ctx context.Context, c *api.Client, arg string) (*api.RevisionText, error) {
+func lookupRevision(ctx context.Context, c *api.Client, arg string, followRedirects bool) (*api.RevisionText, error) {
 	if id, err := strconv.Atoi(arg); err == nil && id > 0 {
 		return c.RevisionByID(ctx, id)
 	}
-	return c.LatestRevision(ctx, arg)
+	return c.LatestRevision(ctx, arg, api.PageOptions{FollowRedirects: followRedirects})
 }
 
 // label names a side of the diff: the title, then after a tab, as diff -u puts

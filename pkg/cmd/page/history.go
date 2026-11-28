@@ -19,6 +19,7 @@ const maxComment = 60
 func newCmdHistory(f *cmdutil.Factory) *cobra.Command {
 	var wiki string
 	var limit int
+	var followRedirects bool
 	var jsonFlags *cmdutil.JSONFlags
 	cmd := &cobra.Command{
 		Use:   "history <title>",
@@ -27,12 +28,14 @@ func newCmdHistory(f *cmdutil.Factory) *cobra.Command {
 			List the revisions of a page, newest first: revision ID, time (UTC), user,
 			size in bytes and edit summary. A minor edit is marked m. On a terminal the
 			columns are aligned and long summaries shortened; otherwise they are
-			separated by tabs, with the time in ISO 8601.
+			separated by tabs, with the time in ISO 8601. --follow-redirects resolves
+			redirects to their target page.
 		`),
 		Example: heredoc.Doc(`
 			$ mw page history 'Main Page'
 			$ mw page history 'Main Page' -L 100 --json revid,user,timestamp
 			$ mw page history 'Main Page' --json revid --jq '.[0].revid'
+			$ mw page history 'Alias' --follow-redirects
 		`),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -55,7 +58,7 @@ func newCmdHistory(f *cmdutil.Factory) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			revs, err := c.History(cmd.Context(), args[0], limit)
+			revs, err := c.History(cmd.Context(), args[0], api.HistoryOptions{Limit: limit, FollowRedirects: followRedirects})
 			if err != nil {
 				return err
 			}
@@ -81,6 +84,7 @@ func newCmdHistory(f *cmdutil.Factory) *cobra.Command {
 	}
 	cmdutil.AddTargetFlags(cmd, &wiki)
 	cmd.Flags().IntVarP(&limit, "limit", "L", 30, "Maximum number of revisions to list")
+	cmd.Flags().BoolVar(&followRedirects, "follow-redirects", false, "Follow redirects to the target page")
 	jsonFlags = cmdutil.AddJSONFlags(cmd, historyFields)
 	return cmd
 }

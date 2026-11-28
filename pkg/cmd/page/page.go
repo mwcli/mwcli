@@ -34,7 +34,7 @@ var viewFields = []string{
 
 func newCmdView(f *cmdutil.Factory) *cobra.Command {
 	var wiki string
-	var web bool
+	var web, followRedirects bool
 	var jsonFlags *cmdutil.JSONFlags
 	cmd := &cobra.Command{
 		Use:   "view <title>",
@@ -43,12 +43,15 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 			Print the wikitext of the latest revision of a page. Public pages need no login.
 
 			With --json, print the named fields instead; --jq filters them. --web opens
-			the page in the browser.
+			the page in the browser. --follow-redirects resolves redirects and prints
+			their target page without showing its title; check --json title before
+			editing.
 		`),
 		Example: heredoc.Doc(`
 			$ mw page view 'Main Page'
 			$ mw page view 'Main Page' --json pageid,url,revision
 			$ mw page view 'Main Page' --json categories --jq '.categories[]'
+			$ mw page view 'Alias' --follow-redirects
 			$ mw page view 'Main Page' --web
 		`),
 		Args: cobra.ExactArgs(1),
@@ -58,6 +61,9 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 			}
 			if web && jsonFlags.Enabled() {
 				return cmdutil.FlagErrorf("specify only one of --web and --json")
+			}
+			if web && followRedirects {
+				return cmdutil.FlagErrorf("specify only one of --web and --follow-redirects")
 			}
 			ios := f.IOStreams
 			cfg, err := f.Config()
@@ -80,13 +86,17 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 				return err
 			}
 			if jsonFlags.Enabled() {
-				info, err := c.PageInfo(cmd.Context(), args[0], api.PageInfoOptions{Content: jsonFlags.Has("content"), Categories: jsonFlags.Has("categories")})
+				info, err := c.PageInfo(cmd.Context(), args[0], api.PageInfoOptions{
+					Content:         jsonFlags.Has("content"),
+					Categories:      jsonFlags.Has("categories"),
+					FollowRedirects: followRedirects,
+				})
 				if err != nil {
 					return err
 				}
 				return jsonFlags.Write(ios.Out, info, ios.IsStdoutTTY())
 			}
-			text, err := c.Page(cmd.Context(), args[0])
+			text, err := c.Page(cmd.Context(), args[0], api.PageOptions{FollowRedirects: followRedirects})
 			if err != nil {
 				return err
 			}
@@ -96,6 +106,7 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 	}
 	cmdutil.AddTargetFlags(cmd, &wiki)
 	cmd.Flags().BoolVarP(&web, "web", "w", false, "Open the page in the browser")
+	cmd.Flags().BoolVar(&followRedirects, "follow-redirects", false, "Follow redirects to the target page")
 	jsonFlags = cmdutil.AddJSONFlags(cmd, viewFields)
 	return cmd
 }
@@ -259,7 +270,7 @@ func saveError(err error, t cmdutil.Target) error {
 // latest revision, or from nothing for a new page, to the text as the wiki
 // would save it.
 func dryRun(ctx context.Context, ios *iostreams.IOStreams, c *api.Client, t cmdutil.Target, title, text string, mode api.EditMode, baseRevID int) error {
-	cur, err := c.LatestRevision(ctx, title)
+	cur, err := c.LatestRevision(ctx, title, api.PageOptions{})
 	switch {
 	case errors.Is(err, api.ErrMissingPage) && mode == api.CreateOnly:
 		cur = nil
