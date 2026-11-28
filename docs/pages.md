@@ -45,7 +45,7 @@ mw page list --links-to 'Main Page' --follow-redirects --filter-redirects nonred
 
 ## Downloading pages
 
-`mw page download` saves the latest revision of pages as files, asking the wiki for fifty pages a request. Name the pages as arguments, give `-` to read titles from standard input one per line, or choose them with the sources of `mw page list` (`--prefix`, `--category`, `--search`, `--links-to`, `--embeds`, `--redirects-to`, `--filter-redirects`, with `--namespace` and `-L`, 30 by default). `--follow-redirects` resolves redirects to their target pages when fetching content, and with `--links-to` also includes pages linking through redirects.
+`mw page download` saves the latest revision of pages as files, asking the wiki for fifty pages a request. Name the pages as arguments, give `-` to read titles from standard input one per line, or choose them with the sources of `mw page list` (`--prefix`, `--category`, `--search`, `--links-to`, `--embeds`, `--redirects-to`, `--filter-redirects`, with `--namespace` and `-L`, 30 by default). `--follow-redirects` resolves redirects to their target pages when fetching content, saving each file under its target title and writing a target only once when multiple titles redirect to it; with `--links-to`, it also includes pages linking through redirects.
 
 ```sh
 mw page download 'Main Page' 'Help:Contents'

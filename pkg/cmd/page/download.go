@@ -120,7 +120,11 @@ func newCmdDownload(f *cmdutil.Factory) *cobra.Command {
 					failed = true
 					continue
 				case p.Missing:
-					fmt.Fprintf(ios.ErrOut, "page does not exist: %s\n", p.Title)
+					if p.Redirected {
+						fmt.Fprintf(ios.ErrOut, "redirect %q points to missing page %s\n", p.Asked, p.Title)
+					} else {
+						fmt.Fprintf(ios.ErrOut, "page does not exist: %s\n", p.Title)
+					}
 					failed = true
 					continue
 				case p.RevID == 0:

@@ -585,6 +585,26 @@ func checkInterwiki(title string, list []interwikiEntry, redirects []redirectEdg
 	return fmt.Errorf("%q is an interwiki title (%s)", title, interwikiTarget(list[0]))
 }
 
+type brokenRedirectError struct {
+	from, to string
+}
+
+func (e brokenRedirectError) Error() string {
+	return fmt.Sprintf("redirect %q points to missing page %s", e.from, e.to)
+}
+
+func (e brokenRedirectError) Unwrap() error { return ErrMissingPage }
+
+func missingPageError(title, target string, redirects []redirectEdge) error {
+	if len(redirects) > 0 {
+		if target == "" {
+			target = redirects[len(redirects)-1].To
+		}
+		return brokenRedirectError{from: title, to: target}
+	}
+	return fmt.Errorf("%w: %s", ErrMissingPage, title)
+}
+
 // Page returns the wikitext of the latest revision of title.
 func (c *Client) Page(ctx context.Context, title string, opts PageOptions) (string, error) {
 	var result struct {
@@ -592,8 +612,9 @@ func (c *Client) Page(ctx context.Context, title string, opts PageOptions) (stri
 			Redirects []redirectEdge   `json:"redirects"`
 			Interwiki []interwikiEntry `json:"interwiki"`
 			Pages     []struct {
-				Missing   bool `json:"missing"`
-				Invalid   bool `json:"invalid"`
+				Title     string `json:"title"`
+				Missing   bool   `json:"missing"`
+				Invalid   bool   `json:"invalid"`
 				Revisions []struct {
 					Slots map[string]struct {
 						Content string `json:"content"`
@@ -620,7 +641,7 @@ func (c *Client) Page(ctx context.Context, title string, opts PageOptions) (stri
 	case p.Invalid:
 		return "", fmt.Errorf("invalid title %q", title)
 	case p.Missing:
-		return "", fmt.Errorf("%w: %s", ErrMissingPage, title)
+		return "", missingPageError(title, p.Title, result.Query.Redirects)
 	case len(p.Revisions) == 0:
 		return "", errors.New("page has no readable revision")
 	}
@@ -810,7 +831,7 @@ func (c *Client) PageInfo(ctx context.Context, title string, opts PageInfoOption
 	case p.Invalid:
 		return nil, fmt.Errorf("invalid title %q", title)
 	case p.Missing:
-		return nil, fmt.Errorf("%w: %s", ErrMissingPage, title)
+		return nil, missingPageError(title, p.Title, result.Query.Redirects)
 	case len(p.Revisions) == 0:
 		return nil, errors.New("page has no readable revision")
 	}
@@ -1068,6 +1089,9 @@ func (c *Client) ListPages(ctx context.Context, opts ListOptions) ([]PageRef, er
 }
 
 func (c *Client) listRedirectsTo(ctx context.Context, opts ListOptions) ([]PageRef, error) {
+	if strings.Contains(opts.Value, "|") {
+		return nil, fmt.Errorf("invalid title %q", opts.Value)
+	}
 	pages := []PageRef{}
 	if opts.Limit <= 0 {
 		return pages, nil
@@ -1248,6 +1272,7 @@ func (c *Client) History(ctx context.Context, title string, opts HistoryOptions)
 				Redirects []redirectEdge   `json:"redirects"`
 				Interwiki []interwikiEntry `json:"interwiki"`
 				Pages     []struct {
+					Title     string         `json:"title"`
 					Missing   bool           `json:"missing"`
 					Invalid   bool           `json:"invalid"`
 					Revisions []HistoryEntry `json:"revisions"`
@@ -1268,7 +1293,7 @@ func (c *Client) History(ctx context.Context, title string, opts HistoryOptions)
 		case p.Invalid:
 			return nil, fmt.Errorf("invalid title %q", title)
 		case p.Missing:
-			return nil, fmt.Errorf("%w: %s", ErrMissingPage, title)
+			return nil, missingPageError(title, p.Title, result.Query.Redirects)
 		}
 		entries = append(entries, p.Revisions...)
 		if len(entries) >= opts.Limit {
@@ -1366,7 +1391,7 @@ func (c *Client) revisionText(ctx context.Context, params url.Values, what strin
 	case p.Invalid:
 		return nil, fmt.Errorf("invalid title %q", what)
 	case p.Missing && len(p.Revisions) == 0:
-		return nil, fmt.Errorf("%w: %s", ErrMissingPage, what)
+		return nil, missingPageError(what, p.Title, result.Query.Redirects)
 	case len(p.Revisions) == 0:
 		return nil, fmt.Errorf("%s has no readable revision", what)
 	}

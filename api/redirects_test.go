@@ -35,6 +35,13 @@ func TestFollowRedirectsReads(t *testing.T) {
 					"interwiki": []any{map[string]string{"title": "wikipedia:Foo", "iw": "wikipedia"}},
 				},
 			})
+		case title == "BrokenRedir" && follow:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"query": map[string]any{
+					"redirects": []any{map[string]string{"from": "BrokenRedir", "to": "MissingTarget"}},
+					"pages":     []any{map[string]any{"title": "MissingTarget", "missing": true}},
+				},
+			})
 		case r.Form.Get("rvprop") == "ids|timestamp|user|comment|size|flags|tags":
 			target := title
 			revs := []any{map[string]any{"revid": 10, "parentid": 0, "timestamp": "2026-11-28T00:00:00Z", "user": "A", "comment": "redir", "size": 20}}
@@ -139,6 +146,29 @@ func TestFollowRedirectsReads(t *testing.T) {
 		err := call.fn()
 		assert.ErrorContains(t, err, `"wikipedia:Foo" is an interwiki title (wikipedia:Foo)`, call.name)
 		assert.NotContains(t, err.Error(), "redirect", call.name)
+	}
+
+	for _, call := range []struct {
+		name string
+		fn   func() error
+	}{
+		{"Page", func() error { _, err := c.Page(ctx, "BrokenRedir", PageOptions{FollowRedirects: true}); return err }},
+		{"PageInfo", func() error {
+			_, err := c.PageInfo(ctx, "BrokenRedir", PageInfoOptions{FollowRedirects: true})
+			return err
+		}},
+		{"History", func() error {
+			_, err := c.History(ctx, "BrokenRedir", HistoryOptions{Limit: 5, FollowRedirects: true})
+			return err
+		}},
+		{"LatestRevision", func() error {
+			_, err := c.LatestRevision(ctx, "BrokenRedir", PageOptions{FollowRedirects: true})
+			return err
+		}},
+	} {
+		err := call.fn()
+		assert.ErrorIs(t, err, ErrMissingPage, call.name)
+		assert.ErrorContains(t, err, `redirect "BrokenRedir" points to missing page MissingTarget`, call.name)
 	}
 	_ = queries
 }
@@ -326,4 +356,6 @@ func TestListPagesRedirects(t *testing.T) {
 	assert.Error(t, err)
 	_, err = c.ListPages(ctx, ListOptions{Source: RedirectsTo, Value: "Bad<", Limit: 5})
 	assert.Error(t, err)
+	_, err = c.ListPages(ctx, ListOptions{Source: RedirectsTo, Value: "Foobar|Main Page", Limit: 5})
+	assert.ErrorContains(t, err, `invalid title "Foobar|Main Page"`)
 }

@@ -471,6 +471,13 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": "Missing", "missing": true}}}})
 			return
 		}
+		if p("titles") == "BrokenRedir" && p("redirects") == "1" {
+			send(map[string]any{"query": map[string]any{
+				"redirects": []any{map[string]string{"from": "BrokenRedir", "to": "MissingTarget"}},
+				"pages":     []any{map[string]any{"title": "MissingTarget", "missing": true}},
+			}})
+			return
+		}
 		if p("titles") == "Alias" && p("redirects") == "1" {
 			rev := map[string]any{"revid": 43, "parentid": 42, "timestamp": "2026-11-22T00:00:00Z", "user": "Jmnote", "comment": "target", "size": 11,
 				"slots": map[string]any{"main": map[string]string{"content": "Target text"}}}
@@ -520,6 +527,10 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			if follow && n == "Alias" {
 				redirects = append(redirects, map[string]string{"from": n, "to": "Target"})
 				n = "Target"
+			}
+			if follow && n == "BrokenRedir" {
+				redirects = append(redirects, map[string]string{"from": n, "to": "MissingTarget"})
+				n = "MissingTarget"
 			}
 			if follow && n == "CrossWiki" {
 				redirects = append(redirects, map[string]string{"from": n, "to": "w:Target"})
@@ -582,6 +593,12 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			id = 210
 		case p("titles") == "Data.json":
 			id = 209
+		case p("titles") == "BrokenRedir" && p("redirects") == "1":
+			send(map[string]any{"query": map[string]any{
+				"redirects": []any{map[string]string{"from": "BrokenRedir", "to": "MissingTarget"}},
+				"pages":     []any{map[string]any{"title": "MissingTarget", "missing": true}},
+			}})
+			return
 		default:
 			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": p("titles"), "missing": true}}}})
 			return
@@ -606,6 +623,13 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			"revid": id, "parentid": r["parentid"], "timestamp": "2026-11-22T00:00:00Z", "user": "Jmnote", "slots": slots}}}}}})
 	case p("prop") == "revisions" && strings.Contains(p("rvprop"), "flags"):
 		// History: revisions 105 down to 101, two per response.
+		if p("titles") == "BrokenRedir" && p("redirects") == "1" {
+			send(map[string]any{"query": map[string]any{
+				"redirects": []any{map[string]string{"from": "BrokenRedir", "to": "MissingTarget"}},
+				"pages":     []any{map[string]any{"title": "MissingTarget", "missing": true}},
+			}})
+			return
+		}
 		if p("titles") == "Missing" {
 			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": "Missing", "missing": true}}}})
 			return
@@ -637,6 +661,13 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	case p("prop") == "revisions":
 		if p("titles") == "wikipedia:Foo" {
 			send(map[string]any{"query": map[string]any{"interwiki": []any{map[string]string{"title": "wikipedia:Foo", "iw": "wikipedia"}}}})
+			return
+		}
+		if p("titles") == "BrokenRedir" && p("redirects") == "1" {
+			send(map[string]any{"query": map[string]any{
+				"redirects": []any{map[string]string{"from": "BrokenRedir", "to": "MissingTarget"}},
+				"pages":     []any{map[string]any{"title": "MissingTarget", "missing": true}},
+			}})
 			return
 		}
 		if p("titles") == "Missing" {
@@ -2780,4 +2811,22 @@ func TestPageRedirects(t *testing.T) {
 		_, stderr, code = e.run("", args...)
 		assert.Equal(t, 2, code, "args=%v stderr=%s", args, stderr)
 	}
+
+	// Redirect pointing to a missing target reports the redirect source and missing target consistently.
+	for _, args := range [][]string{
+		{"page", "view", "--wiki", e.api, "--follow-redirects", "BrokenRedir"},
+		{"page", "view", "--wiki", e.api, "--follow-redirects", "--json", "title", "BrokenRedir"},
+		{"page", "history", "--wiki", e.api, "--follow-redirects", "BrokenRedir"},
+		{"page", "diff", "--wiki", e.api, "--follow-redirects", "BrokenRedir"},
+		{"page", "download", "--wiki", e.api, "--follow-redirects", "--dir", filepath.Join(t.TempDir(), "dl-broken"), "BrokenRedir"},
+	} {
+		_, stderr, code = e.run("", args...)
+		assert.Equal(t, 1, code, "args=%v stderr=%s", args, stderr)
+		assert.Contains(t, stderr, `redirect "BrokenRedir" points to missing page MissingTarget`, "args=%v", args)
+	}
+
+	// --redirects-to rejects pipe-separated multiple titles.
+	_, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--redirects-to", "Foobar|Main Page")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, `invalid title "Foobar|Main Page"`)
 }
