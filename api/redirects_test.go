@@ -170,7 +170,11 @@ func TestFollowRedirectsReads(t *testing.T) {
 		assert.ErrorIs(t, err, ErrMissingPage, call.name)
 		assert.ErrorContains(t, err, `redirect "BrokenRedir" points to missing page MissingTarget`, call.name)
 	}
-	_ = queries
+	require.Len(t, queries, 17)
+	assert.Equal(t, "", queries[0].Get("redirects"))
+	for i := 1; i <= 4; i++ {
+		assert.Equal(t, "1", queries[i].Get("redirects"))
+	}
 }
 
 func TestPagesTextFollowRedirects(t *testing.T) {
@@ -243,6 +247,10 @@ func TestListPagesRedirects(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Form.Get("prop") == "redirects":
+			if r.Form.Get("titles") == "wikt:Hello" {
+				_ = json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"interwiki": []any{map[string]string{"title": "wikt:Hello", "iw": "wikt"}}}})
+				return
+			}
 			if r.Form.Get("titles") == "Bad<" {
 				_ = json.NewEncoder(w).Encode(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": "Bad<", "invalid": true}}}})
 				return
@@ -358,4 +366,6 @@ func TestListPagesRedirects(t *testing.T) {
 	assert.Error(t, err)
 	_, err = c.ListPages(ctx, ListOptions{Source: RedirectsTo, Value: "Foobar|Main Page", Limit: 5})
 	assert.ErrorContains(t, err, `invalid title "Foobar|Main Page"`)
+	_, err = c.ListPages(ctx, ListOptions{Source: RedirectsTo, Value: "wikt:Hello", Limit: 5})
+	assert.ErrorContains(t, err, `"wikt:Hello" is an interwiki title (wikt:Hello)`)
 }

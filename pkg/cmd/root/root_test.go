@@ -294,6 +294,10 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		send(resp)
 	case p("prop") == "redirects":
+		if p("titles") == "wikipedia:Foo" {
+			send(map[string]any{"query": map[string]any{"interwiki": []any{map[string]string{"title": "wikipedia:Foo", "iw": "wikipedia"}}}})
+			return
+		}
 		w.lists = append(w.lists, r.Form)
 		all := []any{
 			map[string]any{"pageid": 10, "ns": 0, "title": "R1"},
@@ -2806,6 +2810,7 @@ func TestPageRedirects(t *testing.T) {
 	for _, args := range [][]string{
 		{"page", "download", "--wiki", e.api, "--redirects-to", "Main Page", "Extra"},
 		{"page", "download", "--wiki", e.api, "--redirects-to", "Main Page", "--filter-redirects", "redirects"},
+		{"page", "download", "--wiki", e.api, "--redirects-to", "Main Page", "--follow-redirects"},
 		{"page", "download", "--wiki", e.api, "--filter-redirects", "invalid"},
 	} {
 		_, stderr, code = e.run("", args...)
@@ -2825,8 +2830,13 @@ func TestPageRedirects(t *testing.T) {
 		assert.Contains(t, stderr, `redirect "BrokenRedir" points to missing page MissingTarget`, "args=%v", args)
 	}
 
-	// --redirects-to rejects pipe-separated multiple titles.
+	// --redirects-to rejects pipe-separated multiple titles and interwiki titles.
 	_, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--redirects-to", "Foobar|Main Page")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, `invalid title "Foobar|Main Page"`)
+
+	_, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--redirects-to", "wikipedia:Foo")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, `"wikipedia:Foo" is an interwiki title (wikipedia:Foo)`)
+	assert.NotContains(t, stderr, "redirect")
 }

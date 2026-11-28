@@ -1110,7 +1110,8 @@ func (c *Client) listRedirectsTo(ctx context.Context, opts ListOptions) ([]PageR
 		}
 		var result struct {
 			Query struct {
-				Pages []struct {
+				Interwiki []interwikiEntry `json:"interwiki"`
+				Pages     []struct {
 					Invalid   bool      `json:"invalid"`
 					Redirects []PageRef `json:"redirects"`
 				} `json:"pages"`
@@ -1118,6 +1119,9 @@ func (c *Client) listRedirectsTo(ctx context.Context, opts ListOptions) ([]PageR
 		}
 		if err := json.Unmarshal(body, &result); err != nil {
 			return nil, fmt.Errorf("decode API response: %w", err)
+		}
+		if err := checkInterwiki(opts.Value, result.Query.Interwiki, nil); err != nil {
+			return nil, err
 		}
 		for _, p := range result.Query.Pages {
 			if p.Invalid {

@@ -56,7 +56,7 @@ mw user contribs Example --json title --jq '.[].title' | sort -u | mw page downl
 
 Files go to the directory of `-D`, `--dir` (the current one by default), named after the title with an extension for the content model: `.wiki` for wikitext, `.js`, `.css`, `.json`, `.lua` for Scribunto modules, and `.txt` for any other; a title that already ends with it, such as `MediaWiki:Common.css`, gets none. `/ \ : * ? " < > |`, control characters and `%` itself are written as `%XX`, as are a leading dot, a final dot or space, and the first letter of a name Windows reserves such as `CON`, so `Help:Edit/ko` becomes `Help%3AEdit%2Fko.wiki` and the title can be read back from the name.
 
-An existing file stops the command unless `--clobber` overwrites it or `--skip-existing` keeps it. Pages that do not exist and invalid titles are reported on standard error, and the command exits with status 1 after saving the rest.
+An existing file stops the command unless `--clobber` overwrites it or `--skip-existing` keeps it. Missing pages, invalid titles, and interwiki titles or redirects are reported on standard error, and the command exits with status 1 after saving the rest.
 
 ## Page history
 

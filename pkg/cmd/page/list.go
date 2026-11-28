@@ -76,6 +76,9 @@ func (l *listFlags) options(cmd *cobra.Command, allowFollowAll bool) (opts api.L
 			return opts, true, cmdutil.FlagErrorf("--filter-redirects cannot be used with %s", sources[0])
 		}
 	}
+	if l.followRedirects && opts.Source == api.RedirectsTo && allowFollowAll {
+		return opts, true, cmdutil.FlagErrorf("--follow-redirects cannot be used with --redirects-to")
+	}
 	if l.followRedirects && !allowFollowAll && opts.Source != api.LinksTo {
 		return opts, true, cmdutil.FlagErrorf("--follow-redirects can only be used with --links-to")
 	}
