@@ -293,9 +293,29 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			resp["continue"] = map[string]any{"uccontinue": fmt.Sprint(end), "continue": "-||"}
 		}
 		send(resp)
+	case p("prop") == "redirects":
+		w.lists = append(w.lists, r.Form)
+		all := []any{
+			map[string]any{"pageid": 10, "ns": 0, "title": "R1"},
+			map[string]any{"pageid": 11, "ns": 0, "title": "R2"},
+		}
+		if p("rdnamespace") == "14" {
+			all = []any{map[string]any{"pageid": 12, "ns": 14, "title": "Category:R3"}}
+		}
+		send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": p("titles"), "redirects": all}}}})
 	case p("list") != "":
 		w.lists = append(w.lists, r.Form)
 		key := p("list")
+		if key == "backlinks" && p("blredirect") == "1" {
+			send(map[string]any{"query": map[string]any{"backlinks": []any{
+				map[string]any{"pageid": 1, "ns": 0, "title": "Direct"},
+				map[string]any{"pageid": 2, "ns": 0, "title": "Redir", "redirect": true, "redirlinks": []any{
+					map[string]any{"pageid": 1, "ns": 0, "title": "Direct"},
+					map[string]any{"pageid": 3, "ns": 0, "title": "ViaRedir"},
+				}},
+			}}})
+			return
+		}
 		all := []any{}
 		if key == "categorymembers" && p("cmnamespace") == "6" {
 			all = []any{
@@ -442,6 +462,24 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": "Missing", "missing": true}}}})
 			return
 		}
+		if p("titles") == "Alias" && p("redirects") == "1" {
+			rev := map[string]any{"revid": 43, "parentid": 42, "timestamp": "2026-11-22T00:00:00Z", "user": "Jmnote", "comment": "target", "size": 11,
+				"slots": map[string]any{"main": map[string]string{"content": "Target text"}}}
+			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{
+				"title": "Target", "pageid": 8, "ns": 0, "fullurl": "https://fake.test/wiki/Target", "contentmodel": "wikitext",
+				"length": 11, "touched": "2026-11-22T00:00:01Z", "revisions": []any{rev},
+			}}}})
+			return
+		}
+		if p("titles") == "Alias" {
+			rev := map[string]any{"revid": 40, "parentid": 0, "timestamp": "2026-11-22T00:00:00Z", "user": "Jmnote", "comment": "redir", "size": 20,
+				"slots": map[string]any{"main": map[string]string{"content": "#REDIRECT [[Target]]"}}}
+			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{
+				"title": "Alias", "pageid": 18, "ns": 0, "fullurl": "https://fake.test/wiki/Alias", "contentmodel": "wikitext",
+				"length": 20, "touched": "2026-11-22T00:00:01Z", "redirect": true, "revisions": []any{rev},
+			}}}})
+			return
+		}
 		rev := map[string]any{"revid": 42, "parentid": 41, "timestamp": "2026-11-22T00:00:00Z", "user": "Jmnote", "comment": "fix", "size": 5,
 			"slots": map[string]any{"main": map[string]string{"content": "Hello"}}}
 		send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{
@@ -456,7 +494,8 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		// whose content comes only in the continued response.
 		titles := strings.Split(p("titles"), "|")
 		w.batches = append(w.batches, len(titles))
-		var normalized, pages []any
+		follow := p("redirects") == "1"
+		var normalized, redirects, interwiki, pages []any
 		for _, t := range titles {
 			n := strings.ReplaceAll(t, "_", " ")
 			if n != "" {
@@ -464,6 +503,15 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			}
 			if n != t {
 				normalized = append(normalized, map[string]string{"from": t, "to": n})
+			}
+			if follow && n == "Alias" {
+				redirects = append(redirects, map[string]string{"from": n, "to": "Target"})
+				n = "Target"
+			}
+			if follow && n == "CrossWiki" {
+				redirects = append(redirects, map[string]string{"from": n, "to": "w:Target"})
+				interwiki = append(interwiki, map[string]string{"title": "w:Target", "iw": "w"})
+				continue
 			}
 			switch {
 			case strings.Contains(n, "<"):
@@ -479,11 +527,15 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				} else if strings.HasPrefix(n, "Module:") {
 					model = "Scribunto"
 				}
+				content := "Text of " + n
+				if !follow && n == "Alias" {
+					content = "#REDIRECT [[Target]]"
+				}
 				pages = append(pages, map[string]any{"title": n, "revisions": []any{map[string]any{"revid": 500 + len(n), "timestamp": "2026-11-22T00:00:00Z",
-					"slots": map[string]any{"main": map[string]string{"contentmodel": model, "content": "Text of " + n}}}}})
+					"slots": map[string]any{"main": map[string]string{"contentmodel": model, "content": content}}}}})
 			}
 		}
-		resp := map[string]any{"query": map[string]any{"normalized": normalized, "pages": pages}}
+		resp := map[string]any{"query": map[string]any{"normalized": normalized, "redirects": redirects, "interwiki": interwiki, "pages": pages}}
 		if strings.Contains(p("titles"), "Big") && p("rvcontinue") == "" {
 			resp["continue"] = map[string]any{"rvcontinue": "1|2", "continue": "||"}
 		}
@@ -501,6 +553,7 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			207: {"title": "Empty", "parentid": 206, "noslot": true},
 			208: {"title": "Empty", "parentid": 206, "nocontent": true},
 			209: {"title": "Data.json", "parentid": 0, "content": "{\n\t\"a\": 1\n}", "model": "json"},
+			210: {"title": "Alias", "parentid": 0, "content": "#REDIRECT [[Sandbox]]"},
 		}
 		id := 0
 		switch {
@@ -510,8 +563,10 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				send(map[string]any{"query": map[string]any{"badrevids": map[string]any{p("revids"): map[string]any{"revid": id, "missing": true}}}})
 				return
 			}
-		case p("titles") == "Sandbox":
+		case p("titles") == "Sandbox" || (p("titles") == "Alias" && p("redirects") == "1"):
 			id = 202
+		case p("titles") == "Alias":
+			id = 210
 		case p("titles") == "Data.json":
 			id = 209
 		default:
@@ -543,6 +598,12 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.lists = append(w.lists, r.Form)
+		if p("titles") == "Alias" && p("redirects") != "1" {
+			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"title": "Alias", "revisions": []any{
+				map[string]any{"revid": 90, "parentid": 0, "timestamp": "2026-11-01T00:00:00Z", "user": "Jmnote", "comment": "redir", "size": 20, "tags": []string{}},
+			}}}}})
+			return
+		}
 		start := 105
 		if c := p("rvcontinue"); c != "" {
 			fmt.Sscan(c, &start)
@@ -563,6 +624,14 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	case p("prop") == "revisions":
 		if p("titles") == "Missing" {
 			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"missing": true}}}})
+			return
+		}
+		if p("titles") == "Alias" {
+			content := "#REDIRECT [[Target]]"
+			if p("redirects") == "1" {
+				content = "Target text"
+			}
+			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"revisions": []any{map[string]any{"slots": map[string]any{"main": map[string]string{"content": content}}}}}}}})
 			return
 		}
 		send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"revisions": []any{map[string]any{"slots": map[string]any{"main": map[string]string{"content": "Hello"}}}}}}}})
@@ -2561,4 +2630,108 @@ func TestFileUploadSmallerParts(t *testing.T) {
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "upload part at byte 0: MediaWiki returned 413 Request Entity Too Large: HTML error page (a server in front of the wiki limits the size of a request)")
 	assert.NotContains(t, stderr, "<html>")
+}
+
+func TestPageRedirects(t *testing.T) {
+	e := newEnv(t)
+
+	// page view without --follow-redirects keeps redirect wikitext.
+	stdout, stderr, code := e.run("", "page", "view", "--wiki", e.api, "Alias")
+	assert.Equal(t, 0, code, stderr)
+	assert.Equal(t, "#REDIRECT [[Target]]", stdout)
+
+	// page view --follow-redirects resolves the target page and metadata.
+	stdout, stderr, code = e.run("", "page", "view", "--wiki", e.api, "--follow-redirects", "Alias")
+	assert.Equal(t, 0, code, stderr)
+	assert.Equal(t, "Target text", stdout)
+
+	stdout, stderr, code = e.run("", "page", "view", "--wiki", e.api, "--follow-redirects", "--json", "title,pageid,redirect,content", "Alias")
+	assert.Equal(t, 0, code, stderr)
+	assert.JSONEq(t, `{"title":"Target","pageid":8,"redirect":false,"content":"Target text"}`, stdout)
+
+	_, stderr, code = e.run("", "page", "view", "--wiki", e.api, "--web", "--follow-redirects", "Alias")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--follow-redirects")
+
+	// page history without vs with --follow-redirects.
+	stdout, stderr, code = e.run("", "page", "history", "--wiki", e.api, "--json", "revid", "Alias")
+	assert.Equal(t, 0, code, stderr)
+	assert.JSONEq(t, `[{"revid":90}]`, stdout)
+
+	stdout, stderr, code = e.run("", "page", "history", "--wiki", e.api, "--follow-redirects", "--json", "revid", "Alias")
+	assert.Equal(t, 0, code, stderr)
+	assert.JSONEq(t, `[{"revid":105},{"revid":104},{"revid":103},{"revid":102},{"revid":101}]`, stdout)
+
+	// page diff without vs with --follow-redirects.
+	stdout, stderr, code = e.run("", "page", "diff", "--wiki", e.api, "Alias")
+	assert.Equal(t, 0, code, stderr)
+	assert.Contains(t, stdout, "+++ Alias\t")
+	assert.NotContains(t, stdout, "+++ Sandbox\t")
+
+	stdout, stderr, code = e.run("", "page", "diff", "--wiki", e.api, "--follow-redirects", "Alias")
+	assert.Equal(t, 0, code, stderr)
+	assert.Contains(t, stdout, "+++ Sandbox\t")
+
+	// page list --redirects-to and namespace filter.
+	stdout, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--redirects-to", "Main Page")
+	assert.Equal(t, 0, code, stderr)
+	assert.Equal(t, "R1\nR2\n", stdout)
+
+	stdout, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--redirects-to", "Main Page", "-n", "14")
+	assert.Equal(t, 0, code, stderr)
+	assert.Equal(t, "Category:R3\n", stdout)
+
+	// page list --links-to with --follow-redirects and --filter-redirects.
+	stdout, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--links-to", "Main Page", "--follow-redirects")
+	assert.Equal(t, 0, code, stderr)
+	assert.Equal(t, "Direct\nRedir\nViaRedir\n", stdout)
+
+	stdout, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--links-to", "Main Page", "--follow-redirects", "--filter-redirects", "nonredirects")
+	assert.Equal(t, 0, code, stderr)
+	assert.Equal(t, "Direct\nViaRedir\n", stdout)
+
+	// Invalid page list flag combinations return exit code 2.
+	for _, args := range [][]string{
+		{"page", "list", "--wiki", e.api, "--redirects-to", "Main Page", "--prefix", "A"},
+		{"page", "list", "--wiki", e.api, "--redirects-to", "Main Page", "--filter-redirects", "redirects"},
+		{"page", "list", "--wiki", e.api, "--prefix", "A", "--follow-redirects"},
+		{"page", "list", "--wiki", e.api, "--filter-redirects", "invalid"},
+	} {
+		_, stderr, code = e.run("", args...)
+		assert.Equal(t, 2, code, "args=%v stderr=%s", args, stderr)
+	}
+
+	// page download --follow-redirects writes under target filename.
+	dlDir := filepath.Join(t.TempDir(), "dl-follow")
+	_, stderr, code = e.run("", "page", "download", "--wiki", e.api, "--follow-redirects", "--dir", dlDir, "Alias")
+	assert.Equal(t, 0, code, stderr)
+	got, err := os.ReadFile(filepath.Join(dlDir, "Target.wiki"))
+	assert.NoError(t, err)
+	assert.Equal(t, "Text of Target", string(got))
+
+	// page download --follow-redirects errors on interwiki redirect.
+	_, stderr, code = e.run("", "page", "download", "--wiki", e.api, "--follow-redirects", "--dir", filepath.Join(t.TempDir(), "dl-iw"), "CrossWiki")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, `redirect "CrossWiki" points to another wiki (w:Target)`)
+
+	// page download --redirects-to downloads all redirects to target.
+	redDir := filepath.Join(t.TempDir(), "dl-redir")
+	_, stderr, code = e.run("", "page", "download", "--wiki", e.api, "--redirects-to", "Main Page", "--dir", redDir)
+	assert.Equal(t, 0, code, stderr)
+	gotR1, err := os.ReadFile(filepath.Join(redDir, "R1.wiki"))
+	assert.NoError(t, err)
+	assert.Equal(t, "Text of R1", string(gotR1))
+	gotR2, err := os.ReadFile(filepath.Join(redDir, "R2.wiki"))
+	assert.NoError(t, err)
+	assert.Equal(t, "Text of R2", string(gotR2))
+
+	// Invalid page download flag combinations return exit code 2.
+	for _, args := range [][]string{
+		{"page", "download", "--wiki", e.api, "--redirects-to", "Main Page", "Extra"},
+		{"page", "download", "--wiki", e.api, "--redirects-to", "Main Page", "--filter-redirects", "redirects"},
+		{"page", "download", "--wiki", e.api, "--filter-redirects", "invalid"},
+	} {
+		_, stderr, code = e.run("", args...)
+		assert.Equal(t, 2, code, "args=%v stderr=%s", args, stderr)
+	}
 }

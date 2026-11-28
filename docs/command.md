@@ -15,11 +15,11 @@ mw
 │   ├── remove  NAME
 │   └── default [NAME]
 ├── page
-│   ├── view    [--wiki WIKI] [-w] [--json FIELDS [-q EXPR]] TITLE
-│   ├── list    [--wiki WIKI] [--prefix TEXT | --category NAME | -S QUERY | --links-to TITLE | --embeds TITLE] [-n ID] [-L N] [--json FIELDS [-q EXPR]]
-│   ├── history [--wiki WIKI] [-L N] [--json FIELDS [-q EXPR]] TITLE
-│   ├── diff    [--wiki WIKI] [-w] [--color WHEN] REV|TITLE [REV|TITLE]
-│   ├── download [--wiki WIKI] [-D DIR] [--clobber | --skip-existing] (TITLE... | - | --prefix TEXT | --category NAME | -S QUERY | --links-to TITLE | --embeds TITLE) [-n ID] [-L N]
+│   ├── view    [--wiki WIKI] [-w] [--follow-redirects] [--json FIELDS [-q EXPR]] TITLE
+│   ├── list    [--wiki WIKI] [--prefix TEXT | --category NAME | -S QUERY | --links-to TITLE | --embeds TITLE | --redirects-to TITLE] [--filter-redirects MODE] [--follow-redirects] [-n ID] [-L N] [--json FIELDS [-q EXPR]]
+│   ├── history [--wiki WIKI] [--follow-redirects] [-L N] [--json FIELDS [-q EXPR]] TITLE
+│   ├── diff    [--wiki WIKI] [-w] [--color WHEN] [--follow-redirects] REV|TITLE [REV|TITLE]
+│   ├── download [--wiki WIKI] [-D DIR] [--clobber | --skip-existing] [--follow-redirects] (TITLE... | - | --prefix TEXT | --category NAME | -S QUERY | --links-to TITLE | --embeds TITLE | --redirects-to TITLE) [--filter-redirects MODE] [-n ID] [-L N]
 │   ├── create  [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] [--dry-run] (--text WIKITEXT | -F FILE) TITLE
 │   ├── edit    [--wiki WIKI] [-s SUMMARY] [--minor] [--bot] [--baserevid ID] [--dry-run] (--text WIKITEXT | -F FILE) TITLE
 │   ├── move    [--wiki WIKI] [--reason TEXT] [--move-talk] [--move-subpages] [--no-redirect] TITLE NEW-TITLE

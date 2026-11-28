@@ -548,11 +548,46 @@ func (c *Client) CurrentUser(ctx context.Context) (*UserInfo, error) {
 // ErrMissingPage means the page does not exist.
 var ErrMissingPage = errors.New("page does not exist")
 
+// PageOptions configures how a page is read.
+type PageOptions struct {
+	// FollowRedirects resolves redirects to their target page.
+	FollowRedirects bool
+}
+
+type redirectEdge struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+type interwikiRedirect struct {
+	Title string `json:"title"`
+	IW    string `json:"iw"`
+}
+
+func interwikiTarget(iw interwikiRedirect) string {
+	switch {
+	case iw.Title != "" && iw.IW != "" && !strings.HasPrefix(iw.Title, iw.IW+":"):
+		return iw.IW + ":" + iw.Title
+	case iw.Title != "":
+		return iw.Title
+	default:
+		return iw.IW
+	}
+}
+
+func checkInterwiki(title string, list []interwikiRedirect) error {
+	if len(list) == 0 {
+		return nil
+	}
+	return fmt.Errorf("redirect %q points to another wiki (%s)", title, interwikiTarget(list[0]))
+}
+
 // Page returns the wikitext of the latest revision of title.
-func (c *Client) Page(ctx context.Context, title string) (string, error) {
+func (c *Client) Page(ctx context.Context, title string, opts PageOptions) (string, error) {
 	var result struct {
 		Query struct {
-			Pages []struct {
+			Interwiki []interwikiRedirect `json:"interwiki"`
+			Pages     []struct {
 				Missing   bool `json:"missing"`
 				Invalid   bool `json:"invalid"`
 				Revisions []struct {
@@ -564,7 +599,13 @@ func (c *Client) Page(ctx context.Context, title string) (string, error) {
 		} `json:"query"`
 	}
 	params := url.Values{"action": {"query"}, "prop": {"revisions"}, "rvprop": {"content"}, "rvslots": {"main"}, "titles": {title}}
+	if opts.FollowRedirects {
+		params.Set("redirects", "1")
+	}
 	if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
+		return "", err
+	}
+	if err := checkInterwiki(title, result.Query.Interwiki); err != nil {
 		return "", err
 	}
 	if len(result.Query.Pages) != 1 {
@@ -725,6 +766,8 @@ type PageInfoOptions struct {
 	// Categories fetches every category, hidden ones included, following
 	// continuation until the list is complete.
 	Categories bool
+	// FollowRedirects resolves redirects to their target page.
+	FollowRedirects bool
 }
 
 // PageInfo returns information about a page and its latest revision.
@@ -742,11 +785,17 @@ func (c *Client) PageInfo(ctx context.Context, title string, opts PageInfoOption
 		"inprop": {"url|protection"},
 		"rvprop": {rvprop}, "rvslots": {"main"},
 	}
+	if opts.FollowRedirects {
+		params.Set("redirects", "1")
+	}
 	if opts.Categories {
 		params.Set("cllimit", "max")
 	}
 	var result pageInfoResponse
 	if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
+		return nil, err
+	}
+	if err := checkInterwiki(title, result.Query.Interwiki); err != nil {
 		return nil, err
 	}
 	if len(result.Query.Pages) != 1 {
@@ -800,7 +849,8 @@ func (c *Client) PageInfo(ctx context.Context, title string, opts PageInfoOption
 type pageInfoResponse struct {
 	Continue map[string]string `json:"continue"`
 	Query    struct {
-		Pages []struct {
+		Interwiki []interwikiRedirect `json:"interwiki"`
+		Pages     []struct {
 			Title        string       `json:"title"`
 			PageID       int          `json:"pageid"`
 			NS           int          `json:"ns"`
@@ -846,6 +896,8 @@ const (
 	LinksTo
 	// EmbeddedIn lists the pages that transclude a title, such as a template.
 	EmbeddedIn
+	// RedirectsTo lists the pages that redirect to a title.
+	RedirectsTo
 )
 
 // ListOptions selects the pages ListPages returns.
@@ -857,11 +909,36 @@ type ListOptions struct {
 	Namespace *int
 	// Limit is the most pages to return.
 	Limit int
+	// FilterRedirects filters redirects ("all", "redirects", "nonredirects")
+	// for AllPages, LinksTo and EmbeddedIn.
+	FilterRedirects string
+	// FollowRedirects, with LinksTo, also lists pages linking through
+	// redirects (blredirect).
+	FollowRedirects bool
 }
 
 // ListPages returns up to opts.Limit pages from one list module, following
 // continuation across requests.
 func (c *Client) ListPages(ctx context.Context, opts ListOptions) ([]PageRef, error) {
+	switch opts.FilterRedirects {
+	case "", "all", "redirects", "nonredirects":
+	default:
+		return nil, fmt.Errorf("invalid redirect filter %q", opts.FilterRedirects)
+	}
+	if opts.FilterRedirects != "" && opts.FilterRedirects != "all" {
+		switch opts.Source {
+		case AllPages, LinksTo, EmbeddedIn:
+		default:
+			return nil, fmt.Errorf("redirect filter cannot be used with this list source")
+		}
+	}
+	if opts.FollowRedirects && opts.Source != LinksTo {
+		return nil, fmt.Errorf("follow redirects can only be used with LinksTo")
+	}
+	if opts.Source == RedirectsTo {
+		return c.listRedirectsTo(ctx, opts)
+	}
+
 	var list, prefix string
 	switch opts.Source {
 	case AllPages:
@@ -892,18 +969,45 @@ func (c *Client) ListPages(ctx context.Context, opts ListOptions) ([]PageRef, er
 		base.Set("srinfo", "")
 	case LinksTo:
 		base.Set("bltitle", opts.Value)
+		if opts.FollowRedirects {
+			base.Set("blredirect", "1")
+		}
 	case EmbeddedIn:
 		base.Set("eititle", opts.Value)
 	}
 	if opts.Namespace != nil {
 		base.Set(prefix+"namespace", fmt.Sprint(*opts.Namespace))
 	}
+	if opts.FilterRedirects != "" && opts.FilterRedirects != "all" {
+		base.Set(prefix+"filterredir", opts.FilterRedirects)
+	}
 	pages := []PageRef{}
 	if opts.Limit <= 0 {
 		return pages, nil
 	}
+	perReq := 500
+	if opts.Source == LinksTo && opts.FollowRedirects {
+		// MediaWiki halves the maximum limit when blredirect is enabled.
+		perReq = 250
+	}
+	seenIDs := map[int]bool{}
+	seenTitles := map[string]bool{}
+	addPage := func(p PageRef) {
+		if p.PageID > 0 {
+			if seenIDs[p.PageID] {
+				return
+			}
+			seenIDs[p.PageID] = true
+		} else {
+			if seenTitles[p.Title] {
+				return
+			}
+			seenTitles[p.Title] = true
+		}
+		pages = append(pages, p)
+	}
 	// Each request asks for no more than the pages still wanted.
-	base.Set(prefix+"limit", fmt.Sprint(min(opts.Limit, 500)))
+	base.Set(prefix+"limit", fmt.Sprint(min(opts.Limit, perReq)))
 	for body, err := range c.Paginate(ctx, http.MethodGet, base) {
 		if err != nil {
 			return nil, err
@@ -914,17 +1018,81 @@ func (c *Client) ListPages(ctx context.Context, opts ListOptions) ([]PageRef, er
 		if err := json.Unmarshal(body, &result); err != nil {
 			return nil, fmt.Errorf("decode API response: %w", err)
 		}
-		var batch []PageRef
 		if raw, ok := result.Query[list]; ok {
-			if err := json.Unmarshal(raw, &batch); err != nil {
-				return nil, fmt.Errorf("decode API response: %w", err)
+			if opts.Source == LinksTo && opts.FollowRedirects {
+				var batch []struct {
+					PageRef
+					Redirect   bool      `json:"redirect"`
+					RedirLinks []PageRef `json:"redirlinks"`
+				}
+				if err := json.Unmarshal(raw, &batch); err != nil {
+					return nil, fmt.Errorf("decode API response: %w", err)
+				}
+				for _, item := range batch {
+					if !(item.Redirect && opts.FilterRedirects == "nonredirects") {
+						addPage(item.PageRef)
+					}
+					for _, rl := range item.RedirLinks {
+						addPage(rl)
+					}
+				}
+			} else {
+				var batch []PageRef
+				if err := json.Unmarshal(raw, &batch); err != nil {
+					return nil, fmt.Errorf("decode API response: %w", err)
+				}
+				pages = append(pages, batch...)
 			}
 		}
-		pages = append(pages, batch...)
 		if len(pages) >= opts.Limit {
 			break
 		}
-		base.Set(prefix+"limit", fmt.Sprint(min(opts.Limit-len(pages), 500)))
+		base.Set(prefix+"limit", fmt.Sprint(min(opts.Limit-len(pages), perReq)))
+	}
+	if len(pages) > opts.Limit {
+		pages = pages[:opts.Limit]
+	}
+	return pages, nil
+}
+
+func (c *Client) listRedirectsTo(ctx context.Context, opts ListOptions) ([]PageRef, error) {
+	pages := []PageRef{}
+	if opts.Limit <= 0 {
+		return pages, nil
+	}
+	base := url.Values{
+		"action": {"query"}, "prop": {"redirects"}, "titles": {opts.Value},
+		"rdprop": {"pageid|title"},
+	}
+	if opts.Namespace != nil {
+		base.Set("rdnamespace", fmt.Sprint(*opts.Namespace))
+	}
+	base.Set("rdlimit", fmt.Sprint(min(opts.Limit, 500)))
+	for body, err := range c.Paginate(ctx, http.MethodGet, base) {
+		if err != nil {
+			return nil, err
+		}
+		var result struct {
+			Query struct {
+				Pages []struct {
+					Invalid   bool      `json:"invalid"`
+					Redirects []PageRef `json:"redirects"`
+				} `json:"pages"`
+			} `json:"query"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("decode API response: %w", err)
+		}
+		for _, p := range result.Query.Pages {
+			if p.Invalid {
+				return nil, fmt.Errorf("invalid title %q", opts.Value)
+			}
+			pages = append(pages, p.Redirects...)
+		}
+		if len(pages) >= opts.Limit {
+			break
+		}
+		base.Set("rdlimit", fmt.Sprint(min(opts.Limit-len(pages), 500)))
 	}
 	if len(pages) > opts.Limit {
 		pages = pages[:opts.Limit]
@@ -1038,17 +1206,26 @@ type HistoryEntry struct {
 	Tags  []string `json:"tags"`
 }
 
-// History returns up to limit revisions of title, newest first, following
+// HistoryOptions configures History.
+type HistoryOptions struct {
+	Limit           int
+	FollowRedirects bool
+}
+
+// History returns up to opts.Limit revisions of title, newest first, following
 // continuation across requests.
-func (c *Client) History(ctx context.Context, title string, limit int) ([]HistoryEntry, error) {
+func (c *Client) History(ctx context.Context, title string, opts HistoryOptions) ([]HistoryEntry, error) {
 	entries := []HistoryEntry{}
-	if limit <= 0 {
+	if opts.Limit <= 0 {
 		return entries, nil
 	}
 	params := url.Values{
 		"action": {"query"}, "prop": {"revisions"}, "titles": {title},
 		"rvprop":  {"ids|timestamp|user|comment|size|flags|tags"},
-		"rvlimit": {fmt.Sprint(min(limit, 500))},
+		"rvlimit": {fmt.Sprint(min(opts.Limit, 500))},
+	}
+	if opts.FollowRedirects {
+		params.Set("redirects", "1")
 	}
 	for body, err := range c.Paginate(ctx, http.MethodGet, params) {
 		if err != nil {
@@ -1056,7 +1233,8 @@ func (c *Client) History(ctx context.Context, title string, limit int) ([]Histor
 		}
 		var result struct {
 			Query struct {
-				Pages []struct {
+				Interwiki []interwikiRedirect `json:"interwiki"`
+				Pages     []struct {
 					Missing   bool           `json:"missing"`
 					Invalid   bool           `json:"invalid"`
 					Revisions []HistoryEntry `json:"revisions"`
@@ -1065,6 +1243,9 @@ func (c *Client) History(ctx context.Context, title string, limit int) ([]Histor
 		}
 		if err := json.Unmarshal(body, &result); err != nil {
 			return nil, fmt.Errorf("decode API response: %w", err)
+		}
+		if err := checkInterwiki(title, result.Query.Interwiki); err != nil {
+			return nil, err
 		}
 		if len(result.Query.Pages) != 1 {
 			return nil, fmt.Errorf("page %q not found", title)
@@ -1077,13 +1258,13 @@ func (c *Client) History(ctx context.Context, title string, limit int) ([]Histor
 			return nil, fmt.Errorf("%w: %s", ErrMissingPage, title)
 		}
 		entries = append(entries, p.Revisions...)
-		if len(entries) >= limit {
+		if len(entries) >= opts.Limit {
 			break
 		}
-		params.Set("rvlimit", fmt.Sprint(min(limit-len(entries), 500)))
+		params.Set("rvlimit", fmt.Sprint(min(opts.Limit-len(entries), 500)))
 	}
-	if len(entries) > limit {
-		entries = entries[:limit]
+	if len(entries) > opts.Limit {
+		entries = entries[:opts.Limit]
 	}
 	for i := range entries {
 		if entries[i].Tags == nil {
@@ -1114,8 +1295,12 @@ func (c *Client) RevisionByID(ctx context.Context, revid int) (*RevisionText, er
 }
 
 // LatestRevision returns the latest revision of title and its wikitext.
-func (c *Client) LatestRevision(ctx context.Context, title string) (*RevisionText, error) {
-	return c.revisionText(ctx, url.Values{"titles": {title}}, title)
+func (c *Client) LatestRevision(ctx context.Context, title string, opts PageOptions) (*RevisionText, error) {
+	params := url.Values{"titles": {title}}
+	if opts.FollowRedirects {
+		params.Set("redirects", "1")
+	}
+	return c.revisionText(ctx, params, title)
 }
 
 func (c *Client) revisionText(ctx context.Context, params url.Values, what string) (*RevisionText, error) {
@@ -1125,6 +1310,7 @@ func (c *Client) revisionText(ctx context.Context, params url.Values, what strin
 	params.Set("rvslots", "main")
 	var result struct {
 		Query struct {
+			Interwiki []interwikiRedirect `json:"interwiki"`
 			// badrevids is an object keyed by revision ID, also in formatversion 2.
 			BadRevIDs map[string]json.RawMessage `json:"badrevids"`
 			Pages     []struct {
@@ -1150,6 +1336,9 @@ func (c *Client) revisionText(ctx context.Context, params url.Values, what strin
 		} `json:"query"`
 	}
 	if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
+		return nil, err
+	}
+	if err := checkInterwiki(what, result.Query.Interwiki); err != nil {
 		return nil, err
 	}
 	if len(result.Query.BadRevIDs) > 0 {

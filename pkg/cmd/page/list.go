@@ -16,23 +16,28 @@ var listFields = []string{"title", "pageid", "ns"}
 
 // listFlags are the sources of pages `mw page list` and `mw page download` share.
 type listFlags struct {
-	prefix, category, search, linksTo, embeds string
-	namespace, limit                          int
+	prefix, category, search, linksTo, embeds, redirectsTo string
+	filterRedirects                                        string
+	followRedirects                                        bool
+	namespace, limit                                       int
 }
 
-func (l *listFlags) add(cmd *cobra.Command, limitUsage string) {
+func (l *listFlags) add(cmd *cobra.Command, limitUsage, followUsage string) {
 	cmd.Flags().StringVar(&l.prefix, "prefix", "", "Pages whose titles start with `text`")
 	cmd.Flags().StringVar(&l.category, "category", "", "Members of a `category`, with or without its namespace prefix")
 	cmd.Flags().StringVarP(&l.search, "search", "S", "", "Results of a full-text search for `query`")
 	cmd.Flags().StringVar(&l.linksTo, "links-to", "", "Pages that link to `title`")
 	cmd.Flags().StringVar(&l.embeds, "embeds", "", "Pages that transclude `title`, such as a template")
+	cmd.Flags().StringVar(&l.redirectsTo, "redirects-to", "", "Pages that redirect to `title`")
+	cmd.Flags().StringVar(&l.filterRedirects, "filter-redirects", "all", "Filter redirects: `mode` is all, redirects or nonredirects")
+	cmd.Flags().BoolVar(&l.followRedirects, "follow-redirects", false, followUsage)
 	cmd.Flags().IntVarP(&l.namespace, "namespace", "n", 0, "Limit the pages to one namespace `ID`")
 	cmd.Flags().IntVarP(&l.limit, "limit", "L", 30, limitUsage)
 }
 
 // options checks the flags and returns the list they ask for; set reports
-// whether a source flag or --namespace was given.
-func (l *listFlags) options(cmd *cobra.Command) (opts api.ListOptions, set bool, err error) {
+// whether a list source or filter was given.
+func (l *listFlags) options(cmd *cobra.Command, allowFollowAll bool) (opts api.ListOptions, set bool, err error) {
 	opts = api.ListOptions{Source: api.AllPages, Limit: l.limit}
 	var sources []string
 	for _, s := range []struct {
@@ -45,6 +50,7 @@ func (l *listFlags) options(cmd *cobra.Command) (opts api.ListOptions, set bool,
 		{"search", api.Search, l.search},
 		{"links-to", api.LinksTo, l.linksTo},
 		{"embeds", api.EmbeddedIn, l.embeds},
+		{"redirects-to", api.RedirectsTo, l.redirectsTo},
 	} {
 		if cmd.Flags().Changed(s.flag) {
 			sources = append(sources, "--"+s.flag)
@@ -57,13 +63,30 @@ func (l *listFlags) options(cmd *cobra.Command) (opts api.ListOptions, set bool,
 	if len(sources) == 1 && opts.Source != api.AllPages && strings.TrimSpace(opts.Value) == "" {
 		return opts, true, cmdutil.FlagErrorf("%s needs a value", sources[0])
 	}
+	switch l.filterRedirects {
+	case "all", "redirects", "nonredirects":
+	default:
+		return opts, true, cmdutil.FlagErrorf("invalid value for --filter-redirects: %q; use all, redirects or nonredirects", l.filterRedirects)
+	}
+	if cmd.Flags().Changed("filter-redirects") {
+		switch opts.Source {
+		case api.AllPages, api.LinksTo, api.EmbeddedIn:
+		default:
+			return opts, true, cmdutil.FlagErrorf("--filter-redirects cannot be used with %s", sources[0])
+		}
+	}
+	if l.followRedirects && !allowFollowAll && opts.Source != api.LinksTo {
+		return opts, true, cmdutil.FlagErrorf("--follow-redirects can only be used with --links-to")
+	}
 	if l.limit < 1 {
 		return opts, true, cmdutil.FlagErrorf("invalid limit: %d", l.limit)
 	}
 	if cmd.Flags().Changed("namespace") {
 		opts.Namespace = &l.namespace
 	}
-	return opts, len(sources) > 0 || opts.Namespace != nil, nil
+	opts.FilterRedirects = l.filterRedirects
+	opts.FollowRedirects = l.followRedirects && opts.Source == api.LinksTo
+	return opts, len(sources) > 0 || opts.Namespace != nil || cmd.Flags().Changed("filter-redirects"), nil
 }
 
 // list fetches the pages of opts, after resolving a namespace in --prefix
@@ -93,9 +116,13 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 		Long: heredoc.Doc(`
 			List page titles, one per line. Without a source, all pages are listed in
 			title order. Choose at most one source: --prefix, --category, --search,
-			--links-to or --embeds. --namespace limits any of them to one namespace ID.
-			A --prefix may start with a namespace, such as Help:, which picks that
-			namespace.
+			--links-to, --embeds or --redirects-to. --namespace limits any of them to
+			one namespace ID. A --prefix may start with a namespace, such as Help:, which
+			picks that namespace.
+
+			--filter-redirects filters redirects (all, redirects or nonredirects) with
+			--prefix, --links-to, --embeds or no source. With --links-to,
+			--follow-redirects also lists pages that link through redirects.
 		`),
 		Example: heredoc.Doc(`
 			$ mw page list --prefix 'Sand'
@@ -103,13 +130,16 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 			$ mw page list --category 'Living people' -L 100
 			$ mw page list --search 'jq json' --json title,pageid
 			$ mw page list --embeds 'Template:Infobox' --namespace 0
+			$ mw page list --redirects-to 'Main Page'
+			$ mw page list --links-to 'Main Page' --follow-redirects
+			$ mw page list --prefix 'Sand' --filter-redirects nonredirects
 		`),
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := jsonFlags.Validate(); err != nil {
 				return err
 			}
-			opts, _, err := lf.options(cmd)
+			opts, _, err := lf.options(cmd, false)
 			if err != nil {
 				return err
 			}
@@ -144,7 +174,7 @@ func newCmdList(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 	cmdutil.AddTargetFlags(cmd, &wiki)
-	lf.add(cmd, "Maximum number of pages to list")
+	lf.add(cmd, "Maximum number of pages to list", "With --links-to, include pages linking through redirects")
 	jsonFlags = cmdutil.AddJSONFlags(cmd, listFields)
 	return cmd
 }

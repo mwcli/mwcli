@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/MakeNowJust/heredoc"
+	"github.com/mwcli/mwcli/api"
 	"github.com/mwcli/mwcli/pkg/cmdutil"
 	"github.com/spf13/cobra"
 )
@@ -26,7 +27,11 @@ func newCmdDownload(f *cmdutil.Factory) *cobra.Command {
 			Save the latest revision of pages as files, fifty pages a request. Name the
 			pages as arguments, read them one per line from standard input with -, or
 			choose them as 'mw page list' does: --prefix, --category, --search,
-			--links-to, --embeds, --namespace and --limit.
+			--links-to, --embeds, --redirects-to, --filter-redirects, --namespace and
+			--limit.
+
+			--follow-redirects resolves redirects to their target page when fetching
+			content, and with --links-to also includes pages linking through redirects.
 
 			Each page is saved in the directory of --dir as its title with an extension
 			for its content model, unless the title ends with it: .wiki for wikitext,
@@ -40,12 +45,13 @@ func newCmdDownload(f *cmdutil.Factory) *cobra.Command {
 		`),
 		Example: heredoc.Doc(`
 			$ mw page download 'Main Page' 'Help:Contents'
+			$ mw page download 'Alias' --follow-redirects
 			$ mw page download --category 'Living people' -L 500 --dir people
 			$ mw page download --prefix 'Manual:Hooks/' -L 5000 --skip-existing
 			$ mw user contribs Example --json title --jq '.[].title' | sort -u | mw page download -
 		`),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts, sourceSet, err := lf.options(cmd)
+			opts, sourceSet, err := lf.options(cmd, true)
 			if err != nil {
 				return err
 			}
@@ -90,7 +96,7 @@ func newCmdDownload(f *cmdutil.Factory) *cobra.Command {
 				}
 				return nil
 			}
-			texts, err := c.PagesText(cmd.Context(), titles)
+			texts, err := c.PagesText(cmd.Context(), titles, api.PageOptions{FollowRedirects: lf.followRedirects})
 			if err != nil {
 				return f.Hint(err)
 			}
@@ -103,6 +109,10 @@ func newCmdDownload(f *cmdutil.Factory) *cobra.Command {
 				switch {
 				case p.Invalid:
 					fmt.Fprintf(ios.ErrOut, "invalid title %q\n", p.Asked)
+					failed = true
+					continue
+				case p.Interwiki != "":
+					fmt.Fprintf(ios.ErrOut, "redirect %q points to another wiki (%s)\n", p.Asked, p.Interwiki)
 					failed = true
 					continue
 				case p.Missing:
@@ -149,7 +159,7 @@ func newCmdDownload(f *cmdutil.Factory) *cobra.Command {
 	cmd.Flags().StringVarP(&dir, "dir", "D", ".", "The `directory` to save the files in")
 	cmd.Flags().BoolVar(&clobber, "clobber", false, "Overwrite existing files")
 	cmd.Flags().BoolVar(&skipExisting, "skip-existing", false, "Keep existing files and skip those pages")
-	lf.add(cmd, "Maximum number of pages to download from a source")
+	lf.add(cmd, "Maximum number of pages to download from a source", "Follow redirects to target pages (and through redirects with --links-to)")
 	return cmd
 }
 

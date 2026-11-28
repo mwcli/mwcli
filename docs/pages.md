@@ -2,7 +2,7 @@
 
 ## Viewing a page
 
-`mw page view TITLE` prints the wikitext of the latest revision. `--web` (`-w`) opens the page in the browser instead (`MW_BROWSER`, else `BROWSER`, else the system opener). The browser setting is a program path, spaces allowed, or a command line with arguments where a path with spaces is quoted.
+`mw page view TITLE` prints the wikitext of the latest revision. `--follow-redirects` resolves redirects to their target page instead of printing the redirect itself. `--web` (`-w`) opens the page in the browser instead (`MW_BROWSER`, else `BROWSER`, else the system opener). The browser setting is a program path, spaces allowed, or a command line with arguments where a path with spaces is quoted.
 
 `mw browse [TITLE]` opens a page, or the main page with no title, without reading it first, so special pages such as `Special:RecentChanges` work too. `--no-browser` (`-n`) prints the URL instead of opening it:
 
@@ -15,6 +15,7 @@ mw browse 'Main Page' -n
 ```sh
 mw page view 'Main Page' --json pageid,url,revision
 mw page view 'Main Page' --json categories --jq '.categories[]'
+mw page view 'Alias' --follow-redirects
 ```
 
 ## Listing pages
@@ -28,6 +29,9 @@ mw page view 'Main Page' --json categories --jq '.categories[]'
 | `-S`, `--search QUERY` | full-text search results | `list=search` |
 | `--links-to TITLE` | pages that link to `TITLE` | `list=backlinks` |
 | `--embeds TITLE` | pages that transclude `TITLE`, such as a template | `list=embeddedin` |
+| `--redirects-to TITLE` | pages that redirect to `TITLE` | `prop=redirects` |
+
+`--filter-redirects all|redirects|nonredirects` (`all` by default) filters redirects with `--prefix`, `--links-to`, `--embeds` or no source. With `--links-to`, `--follow-redirects` also lists pages that link to `TITLE` through redirects.
 
 `-n`, `--namespace ID` limits the list to one namespace; `-L`, `--limit` sets the most pages (30 by default), fetched across as many requests as needed. `--json` takes `title`, `pageid` and `ns` and prints an array; `--jq` filters it.
 
@@ -35,14 +39,17 @@ mw page view 'Main Page' --json categories --jq '.categories[]'
 mw page list --category 'Living people' -L 100
 mw page list --prefix 'Help:Edit'
 mw page list --embeds 'Template:Infobox' --namespace 0 --json title --jq '.[].title'
+mw page list --redirects-to 'Main Page'
+mw page list --links-to 'Main Page' --follow-redirects --filter-redirects nonredirects
 ```
 
 ## Downloading pages
 
-`mw page download` saves the latest revision of pages as files, asking the wiki for fifty pages a request. Name the pages as arguments, give `-` to read titles from standard input one per line, or choose them with the sources of `mw page list` (`--prefix`, `--category`, `--search`, `--links-to`, `--embeds`, with `--namespace` and `-L`, 30 by default).
+`mw page download` saves the latest revision of pages as files, asking the wiki for fifty pages a request. Name the pages as arguments, give `-` to read titles from standard input one per line, or choose them with the sources of `mw page list` (`--prefix`, `--category`, `--search`, `--links-to`, `--embeds`, `--redirects-to`, `--filter-redirects`, with `--namespace` and `-L`, 30 by default). `--follow-redirects` resolves redirects to their target pages when fetching content, and with `--links-to` also includes pages linking through redirects.
 
 ```sh
 mw page download 'Main Page' 'Help:Contents'
+mw page download 'Alias' --follow-redirects
 mw page download --category 'Living people' -L 500 --dir people
 mw user contribs Example --json title --jq '.[].title' | sort -u | mw page download -
 ```
@@ -55,11 +62,12 @@ An existing file stops the command unless `--clobber` overwrites it or `--skip-e
 
 `mw page history TITLE` lists the revisions of a page, newest first: revision ID, time in UTC, user, size in bytes, `m` for a minor edit, and the edit summary. On a terminal the columns line up, counting Korean, Japanese and Chinese characters as two cells, and long summaries are shortened; in a pipe the columns are separated by tabs, with the full time in ISO 8601 and the full summary, its line breaks and tabs turned into spaces and other spacing kept.
 
-`-L`, `--limit` sets the most revisions (30 by default), fetched across as many requests as needed. `--json` takes `revid`, `parentid`, `timestamp`, `user`, `comment`, `size`, `minor` and `tags` and prints an array; `--jq` filters it. A user or summary hidden by an administrator is empty.
+`--follow-redirects` resolves redirects to their target page. `-L`, `--limit` sets the most revisions (30 by default), fetched across as many requests as needed. `--json` takes `revid`, `parentid`, `timestamp`, `user`, `comment`, `size`, `minor` and `tags` and prints an array; `--jq` filters it. A user or summary hidden by an administrator is empty.
 
 ```sh
 mw page history 'Main Page' -L 5
 mw page history 'Main Page' --json revid --jq '.[0].revid'
+mw page history 'Alias' --follow-redirects
 ```
 
 ## Contributions of a user
@@ -75,7 +83,7 @@ The JSON fields are named as in the MediaWiki API (`list=usercontribs`): `revid`
 
 ## Comparing revisions
 
-`mw page diff` prints the changes between two revisions of wikitext as a unified diff, which tools such as `patch` and editors understand. A number is a revision ID; anything else is a page title, meaning its latest revision.
+`mw page diff` prints the changes between two revisions of wikitext as a unified diff, which tools such as `patch` and editors understand. A number is a revision ID; anything else is a page title, meaning its latest revision. `--follow-redirects` resolves title arguments through redirects.
 
 - `mw page diff A`: the changes made by revision `A`, or by the latest edit of page `A`, from the revision before it. A page's first revision is compared with empty text (`/dev/null`).
 - `mw page diff A B`: from `A` to `B`, which may be revisions of different pages.
