@@ -559,12 +559,12 @@ type redirectEdge struct {
 	To   string `json:"to"`
 }
 
-type interwikiRedirect struct {
+type interwikiEntry struct {
 	Title string `json:"title"`
 	IW    string `json:"iw"`
 }
 
-func interwikiTarget(iw interwikiRedirect) string {
+func interwikiTarget(iw interwikiEntry) string {
 	switch {
 	case iw.Title != "" && iw.IW != "" && !strings.HasPrefix(iw.Title, iw.IW+":"):
 		return iw.IW + ":" + iw.Title
@@ -575,18 +575,22 @@ func interwikiTarget(iw interwikiRedirect) string {
 	}
 }
 
-func checkInterwiki(title string, list []interwikiRedirect) error {
+func checkInterwiki(title string, list []interwikiEntry, redirects []redirectEdge) error {
 	if len(list) == 0 {
 		return nil
 	}
-	return fmt.Errorf("redirect %q points to another wiki (%s)", title, interwikiTarget(list[0]))
+	if len(redirects) > 0 {
+		return fmt.Errorf("redirect %q points to another wiki (%s)", title, interwikiTarget(list[0]))
+	}
+	return fmt.Errorf("%q is an interwiki title (%s)", title, interwikiTarget(list[0]))
 }
 
 // Page returns the wikitext of the latest revision of title.
 func (c *Client) Page(ctx context.Context, title string, opts PageOptions) (string, error) {
 	var result struct {
 		Query struct {
-			Interwiki []interwikiRedirect `json:"interwiki"`
+			Redirects []redirectEdge   `json:"redirects"`
+			Interwiki []interwikiEntry `json:"interwiki"`
 			Pages     []struct {
 				Missing   bool `json:"missing"`
 				Invalid   bool `json:"invalid"`
@@ -605,7 +609,7 @@ func (c *Client) Page(ctx context.Context, title string, opts PageOptions) (stri
 	if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
 		return "", err
 	}
-	if err := checkInterwiki(title, result.Query.Interwiki); err != nil {
+	if err := checkInterwiki(title, result.Query.Interwiki, result.Query.Redirects); err != nil {
 		return "", err
 	}
 	if len(result.Query.Pages) != 1 {
@@ -795,7 +799,7 @@ func (c *Client) PageInfo(ctx context.Context, title string, opts PageInfoOption
 	if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
 		return nil, err
 	}
-	if err := checkInterwiki(title, result.Query.Interwiki); err != nil {
+	if err := checkInterwiki(title, result.Query.Interwiki, result.Query.Redirects); err != nil {
 		return nil, err
 	}
 	if len(result.Query.Pages) != 1 {
@@ -849,7 +853,8 @@ func (c *Client) PageInfo(ctx context.Context, title string, opts PageInfoOption
 type pageInfoResponse struct {
 	Continue map[string]string `json:"continue"`
 	Query    struct {
-		Interwiki []interwikiRedirect `json:"interwiki"`
+		Redirects []redirectEdge   `json:"redirects"`
+		Interwiki []interwikiEntry `json:"interwiki"`
 		Pages     []struct {
 			Title        string       `json:"title"`
 			PageID       int          `json:"pageid"`
@@ -1029,7 +1034,14 @@ func (c *Client) ListPages(ctx context.Context, opts ListOptions) ([]PageRef, er
 					return nil, fmt.Errorf("decode API response: %w", err)
 				}
 				for _, item := range batch {
-					if !(item.Redirect && opts.FilterRedirects == "nonredirects") {
+					includeItem := true
+					switch opts.FilterRedirects {
+					case "nonredirects":
+						includeItem = !item.Redirect
+					case "redirects":
+						includeItem = item.Redirect
+					}
+					if includeItem {
 						addPage(item.PageRef)
 					}
 					for _, rl := range item.RedirLinks {
@@ -1233,7 +1245,8 @@ func (c *Client) History(ctx context.Context, title string, opts HistoryOptions)
 		}
 		var result struct {
 			Query struct {
-				Interwiki []interwikiRedirect `json:"interwiki"`
+				Redirects []redirectEdge   `json:"redirects"`
+				Interwiki []interwikiEntry `json:"interwiki"`
 				Pages     []struct {
 					Missing   bool           `json:"missing"`
 					Invalid   bool           `json:"invalid"`
@@ -1244,7 +1257,7 @@ func (c *Client) History(ctx context.Context, title string, opts HistoryOptions)
 		if err := json.Unmarshal(body, &result); err != nil {
 			return nil, fmt.Errorf("decode API response: %w", err)
 		}
-		if err := checkInterwiki(title, result.Query.Interwiki); err != nil {
+		if err := checkInterwiki(title, result.Query.Interwiki, result.Query.Redirects); err != nil {
 			return nil, err
 		}
 		if len(result.Query.Pages) != 1 {
@@ -1310,7 +1323,8 @@ func (c *Client) revisionText(ctx context.Context, params url.Values, what strin
 	params.Set("rvslots", "main")
 	var result struct {
 		Query struct {
-			Interwiki []interwikiRedirect `json:"interwiki"`
+			Redirects []redirectEdge   `json:"redirects"`
+			Interwiki []interwikiEntry `json:"interwiki"`
 			// badrevids is an object keyed by revision ID, also in formatversion 2.
 			BadRevIDs map[string]json.RawMessage `json:"badrevids"`
 			Pages     []struct {
@@ -1338,7 +1352,7 @@ func (c *Client) revisionText(ctx context.Context, params url.Values, what strin
 	if err := c.request(ctx, http.MethodGet, params, &result); err != nil {
 		return nil, err
 	}
-	if err := checkInterwiki(what, result.Query.Interwiki); err != nil {
+	if err := checkInterwiki(what, result.Query.Interwiki, result.Query.Redirects); err != nil {
 		return nil, err
 	}
 	if len(result.Query.BadRevIDs) > 0 {

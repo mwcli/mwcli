@@ -18,8 +18,10 @@ type PageText struct {
 	Timestamp    string
 	ContentModel string
 	Content      string
-	// Interwiki is set when following redirects reached a page on another wiki.
+	// Interwiki is set for a direct interwiki title or a redirect to another wiki.
 	Interwiki string
+	// Redirected is true when following redirects moved from Asked to another title.
+	Redirected bool
 	// Missing is set for a page that does not exist, Invalid for a title the
 	// wiki does not accept; neither has a revision.
 	Missing, Invalid bool
@@ -50,16 +52,18 @@ func (c *Client) PagesText(ctx context.Context, titles []string, opts PageOption
 			t = n
 		}
 		seen := map[string]bool{t: true}
+		redirected := false
 		for {
 			next, ok := redir[t]
 			if !ok || seen[next] {
 				break
 			}
 			seen[next] = true
+			redirected = true
 			t = next
 		}
 		if iw, ok := interwiki[t]; ok {
-			out = append(out, PageText{Asked: asked, Title: t, Interwiki: iw})
+			out = append(out, PageText{Asked: asked, Title: t, Interwiki: iw, Redirected: redirected})
 			continue
 		}
 		p, ok := byTitle[t]
@@ -67,6 +71,7 @@ func (c *Client) PagesText(ctx context.Context, titles []string, opts PageOption
 			return nil, fmt.Errorf("API did not return %q", asked)
 		}
 		p.Asked = asked
+		p.Redirected = redirected
 		out = append(out, p)
 	}
 	return out, nil
@@ -103,9 +108,9 @@ func (c *Client) pagesText(ctx context.Context, titles []string, opts PageOption
 		}
 		var result struct {
 			Query struct {
-				Normalized []redirectEdge      `json:"normalized"`
-				Redirects  []redirectEdge      `json:"redirects"`
-				Interwiki  []interwikiRedirect `json:"interwiki"`
+				Normalized []redirectEdge   `json:"normalized"`
+				Redirects  []redirectEdge   `json:"redirects"`
+				Interwiki  []interwikiEntry `json:"interwiki"`
 				Pages      []struct {
 					Title     string `json:"title"`
 					Missing   bool   `json:"missing"`

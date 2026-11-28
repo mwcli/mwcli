@@ -68,7 +68,8 @@ func (l *listFlags) options(cmd *cobra.Command, allowFollowAll bool) (opts api.L
 	default:
 		return opts, true, cmdutil.FlagErrorf("invalid value for --filter-redirects: %q; use all, redirects or nonredirects", l.filterRedirects)
 	}
-	if cmd.Flags().Changed("filter-redirects") {
+	filterActive := l.filterRedirects != "all"
+	if filterActive {
 		switch opts.Source {
 		case api.AllPages, api.LinksTo, api.EmbeddedIn:
 		default:
@@ -86,7 +87,7 @@ func (l *listFlags) options(cmd *cobra.Command, allowFollowAll bool) (opts api.L
 	}
 	opts.FilterRedirects = l.filterRedirects
 	opts.FollowRedirects = l.followRedirects && opts.Source == api.LinksTo
-	return opts, len(sources) > 0 || opts.Namespace != nil || cmd.Flags().Changed("filter-redirects"), nil
+	return opts, len(sources) > 0 || opts.Namespace != nil || filterActive, nil
 }
 
 // list fetches the pages of opts, after resolving a namespace in --prefix

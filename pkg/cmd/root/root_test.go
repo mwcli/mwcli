@@ -307,6 +307,15 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		w.lists = append(w.lists, r.Form)
 		key := p("list")
 		if key == "backlinks" && p("blredirect") == "1" {
+			if p("blfilterredir") == "redirects" {
+				send(map[string]any{"query": map[string]any{"backlinks": []any{
+					map[string]any{"pageid": 1, "ns": 0, "title": "Direct"},
+					map[string]any{"pageid": 2, "ns": 0, "title": "Redir", "redirect": true, "redirlinks": []any{
+						map[string]any{"pageid": 4, "ns": 0, "title": "DoubleRedir"},
+					}},
+				}}})
+				return
+			}
 			send(map[string]any{"query": map[string]any{"backlinks": []any{
 				map[string]any{"pageid": 1, "ns": 0, "title": "Direct"},
 				map[string]any{"pageid": 2, "ns": 0, "title": "Redir", "redirect": true, "redirlinks": []any{
@@ -497,6 +506,10 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		follow := p("redirects") == "1"
 		var normalized, redirects, interwiki, pages []any
 		for _, t := range titles {
+			if t == "wikipedia:Foo" {
+				interwiki = append(interwiki, map[string]string{"title": "wikipedia:Foo", "iw": "wikipedia"})
+				continue
+			}
 			n := strings.ReplaceAll(t, "_", " ")
 			if n != "" {
 				n = strings.ToUpper(n[:1]) + n[1:]
@@ -622,6 +635,10 @@ func (w *fakeWiki) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 		send(resp)
 	case p("prop") == "revisions":
+		if p("titles") == "wikipedia:Foo" {
+			send(map[string]any{"query": map[string]any{"interwiki": []any{map[string]string{"title": "wikipedia:Foo", "iw": "wikipedia"}}}})
+			return
+		}
 		if p("titles") == "Missing" {
 			send(map[string]any{"query": map[string]any{"pages": []any{map[string]any{"missing": true}}}})
 			return
@@ -2690,6 +2707,16 @@ func TestPageRedirects(t *testing.T) {
 	assert.Equal(t, 0, code, stderr)
 	assert.Equal(t, "Direct\nViaRedir\n", stdout)
 
+	stdout, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--links-to", "Main Page", "--follow-redirects", "--filter-redirects", "redirects")
+	assert.Equal(t, 0, code, stderr)
+	assert.Equal(t, "Redir\nDoubleRedir\n", stdout)
+
+	// Explicit --filter-redirects all is a no-op with any source.
+	_, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--category", "Foo", "--filter-redirects", "all")
+	assert.Equal(t, 0, code, stderr)
+	_, stderr, code = e.run("", "page", "list", "--wiki", e.api, "--redirects-to", "Main Page", "--filter-redirects", "all")
+	assert.Equal(t, 0, code, stderr)
+
 	// Invalid page list flag combinations return exit code 2.
 	for _, args := range [][]string{
 		{"page", "list", "--wiki", e.api, "--redirects-to", "Main Page", "--prefix", "A"},
@@ -2701,6 +2728,12 @@ func TestPageRedirects(t *testing.T) {
 		assert.Equal(t, 2, code, "args=%v stderr=%s", args, stderr)
 	}
 
+	// Direct interwiki title reports an interwiki title error without calling it a redirect.
+	_, stderr, code = e.run("", "page", "view", "--wiki", e.api, "wikipedia:Foo")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, `"wikipedia:Foo" is an interwiki title (wikipedia:Foo)`)
+	assert.NotContains(t, stderr, "redirect")
+
 	// page download --follow-redirects writes under target filename.
 	dlDir := filepath.Join(t.TempDir(), "dl-follow")
 	_, stderr, code = e.run("", "page", "download", "--wiki", e.api, "--follow-redirects", "--dir", dlDir, "Alias")
@@ -2709,10 +2742,23 @@ func TestPageRedirects(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "Text of Target", string(got))
 
-	// page download --follow-redirects errors on interwiki redirect.
+	// page download --filter-redirects all with positional titles succeeds.
+	allDir := filepath.Join(t.TempDir(), "dl-all")
+	_, stderr, code = e.run("", "page", "download", "--wiki", e.api, "--filter-redirects", "all", "--dir", allDir, "Alias")
+	assert.Equal(t, 0, code, stderr)
+	gotAlias, err := os.ReadFile(filepath.Join(allDir, "Alias.wiki"))
+	assert.NoError(t, err)
+	assert.Equal(t, "#REDIRECT [[Target]]", string(gotAlias))
+
+	// page download --follow-redirects errors on interwiki redirect, and direct interwiki uses distinct wording.
 	_, stderr, code = e.run("", "page", "download", "--wiki", e.api, "--follow-redirects", "--dir", filepath.Join(t.TempDir(), "dl-iw"), "CrossWiki")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, `redirect "CrossWiki" points to another wiki (w:Target)`)
+
+	_, stderr, code = e.run("", "page", "download", "--wiki", e.api, "--dir", filepath.Join(t.TempDir(), "dl-direct-iw"), "wikipedia:Foo")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, stderr, `"wikipedia:Foo" is an interwiki title (wikipedia:Foo)`)
+	assert.NotContains(t, stderr, "redirect")
 
 	// page download --redirects-to downloads all redirects to target.
 	redDir := filepath.Join(t.TempDir(), "dl-redir")

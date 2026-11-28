@@ -25,7 +25,14 @@ func TestFollowRedirectsReads(t *testing.T) {
 		case title == "Interwiki" && follow:
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"query": map[string]any{
+					"redirects": []any{map[string]string{"from": "Interwiki", "to": "w:Target"}},
 					"interwiki": []any{map[string]string{"title": "w:Target", "iw": "w"}},
+				},
+			})
+		case title == "wikipedia:Foo":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"query": map[string]any{
+					"interwiki": []any{map[string]string{"title": "wikipedia:Foo", "iw": "wikipedia"}},
 				},
 			})
 		case r.Form.Get("rvprop") == "ids|timestamp|user|comment|size|flags|tags":
@@ -119,6 +126,20 @@ func TestFollowRedirectsReads(t *testing.T) {
 
 	_, err = c.LatestRevision(ctx, "Interwiki", PageOptions{FollowRedirects: true})
 	assert.ErrorContains(t, err, `redirect "Interwiki" points to another wiki (w:Target)`)
+
+	for _, call := range []struct {
+		name string
+		fn   func() error
+	}{
+		{"Page", func() error { _, err := c.Page(ctx, "wikipedia:Foo", PageOptions{}); return err }},
+		{"PageInfo", func() error { _, err := c.PageInfo(ctx, "wikipedia:Foo", PageInfoOptions{}); return err }},
+		{"History", func() error { _, err := c.History(ctx, "wikipedia:Foo", HistoryOptions{Limit: 5}); return err }},
+		{"LatestRevision", func() error { _, err := c.LatestRevision(ctx, "wikipedia:Foo", PageOptions{}); return err }},
+	} {
+		err := call.fn()
+		assert.ErrorContains(t, err, `"wikipedia:Foo" is an interwiki title (wikipedia:Foo)`, call.name)
+		assert.NotContains(t, err.Error(), "redirect", call.name)
+	}
 	_ = queries
 }
 
@@ -130,6 +151,7 @@ func TestPagesTextFollowRedirects(t *testing.T) {
 		resp := map[string]any{
 			"query": map[string]any{
 				"normalized": []any{map[string]string{"from": "alias1", "to": "Alias1"}},
+				"interwiki":  []any{map[string]string{"title": "wikipedia:Foo", "iw": "wikipedia"}},
 				"pages": []any{
 					map[string]any{"title": "Target", "revisions": []any{map[string]any{"revid": 50, "slots": map[string]any{"main": map[string]string{"contentmodel": "wikitext", "content": "Target text"}}}}},
 					map[string]any{"title": "BrokenTarget", "missing": true},
@@ -145,6 +167,7 @@ func TestPagesTextFollowRedirects(t *testing.T) {
 			}
 			resp["query"].(map[string]any)["interwiki"] = []any{
 				map[string]string{"title": "en:Main Page", "iw": "en"},
+				map[string]string{"title": "wikipedia:Foo", "iw": "wikipedia"},
 			}
 		} else {
 			resp["query"].(map[string]any)["pages"] = []any{
@@ -159,19 +182,27 @@ func TestPagesTextFollowRedirects(t *testing.T) {
 	require.NoError(t, err)
 	ctx := context.Background()
 
-	got, err := c.PagesText(ctx, []string{"alias1"}, PageOptions{})
+	got, err := c.PagesText(ctx, []string{"alias1", "wikipedia:Foo"}, PageOptions{})
 	require.NoError(t, err)
-	require.Len(t, got, 1)
+	require.Len(t, got, 2)
 	assert.Equal(t, "#REDIRECT [[Alias2]]", got[0].Content)
+	assert.False(t, got[0].Redirected)
+	assert.Equal(t, "wikipedia:Foo", got[1].Interwiki)
+	assert.False(t, got[1].Redirected)
 
-	got, err = c.PagesText(ctx, []string{"alias1", "Broken", "External"}, PageOptions{FollowRedirects: true})
+	got, err = c.PagesText(ctx, []string{"alias1", "Broken", "External", "wikipedia:Foo"}, PageOptions{FollowRedirects: true})
 	require.NoError(t, err)
-	require.Len(t, got, 3)
+	require.Len(t, got, 4)
 	assert.Equal(t, "Target", got[0].Title)
 	assert.Equal(t, "Target text", got[0].Content)
+	assert.True(t, got[0].Redirected)
 	assert.True(t, got[1].Missing)
 	assert.Equal(t, "BrokenTarget", got[1].Title)
+	assert.True(t, got[1].Redirected)
 	assert.Equal(t, "en:Main Page", got[2].Interwiki)
+	assert.True(t, got[2].Redirected)
+	assert.Equal(t, "wikipedia:Foo", got[3].Interwiki)
+	assert.False(t, got[3].Redirected)
 }
 
 func TestListPagesRedirects(t *testing.T) {
@@ -197,6 +228,20 @@ func TestListPagesRedirects(t *testing.T) {
 				"query": map[string]any{"pages": []any{map[string]any{"title": "Main Page", "redirects": []any{map[string]any{"pageid": 12, "ns": 0, "title": "R3"}}}}},
 			})
 		case r.Form.Get("list") == "backlinks" && r.Form.Get("blredirect") == "1":
+			if r.Form.Get("blfilterredir") == "redirects" {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"query": map[string]any{"backlinks": []any{
+						map[string]any{"pageid": 1, "ns": 0, "title": "Direct"},
+						map[string]any{
+							"pageid": 2, "ns": 0, "title": "RedirA", "redirect": true,
+							"redirlinks": []any{
+								map[string]any{"pageid": 4, "ns": 0, "title": "DoubleRedir"},
+							},
+						},
+					}},
+				})
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"query": map[string]any{"backlinks": []any{
 					map[string]any{"pageid": 1, "ns": 0, "title": "Direct"},
@@ -242,6 +287,16 @@ func TestListPagesRedirects(t *testing.T) {
 	}, bl)
 	assert.Equal(t, "250", seen[0].Get("bllimit"))
 	assert.Equal(t, "nonredirects", seen[0].Get("blfilterredir"))
+
+	// FollowRedirects with redirects filter also filters out non-redirect first-level links.
+	seen = nil
+	blRedir, err := c.ListPages(ctx, ListOptions{Source: LinksTo, Value: "Main Page", Limit: 10, FollowRedirects: true, FilterRedirects: "redirects"})
+	require.NoError(t, err)
+	assert.Equal(t, []PageRef{
+		{PageID: 2, NS: 0, Title: "RedirA"},
+		{PageID: 4, NS: 0, Title: "DoubleRedir"},
+	}, blRedir)
+	assert.Equal(t, "redirects", seen[0].Get("blfilterredir"))
 
 	// Without nonredirects filter, the first-level redirect itself is included too.
 	blAll, err := c.ListPages(ctx, ListOptions{Source: LinksTo, Value: "Main Page", Limit: 10, FollowRedirects: true})

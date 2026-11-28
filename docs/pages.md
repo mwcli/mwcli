@@ -2,7 +2,7 @@
 
 ## Viewing a page
 
-`mw page view TITLE` prints the wikitext of the latest revision. `--follow-redirects` resolves redirects to their target page instead of printing the redirect itself. `--web` (`-w`) opens the page in the browser instead (`MW_BROWSER`, else `BROWSER`, else the system opener). The browser setting is a program path, spaces allowed, or a command line with arguments where a path with spaces is quoted.
+`mw page view TITLE` prints the wikitext of the latest revision. `--follow-redirects` resolves redirects and prints their target page instead of the redirect itself; the output does not show which title it resolved to, so check `--json title` before editing rather than piping `mw page view TITLE --follow-redirects` straight back into `mw page edit TITLE`. `--web` (`-w`) opens the page in the browser instead (`MW_BROWSER`, else `BROWSER`, else the system opener). The browser setting is a program path, spaces allowed, or a command line with arguments where a path with spaces is quoted.
 
 `mw browse [TITLE]` opens a page, or the main page with no title, without reading it first, so special pages such as `Special:RecentChanges` work too. `--no-browser` (`-n`) prints the URL instead of opening it:
 

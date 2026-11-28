@@ -43,8 +43,9 @@ func newCmdView(f *cmdutil.Factory) *cobra.Command {
 			Print the wikitext of the latest revision of a page. Public pages need no login.
 
 			With --json, print the named fields instead; --jq filters them. --web opens
-			the page in the browser. --follow-redirects resolves redirects to their
-			target page.
+			the page in the browser. --follow-redirects resolves redirects and prints
+			their target page without showing its title; check --json title before
+			editing.
 		`),
 		Example: heredoc.Doc(`
 			$ mw page view 'Main Page'

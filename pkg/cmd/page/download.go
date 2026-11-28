@@ -112,7 +112,11 @@ func newCmdDownload(f *cmdutil.Factory) *cobra.Command {
 					failed = true
 					continue
 				case p.Interwiki != "":
-					fmt.Fprintf(ios.ErrOut, "redirect %q points to another wiki (%s)\n", p.Asked, p.Interwiki)
+					if p.Redirected {
+						fmt.Fprintf(ios.ErrOut, "redirect %q points to another wiki (%s)\n", p.Asked, p.Interwiki)
+					} else {
+						fmt.Fprintf(ios.ErrOut, "%q is an interwiki title (%s)\n", p.Asked, p.Interwiki)
+					}
 					failed = true
 					continue
 				case p.Missing:
