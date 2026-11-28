@@ -1,0 +1,15 @@
+# Sections of the release notes GitHub writes from merged pull requests
+# (GoReleaser's changelog: github-native). A pull request goes in the first
+# section whose label it has.
+changelog:
+  categories:
+    - title: Breaking changes
+      labels: [breaking-change]
+    - title: New features
+      labels: [enhancement]
+    - title: Fixes
+      labels: [bug]
+    - title: Documentation
+      labels: [documentation]
+    - title: Other changes
+      labels: ["*"]
